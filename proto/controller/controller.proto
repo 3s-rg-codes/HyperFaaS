@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+option go_package = "github.com/luccadibe/w.git";
+
+package worker;
+
+message ImageTag {
+  string tag = 1;
+}
+
+message Config {
+}
+
+message StartRequest {
+  ImageTag image_tag = 1;
+  Config config = 2;
+}
+
+message InstanceID {
+  string id = 1;
+}
+
+message Params {
+  string data = 1;
+}
+
+message CallRequest {
+  InstanceID instance_id = 1;
+  Params params = 2;
+}
+
+message Response {
+  string data = 1;
+}
+
+message StatusUpdate {
+  string instance_id = 1;
+  string status = 2;
+}
+
+message StatusRequest {
+  InstanceID instance_id = 1;
+}
+
+service Controller {
+  rpc Start (StartRequest) returns (InstanceID);
+  rpc Call (CallRequest) returns (Response);
+  rpc Stop (InstanceID) returns (InstanceID);
+  rpc Status (StatusRequest) returns (stream StatusUpdate);
+}

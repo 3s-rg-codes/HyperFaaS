@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option go_package = "github.com/luccadibe/w.git";
+package function;
+
+message Payload {
+    string data = 1;
+    string id = 2;
+}
+message Call {
+    string data = 1;
+    string id = 2;
+}
+
+service FunctionService {
+    rpc Ready (Payload) returns (Call);
+}
