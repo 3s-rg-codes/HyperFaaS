@@ -31,7 +31,7 @@ const (
 )
 
 func NewDockerRuntime() *DockerRuntime {
-	cli, err := client.NewClientWithOpts(client.FromEnv)
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Error().Msgf("Could not create Docker client: %v", err)
 		return nil
