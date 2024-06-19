@@ -64,8 +64,11 @@ func (f *Function) Ready(handler handler) {
 	f.response.Id = f.id
 
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(f.timeout)*time.Second)
+
+		defer log.Info().Msgf("Function timeout (%vs) reached. Closing connection.", f.timeout)
 		defer cancel()
+
 		//We ask for a new request whilst sending the response of the previous one
 		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, Id: f.response.Id})
 
