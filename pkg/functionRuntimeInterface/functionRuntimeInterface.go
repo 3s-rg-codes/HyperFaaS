@@ -69,6 +69,8 @@ func (f *Function) Ready(handler handler) {
 		//We ask for a new request whilst sending the response of the previous one
 		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, Id: f.response.Id})
 
+		log.Debug().Msgf("Received request: %v", p.Data)
+
 		f.request = &Request{p.Data, p.Id}
 
 		if err != nil {
@@ -77,6 +79,8 @@ func (f *Function) Ready(handler handler) {
 		}
 
 		f.response, err = handler(ctx, f.request)
+
+		log.Debug().Msgf("Function handler called and generated response: %v", f.response.Data)
 
 		if err != nil {
 			log.Error().Msgf("Function failed: %v", err)
