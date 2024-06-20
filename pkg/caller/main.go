@@ -72,3 +72,14 @@ func (s *CallerServer) RegisterFunction(id string) {
 
 	s.FunctionResponses[id] = make(chan string)
 }
+
+func (s *CallerServer) UnregisterFunction(id string) {
+
+	close(s.FunctionCalls[id])
+
+	close(s.FunctionResponses[id])
+
+	delete(s.FunctionCalls, id)
+
+	delete(s.FunctionResponses, id)
+}

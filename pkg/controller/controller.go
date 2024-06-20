@@ -56,6 +56,9 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 
 func (s *Controller) Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {
 
+	//unregister the function from the maps
+	s.callerServer.UnregisterFunction(req.Id)
+
 	log.Debug().Msgf("Stopping container with instance ID %s", req.Id)
 
 	return s.runtime.Stop(ctx, req)
