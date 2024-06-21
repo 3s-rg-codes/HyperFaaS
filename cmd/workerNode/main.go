@@ -21,7 +21,8 @@ type WorkerConfig struct {
 	}
 
 	Log struct {
-		Level   string `env:"LOG_LEVEL"`
+		Level string `env:"LOG_LEVEL"`
+
 		Handler string `env:"LOG_HANDLER"`
 	}
 }

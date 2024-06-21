@@ -4,11 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"strconv"
 	"testing"
 	"time"
@@ -35,13 +34,11 @@ const ( //TODO: how do we create different kinds of the same test e.g. killing c
 	KillFunctionDuringExec
 )
 
-const AllExecutions int = 1337
-
 type TestConfig struct {
-	ctx              context.Context
-	req              *pb.StartRequest
-	controller       controller.Controller
-	controllerAdress string
+	ctx               context.Context
+	req               *pb.StartRequest
+	controller        controller.Controller
+	controllerAddress string
 }
 
 func (t TestConfig) String() string {
@@ -49,17 +46,31 @@ func (t TestConfig) String() string {
 }
 
 var ( //TODO: implement flags, do we need more?
-	specifyTestType = flag.String("specifyTestType", "0", "should be Integer, documentation see ReadMe") //TODO: write docu into readme
-	testIDs         []string
-	testController  controller.Controller
+	specifyTestType  = flag.String("specifyTestType", "0", "should be Integer, documentation see ReadMe") //TODO: write docu into readme
+	requestedRuntime = flag.String("specifyRuntime", "docker", "for now only docker, is also default")
+	testIDs          []string
+	testController   controller.Controller
+	runtime          cr.ContainerRuntime
 )
 
 func TestEndToEnd(t *testing.T) {
 	flag.Parse()
 	requestedTest, _ := strconv.Atoi(*specifyTestType)
-	dockerR := dockerRuntime.NewDockerRuntime()
-	testController = controller.New(dockerR)
-	testController.StartServer() //TODO: hwo do i get access to the actual grpc server
+
+	//TODO: Initialize environment (Controller, CallerServer, Runtime)
+	//Runtime: runtime.NewRuntime() -> for now docker
+	switch *requestedRuntime {
+	case "docker":
+		runtime = dockerRuntime.NewDockerRuntime()
+	}
+
+	//Controller
+	testController = controller.New(runtime)
+
+	//CallerServer
+	testController.StartServer()
+
+	//Determine testing scenario
 
 	switch requestedTest {
 	case 0:
@@ -74,20 +85,21 @@ func TestEndToEnd(t *testing.T) {
 }
 
 func TestRegularExecution(t *testing.T) {
-
-	startRequest := &pb.StartRequest{ //TODO: where do these infos come from? client? postman?
-		ImageTag: nil,
-		Config:   nil,
-	}
-
+	//configure Test
 	regularTestConfig := TestConfig{
-		ctx:              context.Background(),
-		req:              startRequest,
-		controller:       testController,
-		controllerAdress: "50051",
+		ctx: context.Background(),
+		req: &pb.StartRequest{ //TODO: where do these infos come from? client? postman?
+			ImageTag: nil,
+			Config:   nil,
+		},
+		controller:        testController,
+		controllerAddress: "50051",
 	}
 
-	connection, err := grpc.NewClient(regularTestConfig.controllerAdress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	containerID, err := regularTestConfig.controller.Start(regularTestConfig.ctx, regularTestConfig.req)
+	if err != nil {
+		return //TODO
+	}
 
 	id, err := regularTestConfig.controller.Start(regularTestConfig.ctx, regularTestConfig.req)
 	if err != nil {
@@ -121,7 +133,7 @@ func TestKillFunctionDuringExec(t *testing.T) {
 
 }
 
-func TestStart(t *testing.T) {
+/*func TestStart(t *testing.T) {
 	flag.Parse()
 	requestedTest, _ := strconv.Atoi(*specifyTestType)
 
@@ -156,4 +168,4 @@ func TestStart(t *testing.T) {
 		t.Logf("configuration for test %v ready: %s", requestedTest, testConfig.String())
 	}
 
-}
+}*/
