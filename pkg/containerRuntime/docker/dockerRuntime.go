@@ -121,3 +121,8 @@ func (d *DockerRuntime) Status(req *pb.StatusRequest, stream pb.Controller_Statu
 
 	return nil
 }
+
+// GetCLI added func to get access to Runtime client in order to brute force stop
+func (d *DockerRuntime) GetCLI() *client.Client {
+	return d.cli
+}

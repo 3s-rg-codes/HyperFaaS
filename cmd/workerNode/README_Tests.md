@@ -2,10 +2,11 @@
 
 ## Idea:
 - we want to implement flags to set test params to test certain scenarios
+- flags: testType, Runtime, imageTag, Config
 
 
 
-## Test-Parameters (Flags)
+## Test-Parameters (Flags) [deprecated!]
 - **maybe implement with yaml, json file for convenience**
 - bool executionStop
 - string timeEndExecution
@@ -27,12 +28,20 @@
 - deploying a function and instantly stopping it
 - hardware malfunction (e.g. power outage -> how to simulate)
 
-## Thoughts (ignore please)
+## Thoughts (ignore pwease)
 - how to test start call stop differently -> what to pay attention to
 - how do we compare errors to what they should be 
 - different test configs execute one-after-another as array
 - How do we automate the testing for different scenarios
   - create a program that manages the tests and runs each test on a different worker in a different docker runtime?
+
+## Test Procedure
+1. Start main_test to initiate server (controller, caller), docker runtime
+   - pass flags testType and Runtime
+2. Start mockClient_test to create a mock client
+   - implemented like this to have more control over testing process
+   - pass flag imageTag, config
+
 
 
 ## RunTests (maybe put this into a script)

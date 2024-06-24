@@ -3,11 +3,8 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
-	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
-	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"strconv"
 	"testing"
 	"time"
@@ -34,31 +31,24 @@ const ( //TODO: how do we create different kinds of the same test e.g. killing c
 	KillFunctionDuringExec
 )
 
-type TestConfig struct {
-	ctx               context.Context
-	req               *pb.StartRequest
-	controller        controller.Controller
-	controllerAddress string
-}
-
-func (t TestConfig) String() string {
-	return fmt.Sprintf("context: %v, request: %v, server: %v, testingScenario: %v", t.ctx, t.req, t.controller)
-}
-
 var ( //TODO: implement flags, do we need more?
 	specifyTestType  = flag.String("specifyTestType", "0", "should be Integer, documentation see ReadMe") //TODO: write docu into readme
 	requestedRuntime = flag.String("specifyRuntime", "docker", "for now only docker, is also default")
-	testIDs          []string
-	testController   controller.Controller
-	runtime          cr.ContainerRuntime
+	imageTagFlag     = flag.String("imageTag", "", "specify ImageTag")
+	//config                  = flag.String("config", "", "specify Config") TODO WIP, not implemented yet(?)
+	controllerServerAddress = flag.String("ServerAdress", "", "specify controller server adress")
+
+	testIDs        []string
+	testController controller.Controller
+	runtime        *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
 )
 
 func TestEndToEnd(t *testing.T) {
+	buildMockClient(t)
+
 	flag.Parse()
 	requestedTest, _ := strconv.Atoi(*specifyTestType)
 
-	//TODO: Initialize environment (Controller, CallerServer, Runtime)
-	//Runtime: runtime.NewRuntime() -> for now docker
 	switch *requestedRuntime {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime()
@@ -66,11 +56,8 @@ func TestEndToEnd(t *testing.T) {
 
 	//Controller
 	testController = controller.New(runtime)
-
 	//CallerServer
 	testController.StartServer()
-
-	//Determine testing scenario
 
 	switch requestedTest {
 	case 0:
@@ -84,33 +71,26 @@ func TestEndToEnd(t *testing.T) {
 	}
 }
 
-func TestRegularExecution(t *testing.T) {
+func StartRegularContainer(t *testing.T) {
+	if testStartRequest == nil {
+		t.Fatalf("Code is dogshit, testStartRequest shouldnt be nil at this point")
+	}
 	//configure Test
-	regularTestConfig := TestConfig{
-		ctx: context.Background(),
-		req: &pb.StartRequest{ //TODO: where do these infos come from? client? postman?
-			ImageTag: nil,
-			Config:   nil,
-		},
-		controller:        testController,
-		controllerAddress: "50051",
-	}
-
-	containerID, err := regularTestConfig.controller.Start(regularTestConfig.ctx, regularTestConfig.req)
+	testContainerID, err := testClient.Start(testCtx, testStartRequest)
 	if err != nil {
-		return //TODO
+		t.Fatalf("Starting container w/ start request %v failed. Testing stopped!", testStartRequest)
 	}
+	testIDs = append(testIDs, testContainerID.Id)
+	t.Logf("Container started with ID %v (Ctx: %v, Req: %v)", testContainerID, testCtx, testStartRequest)
+}
 
-	id, err := regularTestConfig.controller.Start(regularTestConfig.ctx, regularTestConfig.req)
-	if err != nil {
-		t.Fatalf("Failed to start test container: %v", err)
-		return
-	}
-	t.Logf("Started function with id %v on server %v", id, testController)
+func TestRegularExecution(t *testing.T) { //TODO
+	StartRegularContainer(t)
+	runtime.GetCLI().ContainerKill(context.Background())
 }
 
 func TestKillDockerDuringExec(t *testing.T) {
-
+	StartRegularContainer(t)
 }
 
 func TestKillWorkerDuringExec(t *testing.T) {
