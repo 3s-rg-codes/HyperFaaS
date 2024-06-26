@@ -16,4 +16,7 @@ type ContainerRuntime interface {
 	Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error)
 	// Status returns the status of a container with the given instance ID.
 	Status(req *pb.StatusRequest, stream pb.Controller_StatusServer) error
+
+	//Notify if container crashes
+	NotifyCrash(ctx context.Context, instanceId string) error
 }

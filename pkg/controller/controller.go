@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"net"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
@@ -31,12 +32,34 @@ func (s *Controller) Start(ctx context.Context, req *pb.StartRequest) (*pb.Insta
 	return &pb.InstanceID{Id: instanceId}, nil
 }
 
+// This function passes the call through the channel of the instance ID in the FunctionCalls map
+// runtime.Call is also called to check for errors
 func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
+
+	// Check if the instance ID is present in the FunctionCalls map
+	if _, ok := s.callerServer.FunctionCalls[req.InstanceId.Id]; !ok {
+		err := fmt.Errorf("instance ID %s not found in FunctionCalls map", req.InstanceId.Id)
+		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
+		return nil, err
+	}
+
+	// Check if the instance ID is present in the FunctionResponses map
+	if _, ok := s.callerServer.FunctionResponses[req.InstanceId.Id]; !ok {
+		err := fmt.Errorf("instance ID %s not found in FunctionResponses map", req.InstanceId.Id)
+		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
+		return nil, err
+	}
+
+	// Check if container crashes
+	containerCrashed := make(chan error)
+
+	go func() {
+		containerCrashed <- s.runtime.NotifyCrash(ctx, req.InstanceId.Id)
+	}()
 
 	log.Debug().Msgf("Passing call with payload: %v to channel of instance ID %s", req.Params.Data, req.InstanceId.Id)
 
 	go func() {
-
 		// Pass the call to the channel based on the instance ID
 		s.callerServer.FunctionCalls[req.InstanceId.Id] <- req.Params.Data
 
@@ -44,22 +67,28 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 
 	}()
 
-	// Wait for the response
-	data := <-s.callerServer.FunctionResponses[req.InstanceId.Id]
+	select {
 
-	log.Debug().Msgf("Extracted response: '%v' from container with instance ID %s", data, req.InstanceId.Id)
+	case data := <-s.callerServer.FunctionResponses[req.InstanceId.Id]:
 
-	response := &pb.Response{Data: data}
+		log.Debug().Msgf("Extracted response: '%v' from container with instance ID %s", data, req.InstanceId.Id)
+		response := &pb.Response{Data: data}
+		return response, nil
 
-	return response, nil
+	case err := <-containerCrashed:
+
+		log.Error().Msgf("Container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
+
+		return nil, fmt.Errorf("Container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
+
+	}
+
 }
 
 func (s *Controller) Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {
 
 	//unregister the function from the maps
 	s.callerServer.UnregisterFunction(req.Id)
-
-	log.Debug().Msgf("Stopping container with instance ID %s", req.Id)
 
 	return s.runtime.Stop(ctx, req)
 
