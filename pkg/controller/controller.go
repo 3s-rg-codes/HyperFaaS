@@ -38,14 +38,14 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 
 	// Check if the instance ID is present in the FunctionCalls map
 	if _, ok := s.callerServer.FunctionCalls[req.InstanceId.Id]; !ok {
-		err := fmt.Errorf("instance ID %s not found in FunctionCalls map", req.InstanceId.Id)
+		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
 		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
 		return nil, err
 	}
 
 	// Check if the instance ID is present in the FunctionResponses map
 	if _, ok := s.callerServer.FunctionResponses[req.InstanceId.Id]; !ok {
-		err := fmt.Errorf("instance ID %s not found in FunctionResponses map", req.InstanceId.Id)
+		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
 		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
 		return nil, err
 	}

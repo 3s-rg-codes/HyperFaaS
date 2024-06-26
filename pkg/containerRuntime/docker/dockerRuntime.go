@@ -116,7 +116,7 @@ func (d *DockerRuntime) Stop(ctx context.Context, req *pb.InstanceID) (*pb.Insta
 	// Check if the container exists
 	_, err := d.cli.ContainerInspect(ctx, req.Id)
 	if err != nil {
-		log.Printf("DOCKERRUNTIME - Container %s does not exist", req.Id)
+		log.Error().Msgf("DOCKERRUNTIME - Container %s does not exist", req.Id)
 		return nil, err
 	}
 
@@ -157,11 +157,15 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) erro
 					return fmt.Errorf("Container died")
 				}
 			}
-		case err, ok := <-errChan:
+		//When a function call is successful, Docker events  retruns an annoying error that we can ignore.
+		//WARNING: Maybe there can be other errors that we should not ignore.
+		//TODO: Find a better way to handle this
+		case _, ok := <-errChan:
 			if !ok {
 				errChan = nil
 			} else {
-				log.Error().Msgf("DOCKERRUNTIME - Error: %v\n", err)
+				// Ignore the error
+				//log.Error().Msgf("DOCKERRUNTIME - Error: %v\n", err)
 			}
 		case <-ctx.Done():
 			log.Debug().Msg("DOCKERRUNTIME - Context cancelled, exiting")
