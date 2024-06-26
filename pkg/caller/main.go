@@ -2,6 +2,7 @@ package caller
 
 import (
 	"context"
+	"errors"
 	"net"
 
 	"github.com/rs/zerolog/log"
@@ -21,7 +22,7 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 	//Pass payload to the functionResponses channel IF it exists
 	if payload.Data != "" {
 
-		log.Debug().Msgf("Passing response to channel with instance ID %s", payload.Id)
+		log.Debug().Msgf("Passing response [%v] to channel with instance ID %s", payload.Data, payload.Id)
 
 		go func() {
 			s.FunctionResponses[payload.Id] <- payload.Data
@@ -32,7 +33,13 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 	//Wait for the function to be called
 	log.Debug().Msgf("Looking at channel for a call with instance ID %s", payload.Id)
 
-	call := <-s.FunctionCalls[payload.Id]
+	call, ok := <-s.FunctionCalls[payload.Id]
+	if !ok {
+
+		log.Debug().Msgf("Channel for instance ID %s was closed while waiting for call", payload.Id)
+
+		return nil, errors.New("channel was closed")
+	}
 
 	log.Debug().Msgf("Received call: %s", call)
 
@@ -71,4 +78,19 @@ func (s *CallerServer) RegisterFunction(id string) {
 	s.FunctionCalls[id] = make(chan string)
 
 	s.FunctionResponses[id] = make(chan string)
+}
+
+func (s *CallerServer) UnregisterFunction(id string) {
+	//if the function is registered, close the channels and delete the function
+	if _, ok := s.FunctionCalls[id]; !ok {
+		return
+	}
+
+	close(s.FunctionCalls[id])
+
+	close(s.FunctionResponses[id])
+
+	delete(s.FunctionCalls, id)
+
+	delete(s.FunctionResponses, id)
 }
