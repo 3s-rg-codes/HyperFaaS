@@ -1,10 +1,20 @@
+FROM golang:1.22.4 as builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+
+RUN go mod download
+
+COPY *.go ./
+
+RUN CGO_ENABLED=0 GOOS=linux go build -o /handler
 
 FROM alpine:latest
 
 WORKDIR /root/
 
-COPY echo .
-RUN chmod +x echo
+COPY --from=builder /handler .
 
 RUN mkdir logs
 RUN touch logs/fn.log
@@ -19,4 +29,4 @@ EXPOSE 50052
 
 # Command to run the executable
 # CMD ["sh", "-c" ,"./set_env.sh && . /root/.env && echo $CONTAINER_ID && ./echo"]
-CMD ["sh", "-c" ,"source set_env.sh && echo $CONTAINER_ID && ./echo"]
+CMD ["sh", "-c" ,"source set_env.sh && echo $CONTAINER_ID && ./handler"]
