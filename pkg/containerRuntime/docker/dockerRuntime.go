@@ -17,6 +17,8 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/rs/zerolog/log"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type DockerRuntime struct {
@@ -34,7 +36,7 @@ const (
 func NewDockerRuntime() *DockerRuntime {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		log.Error().Msgf("DOCKERRUNTIME - Could not create Docker client: %v", err)
+		log.Error().Msgf("Could not create Docker client: %v", err)
 		return nil
 	}
 	return &DockerRuntime{cli: cli}
@@ -53,12 +55,12 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 	images, err := d.cli.ImageList(ctx, image.ListOptions{Filters: imageListArgs})
 
 	if err != nil {
-		return "", fmt.Errorf("DOCKERRUNTIME - could not list Docker images: %v", err)
+		return "", fmt.Errorf("could not list Docker images: %v", err)
 	}
 
 	if len(images) == 0 {
 		// Pull the image
-		log.Printf("DOCKERRUNTIME - Pulling image %s", imageTag)
+		log.Printf("Pulling image %s", imageTag)
 		reader, err := d.cli.ImagePull(ctx, imageTag, image.PullOptions{})
 
 		if err != nil {
@@ -72,7 +74,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 	}
 
 	// Create the container
-	log.Printf("DOCKERRUNTIME - Creating container with image tag %s", imageTag)
+	log.Printf("Creating container with image tag %s", imageTag)
 	resp, err := d.cli.ContainerCreate(ctx, &container.Config{
 		Image: imageTag,
 		ExposedPorts: nat.PortSet{
@@ -93,14 +95,14 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 	if err != nil {
 		return "", err
 	}
-	log.Printf("DOCKERRUNTIME - Created container with ID %s , Warnings: %v", resp.ID, resp.Warnings)
+	log.Printf("Created container with ID %s , Warnings: %v", resp.ID, resp.Warnings)
 
 	// Start the container
-	log.Printf("DOCKERRUNTIME - Starting container with ID %s", resp.ID)
+	log.Printf("Starting container with ID %s", resp.ID)
 	if err := d.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return "", err
 	}
-	log.Printf("DOCKERRUNTIME - Started container with ID %s", resp.ID)
+	log.Printf("Started container with ID %s", resp.ID)
 	return resp.ID, nil
 }
 
@@ -116,8 +118,8 @@ func (d *DockerRuntime) Stop(ctx context.Context, req *pb.InstanceID) (*pb.Insta
 	// Check if the container exists
 	_, err := d.cli.ContainerInspect(ctx, req.Id)
 	if err != nil {
-		log.Error().Msgf("DOCKERRUNTIME - Container %s does not exist", req.Id)
-		return nil, err
+		log.Error().Msgf("Container %s does not exist", req.Id)
+		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
 	// Stop the container
@@ -125,19 +127,18 @@ func (d *DockerRuntime) Stop(ctx context.Context, req *pb.InstanceID) (*pb.Insta
 		return nil, err
 	}
 
-	log.Debug().Msgf("DOCKERRUNTIME - Stopped container with instance ID %s", req.Id)
+	log.Debug().Msgf("Stopped container with instance ID %s", req.Id)
 
 	return req, nil
 }
 
 // TODO Status over docker Volume
+
 func (d *DockerRuntime) Status(req *pb.StatusRequest, stream pb.Controller_StatusServer) error {
 
 	return nil
 }
 
-// TODO IMPLEMENT THIS FUNCTION
-// """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) error {
 	//Print all events to the log
 	//Events are this d.cli.Events(ctx,	events.ListOptions{})
@@ -152,7 +153,7 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) erro
 			if !ok {
 				eventsChan = nil
 			} else {
-				log.Error().Msgf("DOCKERRUNTIME - DOCKEREVENT - Event instance ID %v: %s\n", instanceId, event.Status)
+				log.Error().Msgf("DOCKEREVENT - Event instance ID %v: %s\n", instanceId, event.Status)
 				if event.Status == "die" {
 					return fmt.Errorf("Container died")
 				}
@@ -160,15 +161,16 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) erro
 		//When a function call is successful, Docker events  retruns an annoying error that we can ignore.
 		//WARNING: Maybe there can be other errors that we should not ignore.
 		//TODO: Find a better way to handle this
-		case _, ok := <-errChan:
+		case err, ok := <-errChan:
 			if !ok {
 				errChan = nil
 			} else {
 				// Ignore the error
-				//log.Error().Msgf("DOCKERRUNTIME - Error: %v\n", err)
+				//log.Error().Msgf("Error: %v\n", err)
+				log.Debug().Str("instanceId", instanceId).Err(err).Msg("Ignoring error from Docker events")
 			}
 		case <-ctx.Done():
-			log.Debug().Msg("DOCKERRUNTIME - Context cancelled, exiting")
+			log.Debug().Msg("Context cancelled, exiting")
 			return nil
 		}
 
