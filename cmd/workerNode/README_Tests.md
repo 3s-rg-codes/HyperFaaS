@@ -30,7 +30,13 @@
    - implemented like this to have more control over testing process
    - pass flag imageTag, config
 
+## TODO
+- write function / testing scenario to test multiple cases one after the other (like array in 
+example fred testing)
 
+- Monday:
+  - check all funcs again for logic and logging
+  - **NEEDS TO BE DONE BY WEDNESDAY MORNING**
 
 ## RunTests (maybe put this into a script)
 - 
