@@ -1,10 +1,20 @@
+FROM golang:1.22.4 as builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+
+RUN go mod download
+
+COPY *.go ./
+
+RUN CGO_ENABLED=0 GOOS=linux go build -o /handler
 
 FROM alpine:latest
 
 WORKDIR /root/
 
-COPY handler .
-RUN chmod +x handler
+COPY --from=builder /handler .
 
 RUN mkdir logs
 RUN touch logs/fn.log
