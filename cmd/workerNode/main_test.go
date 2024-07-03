@@ -1,19 +1,21 @@
 package main
 
 import (
+	"assert"
 	"flag"
+	"strconv"
+	"sync"
+	"testing"
+	"time"
+
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/docker/docker/api/types/container"
-	"os"
-	"strconv"
-	"sync"
-	"syscall"
-	"testing"
-	"time"
+	"gotest.tools/v3/assert"
 )
 
+/*
 var ( //TODO: implement flags, do we need more?
 	specifyTestType  = flag.String("specifyTestType", "0", "should be Integer, documentation see ReadMe") //TODO: write docu into readme
 	requestedRuntime = flag.String("specifyRuntime", "docker", "for now only docker, is also default")
@@ -26,6 +28,7 @@ var ( //TODO: implement flags, do we need more?
 	testController controller.Controller
 	runtime        *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
 )
+*/
 
 func TestEndToEnd(t *testing.T) {
 	flag.Parse()
@@ -59,9 +62,9 @@ func TestEndToEnd(t *testing.T) {
 		fallthrough
 	case 2:
 		TestKillDockerDuringExec(t)
-		fallthrough
-	case 3:
-		TestKillWorkerDuringExec(t) //needs to be last since we kill the worker and with that all functionality
+
+	//case 3:
+	//	TestKillWorkerDuringExec(t) //needs to be last since we kill the worker and with that all functionality
 	//case 4: //call DeployParallel
 	//case 5: //call DeployAndKillInstant
 	//case 6: //call KillFunctionDuringExec
@@ -78,12 +81,13 @@ func TestEndToEnd(t *testing.T) {
 	//TODO: what else to pay attention to when ending tests, what else needs to be closed / stopped
 }
 
-func StartRegularContainer(t *testing.T) {
-	if testStartRequest == nil {
-		t.Fatalf("StartRequest not initialized. Testing stopped!") //fatal here since nothing works without startRequest
-	}
+func TestStartContainer(t *testing.T) {
 
-	testContainerID, err := testClient.Start(testCtx, testStartRequest) //all calls made through test client are our fake client calls
+	testContainerID, err := testClient.Start(testCtx, testCase.ImageTag) //all calls made through test client are our fake client calls
+	// Assert that the grpc return message is correct
+
+	assert.Equal(t, testContainerID.Id, "testContainerID")
+
 	if err != nil {
 		t.Fatalf("Starting container w/ start request %v failed. Testing stopped! Error: %v", testStartRequest, err)
 	}
@@ -91,6 +95,7 @@ func StartRegularContainer(t *testing.T) {
 	testID = testContainerID //placeholder line for if we want to run multiple tests in parallel and need to use a slice to store IDs
 
 	t.Logf("Container started with ID %v (Ctx: %v, Req: %v)", testContainerID.Id, testCtx, testStartRequest)
+
 }
 
 // function blocks till answer is returned since testClient.Call blocks till answer is returned
@@ -127,7 +132,7 @@ func ForceKillAndRemoveContainer(t *testing.T) {
 
 func TestRegularExecution(t *testing.T) { //TODO
 
-	StartRegularContainer(t)
+	TestStartContainer(t)
 
 	TestCallContainer(t)
 
@@ -144,7 +149,7 @@ func TestRegularExecution(t *testing.T) { //TODO
 func TestKillDockerNotDuringExec(t *testing.T) {
 	t.Logf("Starting test for killing container (not during direct execution) with ID %v", testID.Id)
 
-	StartRegularContainer(t)
+	TestStartContainer(t)
 
 	//after this returns, container is idling
 	TestCallContainer(t)
@@ -155,7 +160,7 @@ func TestKillDockerNotDuringExec(t *testing.T) {
 func TestKillDockerDuringExec(t *testing.T) { //idea here: we kill the docker container while it is executing by deploying goroutine
 	t.Logf("Starting test for killing container during execution with ID %v", testID.Id)
 
-	StartRegularContainer(t)
+	TestStartContainer(t)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -184,27 +189,30 @@ func TestKillDockerDuringExec(t *testing.T) { //idea here: we kill the docker co
 	}
 }
 
-func TestKillWorkerDuringExec(t *testing.T) {
-	t.Logf("Starting test for killing worker during execution")
+/*
+Maybe implement later, not necessary for now
 
-	StartRegularContainer(t)
+	func TestKillWorkerDuringExec(t *testing.T) {
+		t.Logf("Starting test for killing worker during execution")
 
-	TestCallContainer(t)
+		TestStartContainer(t)
 
-	go func() {
-		p, err := os.FindProcess(os.Getpid())
-		if err != nil {
-			t.Errorf("Could not find process %v", os.Getpid())
-		}
+		TestCallContainer(t)
 
-		//TODO improve logging here when we get to later stages, right now if the program crashes it indicates killing the container worked
-		err = p.Signal(syscall.SIGKILL) //Killing the current process (worker)
-		if err != nil {
-			t.Errorf("Could not kill process %v", os.Getpid())
-		}
-	}()
-}
+		go func() {
+			p, err := os.FindProcess(os.Getpid())
+			if err != nil {
+				t.Errorf("Could not find process %v", os.Getpid())
+			}
 
+			//TODO improve logging here when we get to later stages, right now if the program crashes it indicates killing the container worked
+			err = p.Signal(syscall.SIGKILL) //Killing the current process (worker)
+			if err != nil {
+				t.Errorf("Could not kill process %v", os.Getpid())
+			}
+		}()
+	}
+*/
 func TestDeploySequentially(t *testing.T) {
 
 }
