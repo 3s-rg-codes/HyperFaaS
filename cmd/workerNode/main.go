@@ -50,7 +50,7 @@ func main() {
 				Out:     os.Stderr,
 				NoColor: false,
 			},
-		)
+		).With().Caller().Logger()
 
 		zerolog.DisableSampling(true)
 	} else if wc.Log.Handler != "prod" {
