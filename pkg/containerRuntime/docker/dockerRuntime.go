@@ -23,7 +23,7 @@ import (
 
 type DockerRuntime struct {
 	cr.ContainerRuntime
-	cli *client.Client
+	Cli *client.Client
 }
 
 const (
@@ -39,7 +39,7 @@ func NewDockerRuntime() *DockerRuntime {
 		log.Error().Msgf("Could not create Docker client: %v", err)
 		return nil
 	}
-	return &DockerRuntime{cli: cli}
+	return &DockerRuntime{Cli: cli}
 }
 
 // Start a container with the given image tag and configuration.
@@ -52,7 +52,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 
 	imageListArgs := filters.NewArgs()
 	imageListArgs.Add("reference", imageTag)
-	images, err := d.cli.ImageList(ctx, image.ListOptions{Filters: imageListArgs})
+	images, err := d.Cli.ImageList(ctx, image.ListOptions{Filters: imageListArgs})
 
 	if err != nil {
 		return "", fmt.Errorf("could not list Docker images: %v", err)
@@ -61,7 +61,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 	if len(images) == 0 {
 		// Pull the image
 		log.Printf("Pulling image %s", imageTag)
-		reader, err := d.cli.ImagePull(ctx, imageTag, image.PullOptions{})
+		reader, err := d.Cli.ImagePull(ctx, imageTag, image.PullOptions{})
 
 		if err != nil {
 			return "", err
@@ -75,7 +75,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 
 	// Create the container
 	log.Printf("Creating container with image tag %s", imageTag)
-	resp, err := d.cli.ContainerCreate(ctx, &container.Config{
+	resp, err := d.Cli.ContainerCreate(ctx, &container.Config{
 		Image: imageTag,
 		ExposedPorts: nat.PortSet{
 			"50052/tcp": struct{}{},
@@ -99,7 +99,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 
 	// Start the container
 	log.Printf("Starting container with ID %s", resp.ID)
-	if err := d.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	if err := d.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return "", err
 	}
 	log.Printf("Started container with ID %s", resp.ID)
@@ -116,14 +116,14 @@ func (d *DockerRuntime) Call(ctx context.Context, req *pb.CallRequest) (*pb.Resp
 
 func (d *DockerRuntime) Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {
 	// Check if the container exists
-	_, err := d.cli.ContainerInspect(ctx, req.Id)
+	_, err := d.Cli.ContainerInspect(ctx, req.Id)
 	if err != nil {
 		log.Error().Msgf("Container %s does not exist", req.Id)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
 	// Stop the container
-	if err := d.cli.ContainerStop(ctx, req.Id, container.StopOptions{}); err != nil {
+	if err := d.Cli.ContainerStop(ctx, req.Id, container.StopOptions{}); err != nil {
 		return nil, err
 	}
 
@@ -141,12 +141,12 @@ func (d *DockerRuntime) Status(req *pb.StatusRequest, stream pb.Controller_Statu
 
 func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) error {
 	//Print all events to the log
-	//Events are this d.cli.Events(ctx,	events.ListOptions{})
-	//eventsChan, errChan := d.cli.Events(ctx, events.ListOptions{})
+	//Events are this d.Cli.Events(ctx,	events.ListOptions{})
+	//eventsChan, errChan := d.Cli.Events(ctx, events.ListOptions{})
 	opt := events.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId}),
 	}
-	eventsChan, errChan := d.cli.Events(ctx, opt)
+	eventsChan, errChan := d.Cli.Events(ctx, opt)
 	for {
 		select {
 		case event, ok := <-eventsChan:
