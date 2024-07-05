@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"flag"
+	"google.golang.org/grpc"
+	"gotest.tools/v3/assert"
+	"os"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
 
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
@@ -43,11 +44,10 @@ type testCase struct {
 	InstanceID        string
 }
 
-func TestMain(t *testing.T) {
+func TestMain(m *testing.M) {
 	setup()
-
-	TestNormalExecution(t)
-
+	exitVal := m.Run()
+	os.Exit(exitVal)
 }
 
 func setup() {
@@ -74,6 +74,15 @@ func TestNormalExecution(t *testing.T) {
 
 	flag.Parse()
 	client, err := BuildMockClient(t)
+	defer func(connection *grpc.ClientConn) {
+		err := connection.Close()
+		grpcStatus, ok := status.FromError(err)
+		if !ok {
+			t.Fatalf("Closing connection failed %v", grpcStatus.Code())
+		} else {
+			t.Fatalf("GRPC error:+ %v", grpcStatus.Code())
+		}
+	}(connection)
 	if err != nil {
 		t.Fatalf("Testing stopped! Error: %v", err)
 	}
@@ -99,12 +108,11 @@ func TestNormalExecution(t *testing.T) {
 
 		t.Run(testCase.testName, func(t *testing.T) {
 			testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{}})
-
-			status, ok := status.FromError(err)
+			grpcStatus, ok := status.FromError(err)
 			if !ok {
-				t.Fatalf("Start failed: %v", status.Code())
+				t.Fatalf("Start failed: %v", grpcStatus.Code())
 			}
-			assert.Equal(t, status.Code(), testCase.ExpectedErrorCode)
+			assert.Equal(t, grpcStatus.Code(), testCase.ExpectedErrorCode)
 
 			if testContainerID == nil {
 				t.Fatalf("Error: %v", "Container ID is nil")
@@ -113,13 +121,13 @@ func TestNormalExecution(t *testing.T) {
 
 			response, err := client.Call(context.Background(), &pb.CallRequest{InstanceId: testContainerID, Params: &pb.Params{Data: testCase.CallPayload}})
 
-			status, ok = status.FromError(err)
+			grpcStatus, ok = status.FromError(err)
 
 			if !ok {
-				t.Fatalf("Call failed: %v", status.Code())
+				t.Fatalf("Call failed: %v", grpcStatus.Code())
 			}
 
-			assert.Equal(t, status.Code(), testCase.ExpectedErrorCode)
+			assert.Equal(t, grpcStatus.Code(), testCase.ExpectedErrorCode)
 			if testCase.ExpectsResponse {
 				assert.Equal(t, response.Data, testCase.ExpectedResponse)
 			}
@@ -130,10 +138,10 @@ func TestNormalExecution(t *testing.T) {
 
 			responseContainerID, err := client.Stop(context.Background(), testContainerID)
 
-			status, ok = status.FromError(err)
+			grpcStatus, ok = status.FromError(err)
 
 			if !ok {
-				t.Fatalf("Stop failed: %v", status.Code())
+				t.Fatalf("Stop failed: %v", grpcStatus.Code())
 			}
 			assert.Equal(t, &responseContainerID, testContainerID)
 
