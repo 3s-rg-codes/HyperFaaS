@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"flag"
-	"google.golang.org/grpc"
-	"gotest.tools/v3/assert"
 	"os"
 	"testing"
 	"time"
+
+	"gotest.tools/v3/assert"
 
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
@@ -21,7 +21,7 @@ var ( //TODO: implement flags, do we need more?
 	requestedRuntime = flag.String("specifyRuntime", "docker", "for now only docker, is also default")
 	passedData       = flag.String("passedData", "", "specify Data to pass to container")
 	//config                  = flag.String("config", "", "specify Config") TODO WIP, not implemented yet(?)
-	controllerServerAddress = flag.String("ServerAdress", "", "specify controller server adress")
+	controllerServerAddress = flag.String("ServerAdress", "localhost:50051", "specify controller server adress")
 
 	testID         *pb.InstanceID //TODO: for now only one container at a time
 	testController controller.Controller
@@ -44,12 +44,14 @@ type testCase struct {
 	InstanceID        string
 }
 
+// TestMain calls setup and teardown functions, and runs all other Test Functions
 func TestMain(m *testing.M) {
 	setup()
 	exitVal := m.Run()
 	os.Exit(exitVal)
 }
 
+// Initializes the containerRuntime and server and sleeps for 5 seconds to ensure the server is up
 func setup() {
 
 	flag.Parse()
@@ -70,23 +72,15 @@ func setup() {
 
 }
 
+func teardown() {
+	//testController.StopServer()
+}
+
+// Tests a normal container lifecycle: Start, Call, Stop
 func TestNormalExecution(t *testing.T) {
 
 	flag.Parse()
-	client, err := BuildMockClient(t)
-	defer func(connection *grpc.ClientConn) {
-		err := connection.Close()
-		grpcStatus, ok := status.FromError(err)
-		if !ok {
-			t.Fatalf("Closing connection failed %v", grpcStatus.Code())
-		} else {
-			t.Fatalf("GRPC error:+ %v", grpcStatus.Code())
-		}
-	}(connection)
-	if err != nil {
-		t.Fatalf("Testing stopped! Error: %v", err)
-	}
-
+	client, connection := BuildMockClient(t)
 	testCases := []testCase{
 		{
 			testName:          "normal execution of hello image",
@@ -110,6 +104,7 @@ func TestNormalExecution(t *testing.T) {
 			testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{}})
 			grpcStatus, ok := status.FromError(err)
 			if !ok {
+				t.Logf("Container ID: %v", testContainerID)
 				t.Fatalf("Start failed: %v", grpcStatus.Code())
 			}
 			assert.Equal(t, grpcStatus.Code(), testCase.ExpectedErrorCode)
@@ -143,13 +138,88 @@ func TestNormalExecution(t *testing.T) {
 			if !ok {
 				t.Fatalf("Stop failed: %v", grpcStatus.Code())
 			}
-			assert.Equal(t, &responseContainerID, testContainerID)
+			assert.Equal(t, responseContainerID.Id, testContainerID.Id)
 
 			t.Logf("Stop succeded: %v", responseContainerID.Id)
 
 		})
 	}
 
+	t.Cleanup(func() {
+		connection.Close()
+	})
+}
+
+// Tests that a correct error is returned when a non existing function is stopped
+func TestStopNonExistingContainer(t *testing.T) {
+
+	flag.Parse()
+	client, connection := BuildMockClient(t)
+	testCases := []testCase{
+		{
+			testName:          "stopping non existing container",
+			InstanceID:        "nonExistingContainer",
+			ExpectedError:     true,
+			ExpectedErrorCode: codes.NotFound,
+		},
+	}
+
+	for _, testCase := range testCases {
+
+		t.Run(testCase.testName, func(t *testing.T) {
+			_, err := client.Stop(context.Background(), &pb.InstanceID{Id: testCase.InstanceID})
+
+			grpcStatus, ok := status.FromError(err)
+
+			if !ok {
+				t.Fatalf("gRPC Error: %v", grpcStatus.Code())
+			}
+			assert.Equal(t, grpcStatus.Code(), testCase.ExpectedErrorCode)
+
+			t.Logf("Stopping unknown instance failed successfully: %v ", grpcStatus.Code())
+
+		})
+	}
+
+	t.Cleanup(func() {
+		connection.Close()
+	})
+}
+
+// Tests that a correct error is returned when a non existing function is called
+func TestCallNonExistingContainer(t *testing.T) {
+
+	flag.Parse()
+	client, connection := BuildMockClient(t)
+	testCases := []testCase{
+		{
+			testName:          "calling non existing container",
+			InstanceID:        "nonExistingContainer",
+			ExpectedError:     true,
+			ExpectedErrorCode: codes.NotFound,
+		},
+	}
+
+	for _, testCase := range testCases {
+
+		t.Run(testCase.testName, func(t *testing.T) {
+			_, err := client.Call(context.Background(), &pb.CallRequest{InstanceId: &pb.InstanceID{Id: testCase.InstanceID}, Params: &pb.Params{}})
+
+			grpcStatus, ok := status.FromError(err)
+
+			if !ok {
+				t.Fatalf("gRPC Error: %v", grpcStatus.Code())
+			}
+			assert.Equal(t, grpcStatus.Code(), testCase.ExpectedErrorCode)
+
+			t.Logf("Calling unknown instance failed successfully: %v ", grpcStatus.Code())
+
+		})
+	}
+
+	t.Cleanup(func() {
+		connection.Close()
+	})
 }
 
 /*
