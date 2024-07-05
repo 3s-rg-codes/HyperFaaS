@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
@@ -26,10 +25,10 @@ func BuildMockClient(t *testing.T) (pb.ControllerClient, error) {
 	}
 	t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
 	testClient = pb.NewControllerClient(connection)
-	defer connection.Close()
 	return testClient, nil
 }
 
+/*
 func initializeClient(t *testing.T) (*pb.StartRequest, error) {
 	if *imageTagFlag == "" || !strings.Contains(*imageTagFlag, ":") { //some basic syntax criteria for the ImageTag String
 		t.Errorf("Image Tag %v not valid: Testing stopped!", *imageTagFlag)
@@ -57,3 +56,4 @@ func determinePassedData(t *testing.T) (s string) {
 		}
 	}
 }
+*/
