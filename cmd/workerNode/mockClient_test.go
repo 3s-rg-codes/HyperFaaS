@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"testing"
 
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
@@ -9,23 +8,19 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-var (
-	testClient       pb.ControllerClient
-	testCtx          = context.Background()
-	testStartRequest *pb.StartRequest
-	connection       *grpc.ClientConn
-)
-
-func BuildMockClient(t *testing.T) (pb.ControllerClient, error) {
+// Initializes a mock client
+// Returns the client and the connection for later closing
+func BuildMockClient(t *testing.T) (pb.ControllerClient, *grpc.ClientConn) {
 	var err error
-	connection, err = grpc.NewClient(*controllerServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(*controllerServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Errorf("Could not start client for testing purposes: %v.", err)
-		return nil, err
+		return nil, nil
 	}
 	t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
-	testClient = pb.NewControllerClient(connection)
-	return testClient, nil
+	testClient := pb.NewControllerClient(connection)
+
+	return testClient, connection
 }
 
 /*
