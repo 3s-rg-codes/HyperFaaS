@@ -20,7 +20,7 @@ type CallerServer struct {
 func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call, error) {
 
 	//Pass payload to the functionResponses channel IF it exists
-	if payload.Data != "" {
+	if !payload.FirstExecution {
 
 		log.Debug().Msgf("Passing response [%v] to channel with instance ID %s", payload.Data, payload.Id)
 

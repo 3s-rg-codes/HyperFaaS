@@ -71,7 +71,7 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 
 		log.Debug().Msgf("Successfully passed call to channel of instance ID %s", req.InstanceId.Id)
 
-		s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call())
+		s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().WithStatus("success"))
 
 	}()
 
