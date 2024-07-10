@@ -2,7 +2,7 @@ module hello
 
 go 1.22.4
 
-require github.com/3s-rg-codes/HyperFaaS v0.0.0-20240626152200-154b3a3de5e2
+require github.com/3s-rg-codes/HyperFaaS v0.0.0-20240710080006-b4e46541e1f6
 
 require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
