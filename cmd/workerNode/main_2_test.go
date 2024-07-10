@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -18,12 +19,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	DURATION       = 2 * time.Second
+	RUNTIME        = "docker"
+	SERVER_ADDRESS = "localhost:50051"
+)
+
 var ( //TODO: implement flags, do we need more?
-	requestedRuntime = flag.String("specifyRuntime", "docker", "for now only docker, is also default")
+	DOCKER_TOLERANCE = flag.Duration("dockerTolerance", DURATION, "Tolerance for container start and stop in seconds")
+	requestedRuntime = flag.String("specifyRuntime", RUNTIME, "for now only docker, is also default")
 	//config                  = flag.String("config", "", "specify Config") TODO WIP, not implemented yet(?)
-	controllerServerAddress = flag.String("ServerAdress", "localhost:50051", "specify controller server adress")
-	testController controller.Controller
-	runtime        *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
+	controllerServerAddress = flag.String("ServerAdress", SERVER_ADDRESS, "specify controller server adress")
+	testController          controller.Controller
+	runtime                 *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
 )
 
 // image tag array
@@ -51,8 +59,19 @@ func TestMain(m *testing.M) {
 
 // Initializes the containerRuntime and server and sleeps for 5 seconds to ensure the server is up
 func setup() {
-
+	fmt.Println("Test Configuration: ")
 	flag.Parse()
+	flag.VisitAll(func(f *flag.Flag) {
+		isDefault := ""
+		if f.DefValue == f.Value.String() {
+			isDefault = " (USING DEFAULT VALUE)"
+		}
+		if f.Name[:5] != "test." || f.Name == "update" {
+			fmt.Printf("FLAG: %s = %s%s\n", f.Name, f.Value.String(), isDefault)
+		}
+	})
+	fmt.Println()
+
 	switch *requestedRuntime {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime() //did not work otherwise, using container runtime interface
@@ -136,7 +155,7 @@ func TestNormalExecution(t *testing.T) {
 				t.Fatalf("Stop failed: %v", grpcStatus.Code())
 			}
 			//TOLERANCE
-			time.Sleep(time.Duration(*DOCKER_TOLERANCE) * time.Second)
+			time.Sleep(*DOCKER_TOLERANCE)
 
 			assert.Equal(t, ContainerExists(testContainerID.Id), false)
 			assert.Equal(t, responseContainerID.Id, testContainerID.Id)
