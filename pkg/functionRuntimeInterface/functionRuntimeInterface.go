@@ -76,7 +76,6 @@ func (f *Function) Ready(handler handler) {
 			log.Error().Msgf("failed to call: %v", err)
 			return
 		}
-
 		log.Debug().Msgf("Received request: %v", p.Data)
 
 		f.request = &Request{p.Data, p.Id}

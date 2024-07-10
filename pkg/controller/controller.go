@@ -11,6 +11,8 @@ import (
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type Controller struct {
@@ -44,14 +46,14 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 	if _, ok := s.callerServer.FunctionCalls[req.InstanceId.Id]; !ok {
 		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
 		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
-		return nil, err
+		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
 	// Check if the instance ID is present in the FunctionResponses map
 	if _, ok := s.callerServer.FunctionResponses[req.InstanceId.Id]; !ok {
 		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
 		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
-		return nil, err
+		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
 	// Check if container crashes
