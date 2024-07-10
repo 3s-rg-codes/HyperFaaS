@@ -12,18 +12,20 @@ import (
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 var ( //TODO: implement flags, do we need more?
-	specifyTestType  = flag.String("specifyTestType", "0", "should be Integer, documentation see ReadMe") //TODO: write docu into readme
+	//specifyTestType  = flag.String("specifyTestType", "0", "should be Integer, documentation see ReadMe") //TODO: write docu into readme
 	requestedRuntime = flag.String("specifyRuntime", "docker", "for now only docker, is also default")
-	passedData       = flag.String("passedData", "", "specify Data to pass to container")
+	//passedData       = flag.String("passedData", "", "specify Data to pass to container")
 	//config                  = flag.String("config", "", "specify Config") TODO WIP, not implemented yet(?)
 	controllerServerAddress = flag.String("ServerAdress", "localhost:50051", "specify controller server adress")
-
-	testID         *pb.InstanceID //TODO: for now only one container at a time
+	DOCKER_TOLERANCE        = flag.Int("dockerTolerance", 4, "specify tolerance in seconds for docker runtime")
+	//testID                  *pb.InstanceID //TODO: for now only one container at a time
 	testController controller.Controller
 	runtime        *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
 )
@@ -102,16 +104,18 @@ func TestNormalExecution(t *testing.T) {
 
 		t.Run(testCase.testName, func(t *testing.T) {
 			testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{}})
+
 			grpcStatus, ok := status.FromError(err)
 			if !ok {
 				t.Logf("Container ID: %v", testContainerID)
 				t.Fatalf("Start failed: %v", grpcStatus.Code())
 			}
-			assert.Equal(t, grpcStatus.Code(), testCase.ExpectedErrorCode)
-
 			if testContainerID == nil {
 				t.Fatalf("Error: %v", "Container ID is nil")
 			}
+			assert.Equal(t, ContainerExists(testContainerID.Id), true)
+			assert.Equal(t, grpcStatus.Code(), testCase.ExpectedErrorCode)
+
 			t.Logf("Start succeded: %v", testContainerID.Id)
 
 			response, err := client.Call(context.Background(), &pb.CallRequest{InstanceId: testContainerID, Params: &pb.Params{Data: testCase.CallPayload}})
@@ -130,14 +134,15 @@ func TestNormalExecution(t *testing.T) {
 			t.Logf("Call succeded: %v", response.Data)
 
 			//stop container
-
 			responseContainerID, err := client.Stop(context.Background(), testContainerID)
-
 			grpcStatus, ok = status.FromError(err)
-
 			if !ok {
 				t.Fatalf("Stop failed: %v", grpcStatus.Code())
 			}
+			//TOLERANCE
+			time.Sleep(time.Duration(*DOCKER_TOLERANCE) * time.Second)
+
+			assert.Equal(t, ContainerExists(testContainerID.Id), false)
 			assert.Equal(t, responseContainerID.Id, testContainerID.Id)
 
 			t.Logf("Stop succeded: %v", responseContainerID.Id)
@@ -222,6 +227,76 @@ func TestCallNonExistingContainer(t *testing.T) {
 	})
 }
 
+func TestStartNonLocalImages(t *testing.T) {
+
+	flag.Parse()
+	client, connection := BuildMockClient(t)
+	testCases := []testCase{
+		{
+			testName:          "starting non existing image",
+			ImageTag:          "asjkdasjk678132613278hadjskdasjk2314678432768ajbfakjfakhj",
+			ExpectedError:     true,
+			ExpectedErrorCode: codes.NotFound,
+		},
+		{
+			testName:          "starting image that needs to be pulled",
+			ImageTag:          "luccadibe/hyperfaas-functions:hello",
+			ExpectedError:     false,
+			ExpectedErrorCode: codes.OK,
+		},
+	}
+
+	for _, testCase := range testCases {
+
+		t.Run(testCase.testName, func(t *testing.T) {
+
+			//Check if the image already exists locally
+
+			opt := image.ListOptions{
+				Filters: filters.NewArgs(filters.KeyValuePair{Key: "reference", Value: testCase.ImageTag}),
+			}
+
+			localImages, err := runtime.Cli.ImageList(context.Background(), opt)
+
+			if err != nil {
+				t.Fatalf("Could not list local images: %v", err)
+			}
+
+			if len(localImages) > 0 {
+				t.Logf("Image already exists locally: %v", testCase.ImageTag)
+				//erase image
+				_, err := runtime.Cli.ImageRemove(context.Background(), localImages[0].ID, image.RemoveOptions{
+					Force: true,
+				})
+				if err != nil {
+					t.Fatalf("Could not remove local image: %v", err)
+				}
+			}
+
+			_, err = client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{}})
+
+			grpcStatus, ok := status.FromError(err)
+
+			if !ok {
+				t.Fatalf("gRPC Error: %v", grpcStatus.Code())
+			}
+
+			assert.Equal(t, grpcStatus.Code(), testCase.ExpectedErrorCode)
+
+			if testCase.ExpectedError {
+				t.Logf("Starting unknown image failed successfully: %v ", grpcStatus.Code())
+			} else {
+				t.Logf("Remote image was pulled and started successfully: %v ", testCase.ImageTag)
+			}
+
+		})
+	}
+
+	t.Cleanup(func() {
+		connection.Close()
+	})
+}
+
 /*
 func BuildMockClient(t *testing.T) (pb.ControllerClient, error) {
 	var err error
@@ -237,3 +312,9 @@ func BuildMockClient(t *testing.T) (pb.ControllerClient, error) {
 }
 
 */
+
+func ContainerExists(instanceID string) bool {
+	// Check if the image is present
+	_, err := runtime.Cli.ContainerInspect(context.Background(), instanceID)
+	return err == nil
+}

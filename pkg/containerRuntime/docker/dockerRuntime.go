@@ -64,7 +64,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 		reader, err := d.Cli.ImagePull(ctx, imageTag, image.PullOptions{})
 
 		if err != nil {
-			return "", err
+			return "", status.Errorf(codes.NotFound, err.Error())
 		}
 
 		io.Copy(os.Stdout, reader)
