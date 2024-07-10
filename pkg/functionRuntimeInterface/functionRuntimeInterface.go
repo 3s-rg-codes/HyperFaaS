@@ -72,14 +72,14 @@ func (f *Function) Ready(handler handler) {
 		//We ask for a new request whilst sending the response of the previous one
 		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, Id: f.response.Id})
 
-		log.Debug().Msgf("Received request: %v", p.Data)
-
-		f.request = &Request{p.Data, p.Id}
-
 		if err != nil {
 			log.Error().Msgf("failed to call: %v", err)
 			return
 		}
+
+		log.Debug().Msgf("Received request: %v", p.Data)
+
+		f.request = &Request{p.Data, p.Id}
 
 		f.response, err = handler(ctx, f.request)
 
