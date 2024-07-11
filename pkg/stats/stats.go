@@ -2,6 +2,8 @@ package stats
 
 import (
 	"sync"
+
+	"github.com/rs/zerolog/log"
 )
 
 type StatusUpdateQueue struct {
@@ -46,6 +48,7 @@ func (s *StatsManager) dequeue() *StatusUpdate {
 func (s *StatsManager) AddListener(nodeID string, listener chan StatusUpdate) {
 	s.mu.Lock()
 	//defer s.mu.Unlock()
+	log.Debug().Msgf("Adding listener for node %s", nodeID)
 
 	s.listeners[nodeID] = listener
 	s.mu.Unlock()
@@ -53,6 +56,8 @@ func (s *StatsManager) AddListener(nodeID string, listener chan StatusUpdate) {
 	// If there are any historical updates, send them first
 	if history, ok := s.history[nodeID]; ok {
 		go func() {
+
+			log.Debug().Msgf("Sending historical updates to node %s", nodeID)
 			for _, update := range history {
 				listener <- update
 			}
@@ -67,6 +72,13 @@ func (s *StatsManager) RemoveListener(nodeID string) {
 	defer s.mu.Unlock()
 
 	delete(s.listeners, nodeID)
+}
+
+func (s *StatsManager) GetListenerByID(nodeID string) chan StatusUpdate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.listeners[nodeID]
 }
 
 func (s *StatsManager) StoreHistory(nodeID string, updates []StatusUpdate) {

@@ -23,7 +23,8 @@ import (
 
 type DockerRuntime struct {
 	cr.ContainerRuntime
-	Cli *client.Client
+	Cli        *client.Client
+	autoRemove bool
 }
 
 const (
@@ -33,13 +34,13 @@ const (
 	tmpfsDest  = "/root/tmpfs"
 )
 
-func NewDockerRuntime() *DockerRuntime {
+func NewDockerRuntime(autoRemove bool) *DockerRuntime {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Error().Msgf("Could not create Docker client: %v", err)
 		return nil
 	}
-	return &DockerRuntime{Cli: cli}
+	return &DockerRuntime{Cli: cli, autoRemove: autoRemove}
 }
 
 // Start a container with the given image tag and configuration.
@@ -81,7 +82,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 			"50052/tcp": struct{}{},
 		},
 	}, &container.HostConfig{
-		AutoRemove:  true,
+		AutoRemove:  d.autoRemove,
 		NetworkMode: "host",
 		Mounts: []mount.Mount{
 			{

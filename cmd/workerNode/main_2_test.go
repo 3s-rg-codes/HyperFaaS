@@ -30,6 +30,7 @@ var ( //TODO: implement flags, do we need more?
 	requestedRuntime = flag.String("specifyRuntime", RUNTIME, "for now only docker, is also default")
 	//config                  = flag.String("config", "", "specify Config") TODO WIP, not implemented yet(?)
 	controllerServerAddress = flag.String("ServerAdress", SERVER_ADDRESS, "specify controller server adress")
+	autoRemove              = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
 	testController          controller.Controller
 	runtime                 *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
 )
@@ -74,7 +75,7 @@ func setup() {
 
 	switch *requestedRuntime {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime() //did not work otherwise, using container runtime interface
+		runtime = dockerRuntime.NewDockerRuntime(*autoRemove) //did not work otherwise, using container runtime interface
 	}
 
 	//Controller

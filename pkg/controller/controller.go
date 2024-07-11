@@ -7,7 +7,7 @@ import (
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
-	stats "github.com/3s-rg-codes/HyperFaaS/pkg/stats"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
@@ -120,11 +120,17 @@ func (s *Controller) Stop(ctx context.Context, req *pb.InstanceID) (*pb.Instance
 // Status Updates are defined in pkg/stats/statusUpdate.go
 func (s *Controller) Status(req *pb.StatusRequest, stream pb.Controller_StatusServer) error {
 
-	stats := make(chan stats.StatusUpdate)
+	//If a node is re-hitting the status endpoint, use the existing channel
+	statsChannel := s.statsManager.GetListenerByID(req.NodeID)
 
-	s.statsManager.AddListener(req.NodeID, stats)
+	if statsChannel != nil {
+		log.Debug().Msgf("Node %s is re-hitting the status endpoint", req.NodeID)
+	} else {
 
-	for data := range stats {
+		statsChannel = make(chan stats.StatusUpdate)
+		s.statsManager.AddListener(req.NodeID, statsChannel)
+	}
+	for data := range statsChannel {
 
 		if err := stream.Send(
 
