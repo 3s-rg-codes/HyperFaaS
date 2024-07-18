@@ -2,8 +2,8 @@ package caller
 
 import (
 	"context"
-	"errors"
 	"net"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 
@@ -13,52 +13,47 @@ import (
 
 type CallerServer struct {
 	pb.UnimplementedFunctionServiceServer
-	FunctionCalls     map[string]chan string
-	FunctionResponses map[string]chan string
+	FunctionCalls     FunctionCalls
+	FunctionResponses FunctionResponses
+}
+
+type FunctionCalls struct {
+	FcMap map[string]chan string
+	mu    sync.RWMutex
+}
+
+type FunctionResponses struct {
+	FrMap map[string]chan string
+	mu    sync.RWMutex
 }
 
 func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call, error) {
-
-	//Pass payload to the functionResponses channel IF it exists
+	// Pass payload to the functionResponses channel IF it exists
 	if !payload.FirstExecution {
-
 		log.Debug().Msgf("Passing response [%v] to channel with instance ID %s", payload.Data, payload.Id)
-
-		go func() {
-			s.FunctionResponses[payload.Id] <- payload.Data
-		}()
-
+		go s.PushResponseToChannel(payload.Id, payload.Data)
 	}
 
-	//Wait for the function to be called
+	// Wait for the function to be called
 	log.Debug().Msgf("Looking at channel for a call with instance ID %s", payload.Id)
-
-	call, ok := <-s.FunctionCalls[payload.Id]
-	if !ok {
-
-		log.Debug().Msgf("Channel for instance ID %s was closed while waiting for call", payload.Id)
-
-		return nil, errors.New("channel was closed")
-	}
-
+	call := <-s.ExtractCallFromChannel(payload.Id)
 	log.Debug().Msgf("Received call: %s", call)
 
-	//Send the call to the function instance
+	// Send the call to the function instance
 	return &pb.Call{Data: call, Id: payload.Id}, nil
-
 }
 
 func (s *CallerServer) Start() {
 	lis, err := net.Listen("tcp", ":50052")
 	if err != nil {
 		log.Error().Msgf("failed to listen: %v", err)
+		return
 	}
 
 	grpcServer := grpc.NewServer()
 	pb.RegisterFunctionServiceServer(grpcServer, s)
 
 	log.Debug().Msgf("Caller Server listening on %v", lis.Addr())
-
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Error().Msgf("CallerServer failed to serve: %v", err)
 	}
@@ -67,30 +62,75 @@ func (s *CallerServer) Start() {
 
 func New() CallerServer {
 	return CallerServer{
-		FunctionCalls:     make(map[string]chan string),
-		FunctionResponses: make(map[string]chan string),
+		FunctionCalls: FunctionCalls{
+			FcMap: make(map[string]chan string),
+		},
+		FunctionResponses: FunctionResponses{
+			FrMap: make(map[string]chan string),
+		},
 	}
 }
 
-// This function adds message channels for the given function ID
+// RegisterFunction adds message channels for the given function ID
 func (s *CallerServer) RegisterFunction(id string) {
+	s.FunctionCalls.mu.Lock()
+	defer s.FunctionCalls.mu.Unlock()
+	s.FunctionCalls.FcMap[id] = make(chan string)
 
-	s.FunctionCalls[id] = make(chan string)
-
-	s.FunctionResponses[id] = make(chan string)
+	s.FunctionResponses.mu.Lock()
+	defer s.FunctionResponses.mu.Unlock()
+	s.FunctionResponses.FrMap[id] = make(chan string)
 }
 
 func (s *CallerServer) UnregisterFunction(id string) {
-	//if the function is registered, close the channels and delete the function
-	if _, ok := s.FunctionCalls[id]; !ok {
-		return
+	s.FunctionCalls.mu.Lock()
+	if _, ok := s.FunctionCalls.FcMap[id]; ok {
+		close(s.FunctionCalls.FcMap[id])
+		delete(s.FunctionCalls.FcMap, id)
 	}
+	s.FunctionCalls.mu.Unlock()
 
-	close(s.FunctionCalls[id])
+	s.FunctionResponses.mu.Lock()
+	if _, ok := s.FunctionResponses.FrMap[id]; ok {
+		close(s.FunctionResponses.FrMap[id])
+		delete(s.FunctionResponses.FrMap, id)
+	}
+	s.FunctionResponses.mu.Unlock()
+}
 
-	close(s.FunctionResponses[id])
+func (s *CallerServer) PassCallToChannel(id string, call string) {
+	s.FunctionCalls.mu.RLock()
+	defer s.FunctionCalls.mu.RUnlock()
+	if ch, ok := s.FunctionCalls.FcMap[id]; ok {
+		ch <- call
+	}
+}
 
-	delete(s.FunctionCalls, id)
+func (s *CallerServer) ExtractCallFromChannel(id string) <-chan string {
+	s.FunctionCalls.mu.RLock()
+	ch, ok := s.FunctionCalls.FcMap[id]
+	s.FunctionCalls.mu.RUnlock()
 
-	delete(s.FunctionResponses, id)
+	if ok {
+		return ch
+	}
+	return nil
+}
+
+func (s *CallerServer) ExtractResponseFromChannel(id string) <-chan string {
+	s.FunctionResponses.mu.RLock()
+	ch, ok := s.FunctionResponses.FrMap[id]
+	s.FunctionResponses.mu.RUnlock()
+	if ok {
+		return ch
+	}
+	return nil
+}
+
+func (s *CallerServer) PushResponseToChannel(id string, response string) {
+	s.FunctionResponses.mu.RLock()
+	defer s.FunctionResponses.mu.RUnlock()
+	if ch, ok := s.FunctionResponses.FrMap[id]; ok {
+		ch <- response
+	}
 }

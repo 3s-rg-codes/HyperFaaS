@@ -103,7 +103,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 	if err := d.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return "", err
 	}
-	log.Printf("Started container with ID %s", resp.ID)
+
 	return resp.ID, nil
 }
 
