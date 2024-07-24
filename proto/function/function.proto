@@ -6,6 +6,7 @@ package function;
 message Payload {
     string data = 1;
     string id = 2;
+    bool firstExecution = 3;
 }
 message Call {
     string data = 1;

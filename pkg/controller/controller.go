@@ -7,7 +7,7 @@ import (
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
-	stats "github.com/3s-rg-codes/HyperFaaS/pkg/stats"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
@@ -24,14 +24,14 @@ type Controller struct {
 
 func (s *Controller) Start(ctx context.Context, req *pb.StartRequest) (*pb.InstanceID, error) {
 
-	log.Debug().Msgf("Starting container with image tag %s", req.ImageTag.Tag)
 	instanceId, err := s.runtime.Start(ctx, req.ImageTag.Tag, req.Config)
 
-	s.statsManager.Enqueue(stats.Event().Container(instanceId).Start())
-
 	if err != nil {
+		s.statsManager.Enqueue(stats.Event().Container(instanceId).Start().WithStatus("failed"))
 		return nil, err
+
 	}
+	s.statsManager.Enqueue(stats.Event().Container(instanceId).Start().WithStatus("success"))
 
 	s.callerServer.RegisterFunction(instanceId)
 
@@ -43,14 +43,14 @@ func (s *Controller) Start(ctx context.Context, req *pb.StartRequest) (*pb.Insta
 func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
 
 	// Check if the instance ID is present in the FunctionCalls map
-	if _, ok := s.callerServer.FunctionCalls[req.InstanceId.Id]; !ok {
+	if _, ok := s.callerServer.FunctionCalls.FcMap[req.InstanceId.Id]; !ok {
 		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
 		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
 	// Check if the instance ID is present in the FunctionResponses map
-	if _, ok := s.callerServer.FunctionResponses[req.InstanceId.Id]; !ok {
+	if _, ok := s.callerServer.FunctionResponses.FrMap[req.InstanceId.Id]; !ok {
 		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
 		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
 		return nil, status.Errorf(codes.NotFound, err.Error())
@@ -58,6 +58,7 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 
 	// Check if container crashes
 	containerCrashed := make(chan error)
+	//defer close(containerCrashed)
 
 	go func() {
 		containerCrashed <- s.runtime.NotifyCrash(ctx, req.InstanceId.Id)
@@ -67,17 +68,15 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 
 	go func() {
 		// Pass the call to the channel based on the instance ID
-		s.callerServer.FunctionCalls[req.InstanceId.Id] <- req.Params.Data
-
-		log.Debug().Msgf("Successfully passed call to channel of instance ID %s", req.InstanceId.Id)
-
-		s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call())
+		s.callerServer.PassCallToChannel(req.InstanceId.Id, req.Params.Data)
+		// stats
+		s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().WithStatus("success"))
 
 	}()
 
 	select {
 
-	case data := <-s.callerServer.FunctionResponses[req.InstanceId.Id]:
+	case data := <-s.callerServer.FunctionResponses.FrMap[req.InstanceId.Id]:
 
 		s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Response().WithStatus("success"))
 
@@ -120,11 +119,17 @@ func (s *Controller) Stop(ctx context.Context, req *pb.InstanceID) (*pb.Instance
 // Status Updates are defined in pkg/stats/statusUpdate.go
 func (s *Controller) Status(req *pb.StatusRequest, stream pb.Controller_StatusServer) error {
 
-	stats := make(chan stats.StatusUpdate)
+	//If a node is re-hitting the status endpoint, use the existing channel
+	statsChannel := s.statsManager.GetListenerByID(req.NodeID)
 
-	s.statsManager.AddListener(req.NodeID, stats)
+	if statsChannel != nil {
+		log.Debug().Msgf("Node %s is re-hitting the status endpoint", req.NodeID)
+	} else {
 
-	for data := range stats {
+		statsChannel = make(chan stats.StatusUpdate)
+		s.statsManager.AddListener(req.NodeID, statsChannel)
+	}
+	for data := range statsChannel {
 
 		if err := stream.Send(
 
