@@ -4,10 +4,12 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -57,33 +59,32 @@ func TestStats(t *testing.T) {
 			testCases:   testCases,
 			timeout:     12 * time.Second,
 		},
-		{
-			testName:    "streaming stats to three connected nodes",
-			disconnects: false,
-			reconnects:  false,
-			nodeIDs:     []string{"1", "2", "3"},
-			testCases:   testCases,
-			timeout:     12 * time.Second,
-		},
 		/*
 			{
-				testName:    "one node disconnects while streaming stats",
-				disconnects: true,
+				testName:    "streaming stats to three connected nodes",
+				disconnects: false,
 				reconnects:  false,
-				nodeIDs:     []string{"1"},
+				nodeIDs:     []string{"1", "2", "3"},
 				testCases:   testCases,
+				timeout:     12 * time.Second,
 			},
-			{
-				testName:    "one node disconnects and reconnects while streaming stats",
-				disconnects: true,
-				reconnects:  true,
-				nodeIDs:     []string{"1"},
-				testCases:   testCases,
-			},
+
+				{
+					testName:    "one node disconnects while streaming stats",
+					disconnects: true,
+					reconnects:  false,
+					nodeIDs:     []string{"1"},
+					testCases:   testCases,
+				},
+				{
+					testName:    "one node disconnects and reconnects while streaming stats",
+					disconnects: true,
+					reconnects:  true,
+					nodeIDs:     []string{"1"},
+					testCases:   testCases,
+				},
 		*/
 	}
-
-	var wg sync.WaitGroup
 
 	for _, statsTestCase := range statsTests {
 		t.Run(statsTestCase.testName, func(t *testing.T) {
@@ -92,7 +93,7 @@ func TestStats(t *testing.T) {
 			stopSignals := make(map[string]chan bool)
 
 			//recievedStatsPerNode is a map that stores the stats recieved by each node
-			recievedStatsPerNode := make(map[string][]pb.StatusUpdate)
+			recievedStatsPerNode := make(map[string][]*stats.StatusUpdate)
 			mu := sync.Mutex{}
 
 			go func() {
@@ -107,36 +108,42 @@ func TestStats(t *testing.T) {
 				}
 			}()
 
-			statsChan := make(chan *[]pb.StatusUpdate)
+			statsChan := make(chan *[]*stats.StatusUpdate)
 			// Do Workload concurrently
-			wg.Add(1)
+			wgNodes := sync.WaitGroup{}
+			wgWorkload := sync.WaitGroup{}
+
+			wgWorkload.Add(1)
 			go func(wg1 *sync.WaitGroup) {
-				defer wg1.Done()
 				expectedStats := doWorkload(t, statsTestCase)
-				log.Debug().Msg("DONE WORKLOAD")
+				log.Debug().Msg("Workload is done")
+				wg1.Done()
 				statsChan <- expectedStats
-			}(&wg)
+
+			}(&wgWorkload)
 
 			// We run one goroutine for each node
-			log.Debug().Msgf("%d", len(statsTestCase.nodeIDs))
+			log.Debug().Msgf("RUNNING WITH %d NODES", len(statsTestCase.nodeIDs))
 			for _, nodeID := range statsTestCase.nodeIDs {
 
 				log.Debug().Msgf("Adding 1 to the WaitGroupCounter: %s", nodeID)
 
-				wg.Add(1)
-				go func(nodeID string, wg1 *sync.WaitGroup) {
+				wgNodes.Add(1)
+
+				go func(nodeID string, wg1 *sync.WaitGroup, mutex *sync.Mutex) {
 					client, connection := BuildMockClient(t)
-					defer log.Debug().Msgf("Removing 1 from the WaitGroupCounter: %s", nodeID)
 					defer wg1.Done()
+					defer log.Debug().Msgf("Removing 1 from the WaitGroupCounter: %s", nodeID)
+
 					defer connection.Close()
 
-					recievedStats := []pb.StatusUpdate{}
+					recievedStatusUpdates := []*stats.StatusUpdate{}
 
 					//After the node has listened to the stream, we add the stats to the map
 					defer func() {
-						mu.Lock()
-						recievedStatsPerNode[nodeID] = recievedStats
-						mu.Unlock()
+						mutex.Lock()
+						recievedStatsPerNode[nodeID] = recievedStatusUpdates
+						mutex.Unlock()
 					}()
 
 					ctx, cancel := context.WithTimeout(context.Background(), statsTestCase.timeout)
@@ -163,19 +170,18 @@ func TestStats(t *testing.T) {
 							}
 							if err != nil {
 								log.Error().Msgf("Error: %v", err)
-								log.Debug().Msg("RETURNING ")
 								return
 							}
 
 							// Copy the stats to a new struct to avoid copying mutex
-							statCopy := &pb.StatusUpdate{
-								InstanceId: stat.InstanceId,
+							statCopy := &stats.StatusUpdate{
+								InstanceID: stat.InstanceId,
 								Type:       stat.Type,
 								Event:      stat.Event,
 								Status:     stat.Status,
 							}
 
-							recievedStats = append(recievedStats, *statCopy)
+							recievedStatusUpdates = append(recievedStatusUpdates, statCopy)
 
 							//log.Debug().Msgf("State of stats (Node: %s): %v", nodeID, recievedStats)
 						}
@@ -184,29 +190,37 @@ func TestStats(t *testing.T) {
 							break
 						}
 					}
-				}(nodeID, &wg)
+				}(nodeID, &wgNodes, &mu)
 			}
 			//time.Sleep(1 * time.Second)
 			log.Debug().Msg("Waiting for all goroutines to finish")
-			wg.Wait()
-			log.Debug().Msg("AAAAAAAAAAAAAAAA")
-			expectedStats := <-statsChan
+			wgWorkload.Wait()
+			expected := <-statsChan
+			wgNodes.Wait()
 
 			// We check if the stats recieved by each node contains all of the stats that were expected
 			for _, nodeID := range statsTestCase.nodeIDs {
 
-				rS := recievedStatsPerNode[nodeID]
+				actual := recievedStatsPerNode[nodeID]
+				// First, check if the lengths of the arrays are equal
+				if len(*expected) != len(actual) {
+					t.Error("lengths of expected and actual arrays are not equal")
+				}
 
-				nodeRecievedAllStats := containsAll(rS, *expectedStats)
+				// Create a map to count occurrences of each StatusUpdate in the expected array
+				expectedCount := make(map[stats.StatusUpdate]int)
+				for _, e := range *expected {
+					expectedCount[*e]++
+				}
 
-				/*
-					if !t {
-						log.Error().Msgf("Stats not equal (Node: %s)", nodeID)
-						log.Error().Msgf("Expected: %v", *expectedStats)
-						log.Error().Msgf("Recieved: %v", rS)
-					}*/
-				//
-				assert.True(t, nodeRecievedAllStats, "Stats not equal (Node: %s)", nodeID)
+				// Create a map to count occurrences of each StatusUpdate in the actual array
+				actualCount := make(map[stats.StatusUpdate]int)
+				for _, a := range actual {
+					actualCount[*a]++
+				}
+				result := reflect.DeepEqual(expectedCount, actualCount)
+
+				assert.True(t, result, "The stats recieved by node %s are not equal to the expected stats", nodeID)
 			}
 		})
 
@@ -232,11 +246,11 @@ func TestStats(t *testing.T) {
 	    "status": "success"
 		}
 */
-func doWorkload(t *testing.T, statsTestCase statsTest) *[]pb.StatusUpdate {
+func doWorkload(t *testing.T, statsTestCase statsTest) *[]*stats.StatusUpdate {
 
 	client, connection := BuildMockClient(t)
 
-	stats := []pb.StatusUpdate{}
+	statusUpdates := []*stats.StatusUpdate{}
 
 	// Wait for all of the nodes to be connected to the stream
 	time.Sleep(4 * time.Second)
@@ -248,56 +262,55 @@ func doWorkload(t *testing.T, statsTestCase statsTest) *[]pb.StatusUpdate {
 		// Depending on the test case, the container may not start
 		if testCase.ExpectedError && err != nil {
 			// add an error event to the stats
-			stats = append(stats, pb.StatusUpdate{InstanceId: testContainerID.Id, Type: "container", Event: "start", Status: "error"})
+			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "start", Status: "error"})
 		} else {
 			// add a success event to the stats
-			stats = append(stats, pb.StatusUpdate{InstanceId: testContainerID.Id, Type: "container", Event: "start", Status: "success"})
+			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "start", Status: "success"})
 		}
 
 		response, err := client.Call(context.Background(), &pb.CallRequest{InstanceId: testContainerID, Params: &pb.Params{Data: testCase.CallPayload}})
 
 		if testCase.ExpectedError && err != nil {
 			// add an error event to the stats
-			stats = append(stats, pb.StatusUpdate{InstanceId: testContainerID.Id, Type: "container", Event: "call", Status: "error"})
+			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "call", Status: "error"})
 		} else {
 			// add a success event to the stats
-			stats = append(stats, pb.StatusUpdate{InstanceId: testContainerID.Id, Type: "container", Event: "call", Status: "success"})
+			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "call", Status: "success"})
 		}
 		//If there was a response, there is a container response event
 		if testCase.ExpectsResponse && response != nil {
-			stats = append(stats, pb.StatusUpdate{InstanceId: testContainerID.Id, Type: "container", Event: "response", Status: "success"})
+			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "response", Status: "success"})
 		}
 
 		responseContainerID, err := client.Stop(context.Background(), testContainerID)
 
 		if testCase.ExpectedError && err != nil {
 			// add an error event to the stats
-			stats = append(stats, pb.StatusUpdate{InstanceId: responseContainerID.Id, Type: "container", Event: "stop", Status: "error"})
+			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "error"})
 		} else if responseContainerID != nil && responseContainerID.Id == testContainerID.Id {
 			// add a success event to the stats
-			stats = append(stats, pb.StatusUpdate{InstanceId: responseContainerID.Id, Type: "container", Event: "stop", Status: "success"})
+			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "success"})
 		}
-
 	}
 
 	t.Cleanup(func() {
 		connection.Close()
 	})
-	return &stats
+	return &statusUpdates
 }
 
-func containsAll(haystack, needle []pb.StatusUpdate) bool {
-	for _, n := range needle {
-		found := false
-		for _, h := range haystack {
-			if h.InstanceId == n.InstanceId && h.Type == n.Type && h.Event == n.Event && h.Status == n.Status {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
+// Using assert.EqualExportedValues , this function checks if two arrays of structs have the same number of elements, and that these elements have the same values.
+// The order of the elements does not matter.
+func EqualStatusUpdates(t *testing.T, expected, actual []*stats.StatusUpdate) bool {
+
+	if len(expected) != len(actual) {
+		return false
+	}
+
+	t.Helper()
+
+	for i := range expected {
+		assert.EqualExportedValues(t, expected[i], actual[i])
 	}
 	return true
 }

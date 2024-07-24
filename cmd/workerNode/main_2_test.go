@@ -15,6 +15,8 @@ import (
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -77,6 +79,9 @@ func setup() {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime(*autoRemove) //did not work otherwise, using container runtime interface
 	}
+
+	//Log setup
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).Level(zerolog.DebugLevel).With().Caller().Logger()
 
 	//Controller
 	testController = controller.New(runtime)

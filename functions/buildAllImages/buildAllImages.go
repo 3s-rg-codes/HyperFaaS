@@ -1,16 +1,39 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+)
+
+var (
+	// imageName
+	imageName = flag.String("imageName", "hello", "Name of the image to build - 'all' for all images")
 )
 
 func main() {
+	flag.Parse()
+
+	localOs := runtime.GOOS
+	var callerServerAddress string
+	switch localOs {
+	case "windows":
+		callerServerAddress = "localhost"
+	case "linux":
+		callerServerAddress = "localhost"
+	case "darwin":
+		callerServerAddress = "host.docker.internal"
+	default:
+		callerServerAddress = "127.0.0.1"
+	}
+
 	functions := []string{"hello", "echo", "sleep", "crash"}
-	dockerfile := `FROM alpine:latest
+	dockerfile := fmt.Sprintf(`FROM alpine:latest
 
 WORKDIR /root/
 
@@ -25,20 +48,28 @@ RUN chmod +x set_env.sh
 
 # Expose port 50052 to the outside world
 EXPOSE 50052
-
+ENV CALLER_SERVER_ADDRESS=%s
 # Command to run the executable
 CMD ["sh", "-c" ,"source set_env.sh && echo $CONTAINER_ID && ./handler"]
-`
+`, callerServerAddress)
 
-	// Build Go executables for each function
-	for _, fn := range functions {
-		buildExecutable(fn)
+	if *imageName != "all" {
+		buildExecutable(*imageName)
+		buildDockerImage(*imageName, dockerfile)
+		return
+	} else {
+		// Build Go executables for each function
+		for _, fn := range functions {
+			buildExecutable(fn)
+		}
+
+		// Build Docker images for each function
+		for _, fn := range functions {
+			buildDockerImage(fn, dockerfile)
+		}
+
 	}
 
-	// Build Docker images for each function
-	for _, fn := range functions {
-		buildDockerImage(fn, dockerfile)
-	}
 }
 
 func buildExecutable(fn string) {
