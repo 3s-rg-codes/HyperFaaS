@@ -17,7 +17,8 @@ type WorkerConfig struct {
 		Id string `env:"WORKER_ID"`
 	}
 	Runtime struct {
-		Type string `env:"RUNTIME_TYPE"`
+		Type       string `env:"RUNTIME_TYPE"`
+		AutoRemove bool   `env:"RUNTIME_AUTOREMOVE"`
 	}
 
 	Log struct {
@@ -31,9 +32,10 @@ func parseArgs() (wc WorkerConfig) {
 	flag.StringVar(&(wc.General.Id), "id", "", "Worker ID. (Env: WORKER_ID)")
 
 	flag.StringVar(&(wc.Runtime.Type), "runtime", "", "Container runtime type. (Env: RUNTIME_TYPE)")
-
+	flag.BoolVar(&(wc.Runtime.AutoRemove), "auto-remove", false, "Auto remove containers. (Env: RUNTIME_AUTOREMOVE)")
 	flag.StringVar(&(wc.Log.Level), "log-level", "", "Log level (Env: LOG_LEVEL)")
 	flag.StringVar(&(wc.Log.Handler), "log-handler", "", "Log handler (Env: LOG_HANDLER)")
+
 	flag.Parse()
 	return
 }
@@ -85,7 +87,7 @@ func main() {
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime()
+		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove)
 	default:
 		log.Error().Msg("No runtime specified")
 	}

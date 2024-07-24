@@ -63,14 +63,16 @@ func (f *Function) Ready(handler handler) {
 	//Set the id in the response to the id of the container
 	f.response.Id = f.id
 
+	defer log.Info().Msgf("Closing connection.")
+	first := true
+
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(f.timeout)*time.Second)
-
-		defer log.Info().Msgf("Closing connection.")
 		defer cancel()
 
 		//We ask for a new request whilst sending the response of the previous one
-		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, Id: f.response.Id})
+		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, Id: f.response.Id, FirstExecution: first})
+		first = false
 
 		if err != nil {
 			log.Error().Msgf("failed to call: %v", err)

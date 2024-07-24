@@ -17,7 +17,7 @@ func BuildMockClient(t *testing.T) (pb.ControllerClient, *grpc.ClientConn) {
 		t.Errorf("Could not start client for testing purposes: %v.", err)
 		return nil, nil
 	}
-	t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
+	//t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
 	testClient := pb.NewControllerClient(connection)
 
 	return testClient, connection
