@@ -3,6 +3,8 @@ package functionRuntimeInterface
 import (
 	"bufio"
 	"context"
+	"fmt"
+	"github.com/rs/zerolog/log"
 	"os"
 	"strings"
 	"time"
@@ -34,9 +36,14 @@ type Function struct {
 }
 
 func New(timeout int) *Function {
+	address, ok := os.LookupEnv("CALLER_SERVER_ADDRESS")
+	if !ok {
+		log.Error().Msgf("Environment variable CALLER_SERVER_ADDRESS not found")
+	}
+
 	return &Function{
 		timeout:  timeout,
-		address:  "localhost:50052",
+		address:  fmt.Sprint(address, ":50052"),
 		request:  &Request{},
 		response: &Response{},
 		id:       getID(),
