@@ -40,7 +40,7 @@ var ( //TODO: implement flags, do we need more?
 // image tag array
 var imageTags = []string{"hello:latest", "crash:latest", "echo:latest", "sleep:latest"}
 
-type testCase struct {
+type controllerWorkload struct {
 	testName          string
 	ImageTag          string
 	ExpectedError     bool
@@ -104,7 +104,7 @@ func TestNormalExecution(t *testing.T) {
 
 	flag.Parse()
 	client, connection := BuildMockClient(t)
-	testCases := []testCase{
+	testCases := []controllerWorkload{
 		{
 			testName:          "normal execution of hello image",
 			ImageTag:          imageTags[0],
@@ -181,7 +181,7 @@ func TestStopNonExistingContainer(t *testing.T) {
 
 	flag.Parse()
 	client, connection := BuildMockClient(t)
-	testCases := []testCase{
+	testCases := []controllerWorkload{
 		{
 			testName:          "stopping non existing container",
 			InstanceID:        "nonExistingContainer",
@@ -217,7 +217,7 @@ func TestCallNonExistingContainer(t *testing.T) {
 
 	flag.Parse()
 	client, connection := BuildMockClient(t)
-	testCases := []testCase{
+	testCases := []controllerWorkload{
 		{
 			testName:          "calling non existing container",
 			InstanceID:        "nonExistingContainer",
@@ -252,7 +252,7 @@ func TestStartNonLocalImages(t *testing.T) {
 
 	flag.Parse()
 	client, connection := BuildMockClient(t)
-	testCases := []testCase{
+	testCases := []controllerWorkload{
 		{
 			testName:          "starting non existing image",
 			ImageTag:          "asjkdasjk678132613278hadjskdasjk2314678432768ajbfakjfakhj",
