@@ -18,31 +18,28 @@ import (
 )
 
 type statsTest struct {
-	testName    string
-	disconnects bool
-	reconnects  bool
-	nodeIDs     []string
-	testCases   []testCase
-	timeout     time.Duration
+	testName            string
+	disconnects         bool
+	reconnects          bool
+	nodeIDs             []string
+	controllerWorkloads []controllerWorkload
+	timeout             time.Duration
 }
 
-var imageTags2 = []string{"luccadibe/hyperfaas-functions:hello", "luccadibe/hyperfaas-functions:echo"}
+var workloadImageTags = []string{"hello:latest", "echo:latest"}
 
-//Somewow using wg.Wait() is not working as expected,  IT BLOCKS forever
-//Just waiting 15 seconds does work
-// I have no idea why
-// The goroutines do finish
-// If you try to add an additional waitgroup.Done() it will panic
-// What?
-
+// Tests that stats are correctly streamed to all listening nodes. Nodes may disconnect and reconnect.
+// During that disconnect, the stats should not be lost, but should be cached and sent to the node when it reconnects.
+// In the end the stats received by each node should be equal to the expected stats.
+// The expected stats are determined by the doWorkload function  based on the controllerWorkloads array.
 func TestStats(t *testing.T) {
 	//setup()
 	//defer teardown()
 
-	testCases := []testCase{
+	controllerWorkloads := []controllerWorkload{
 		{
 			testName:          "normal execution of hello image",
-			ImageTag:          imageTags2[0],
+			ImageTag:          workloadImageTags[0],
 			ExpectedError:     false,
 			ExpectsResponse:   true,
 			ExpectedErrorCode: codes.OK,
@@ -52,37 +49,43 @@ func TestStats(t *testing.T) {
 
 	statsTests := []statsTest{
 		{
-			testName:    "streaming stats to one connected node",
-			disconnects: true,
-			reconnects:  false,
-			nodeIDs:     []string{"1"},
-			testCases:   testCases,
-			timeout:     12 * time.Second,
+			testName:            "streaming stats to one connected node",
+			disconnects:         true,
+			reconnects:          false,
+			nodeIDs:             []string{"1"},
+			controllerWorkloads: controllerWorkloads,
+			timeout:             12 * time.Second,
 		},
 		/*
-			{
-				testName:    "streaming stats to three connected nodes",
-				disconnects: false,
-				reconnects:  false,
-				nodeIDs:     []string{"1", "2", "3"},
-				testCases:   testCases,
-				timeout:     12 * time.Second,
-			},
-
 				{
-					testName:    "one node disconnects while streaming stats",
-					disconnects: true,
+					testName:    "streaming stats to three connected nodes",
+					disconnects: false,
 					reconnects:  false,
-					nodeIDs:     []string{"1"},
-					testCases:   testCases,
+					nodeIDs:     []string{"1", "2", "3"},
+					controllerWorkloads
+			:   controllerWorkloads
+			,
+					timeout:     12 * time.Second,
 				},
-				{
-					testName:    "one node disconnects and reconnects while streaming stats",
-					disconnects: true,
-					reconnects:  true,
-					nodeIDs:     []string{"1"},
-					testCases:   testCases,
-				},
+
+					{
+						testName:    "one node disconnects while streaming stats",
+						disconnects: true,
+						reconnects:  false,
+						nodeIDs:     []string{"1"},
+						controllerWorkloads
+				:   controllerWorkloads
+				,
+					},
+					{
+						testName:    "one node disconnects and reconnects while streaming stats",
+						disconnects: true,
+						reconnects:  true,
+						nodeIDs:     []string{"1"},
+						controllerWorkloads
+				:   controllerWorkloads
+				,
+					},
 		*/
 	}
 
@@ -255,7 +258,7 @@ func doWorkload(t *testing.T, statsTestCase statsTest) *[]*stats.StatusUpdate {
 	// Wait for all of the nodes to be connected to the stream
 	time.Sleep(4 * time.Second)
 
-	for _, testCase := range statsTestCase.testCases {
+	for _, testCase := range statsTestCase.controllerWorkloads {
 
 		testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{}})
 
