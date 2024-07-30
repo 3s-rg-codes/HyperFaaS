@@ -36,7 +36,7 @@ type Function struct {
 func New(timeout int) *Function {
 	return &Function{
 		timeout:  timeout,
-		address:  "localhost:50052",
+		address:  "host.docker.internal:50052",
 		request:  &Request{},
 		response: &Response{},
 		id:       getID(),

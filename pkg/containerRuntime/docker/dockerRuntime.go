@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"time"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
@@ -16,6 +18,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -26,11 +29,30 @@ type DockerRuntime struct {
 	Cli *client.Client
 }
 
+func CreateFilePath() string {
+	id := uuid.New()
+	timeNow := time.Now().Format("20060102150405")
+	filename := timeNow + "_" + id.String()[:3]
+
+	path := "../dockerLogs/" + filename
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		fmt.Println("Error creating directory:", err)
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		fmt.Println("Error creating file:", err)
+	} else {
+		fmt.Println("Created file:", path)
+	}
+	defer file.Close()
+	return path
+}
+
 const (
 	//This docker volume must be created before running the worker
-	volumeName = "fn-logs"
-	bindDest   = "/root/logs"
-	tmpfsDest  = "/root/tmpfs"
+	bindDest  = "/root/logs"
+	tmpfsDest = "/root/tmpfs"
 )
 
 func NewDockerRuntime() *DockerRuntime {
@@ -85,8 +107,8 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 		NetworkMode: "host",
 		Mounts: []mount.Mount{
 			{
-				Type:   mount.TypeVolume,
-				Source: volumeName,
+				Type:   mount.TypeBind,
+				Source: CreateFilePath(),
 				Target: bindDest,
 			},
 		},

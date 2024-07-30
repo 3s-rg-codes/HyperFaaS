@@ -12,3 +12,8 @@ default:
 proto:
     protoc --proto_path=proto "proto/function/function.proto" --go_out=proto --go_opt=paths=source_relative --go_grpc_out=proto --go_grpc_opt=paths=source_relative
     protoc --proto_path=proto "proto/controller/controller.proto" --go_out=proto --go_opt=paths=source_relative --go_grpc_out=proto --go_grpc_opt=paths=source_relative
+
+clean-dockerLogs:
+        echo "Deleting from yesterday in folder 'dockerLogs'"; \
+        rm -f dockerLogs/2024-07-26*;
+        echo "Deleted"; \
