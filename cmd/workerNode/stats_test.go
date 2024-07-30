@@ -33,10 +33,7 @@ var workloadImageTags = []string{"hello:latest", "echo:latest"}
 // In the end the stats received by each node should be equal to the expected stats.
 // The expected stats are determined by the doWorkload function  based on the controllerWorkloads array.
 func TestStats(t *testing.T) {
-	//setup()
-	//defer teardown()
 
-	controllerWorkloads := []controllerWorkload{
 	controllerWorkloads := []controllerWorkload{
 		{
 			testName:          "normal execution of hello image",
