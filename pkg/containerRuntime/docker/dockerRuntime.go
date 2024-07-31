@@ -18,7 +18,6 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -30,10 +29,9 @@ type DockerRuntime struct {
 	autoRemove bool
 }
 
-func CreateFilePath() string {
-	id := uuid.New()
-	timeNow := time.Now().Format("20060102150405")
-	filename := timeNow + "_" + id.String()[:3]
+func CreateFilePath(imageTag string) string {
+	timeNow := time.Now().Format("20060102150405.000")
+	filename := fmt.Sprint(timeNow, "-", imageTag)
 
 	path := "../dockerLogs/" + filename
 	dir := filepath.Dir(path)
@@ -109,7 +107,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 		Mounts: []mount.Mount{
 			{
 				Type:   mount.TypeBind,
-				Source: CreateFilePath(),
+				Source: CreateFilePath(imageTag),
 				Target: bindDest,
 			},
 		},
