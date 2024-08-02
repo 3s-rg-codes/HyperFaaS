@@ -9,11 +9,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 var (
 	// imageName
-	imageName = flag.String("imageName", "hello", "Name of the image to build - 'all' for all images")
+	imageNames = flag.String("imageNames", "hello", "Name of the images to build seperated by ',' - 'all' for all images")
 )
 
 func main() {
@@ -53,9 +54,14 @@ ENV CALLER_SERVER_ADDRESS=%s
 CMD ["sh", "-c" ,"source set_env.sh && echo $CONTAINER_ID && ./handler"]
 `, callerServerAddress)
 
-	if *imageName != "all" {
-		buildExecutable(*imageName)
-		buildDockerImage(*imageName, dockerfile)
+	if *imageNames != "all" {
+
+		names := strings.Split(*imageNames, ",")
+
+		for _, name := range names {
+			buildExecutable(name)
+			buildDockerImage(name, dockerfile)
+		}
 		return
 	} else {
 		// Build Go executables for each function
