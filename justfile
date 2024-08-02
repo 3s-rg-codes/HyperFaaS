@@ -8,14 +8,9 @@ set shell := ["bash", "-c"]
 default:
   @just --list --unsorted
 
-# install  proto and protoc-gen-go
-setup:
-    @echo "Installing protoc"
-    sudo apt install -y protobuf-compiler
-    @echo "Installing protoc-gen-go"
-    go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
-    export PATH="$PATH:$(go env GOPATH)/bin"
+############################
+# Building Stuff
+############################
 
 # generate the proto files
 proto:
@@ -24,23 +19,52 @@ proto:
     protoc --proto_path=proto "proto/controller/controller.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
 
 # build the worker binary
-build:
+build-worker:
     go build -o bin/ cmd/workerNode/main.go
 
+# build all go functions
+build-functions-go:
+    find ./functions/go/*/ -maxdepth 0 -type d | xargs -I {} bash -c 'just build-function-go $(basename "{}")'
 
-defaultImages := "all"
-# build the docker images of the implemented functionss
-buildImage image_name=defaultImages:
-    go run functions/images/buildImages.go  --imagName {{image_name}}
 
-# run the worker with default configurations
-run: 
+# build a single go function
+build-function-go function_name:
+    # Pro Tip: you can add `--progress=plain` as argument to build, and then the full output of your build will be shown.
+    docker build -t hyperfaas-{{function_name}} -f functions/go/Dockerfile --build-arg FUNCTION_NAME="{{function_name}}" .
+
+# build all
+build: build-functions-go build-worker
+
+############################
+# Running Stuff
+############################
+
+# run the worker with default configurations. Make sure to run just build every time you change the code
+# Alternatively, run just dev if you want to make sure you are always running the latest code
+start:
     @echo "Running the worker"
     ./bin/main -id="a" -runtime="docker" -log-level="debug" -log-handler="dev" -auto-remove="true"
 
-# run the tests 
-test test_name="*":
-    go test -run {{test_name}} ./cmd/workerNode/...
+# generates proto, builds binary, builds docker go and runs the workser
+dev: build start
 
-# generates proto, builds binary, builds docker images and runs the workser
-dev: setup proto build buildImage run
+############################
+# Testing Stuff
+############################
+
+# run the tests
+test-all:
+    go test -v ./...
+
+# run a test with a specific test name
+test name:
+    go test -run {{name}} ./...
+
+############################
+# Misc. Stuff
+############################
+# Remove all docker containers/images, and all logs
+clean:
+    rm -rf functions/logs/*
+    docker ps -a | grep hyperfaas- | awk '{print $1}' | xargs docker rm -f
+    docker images | grep hyperfaas- | awk '{print $3}' | xargs docker rmi -f

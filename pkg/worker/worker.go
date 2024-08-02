@@ -16,7 +16,7 @@ type Worker struct {
 	Address string
 	Runtime string
 
-	Controller controller.Controller
+	Controller *controller.Controller
 }
 
 func New(config *Config) (w Worker) {
@@ -25,6 +25,6 @@ func New(config *Config) (w Worker) {
 		Id:         config.Id,
 		Address:    config.Address,
 		Runtime:    config.Runtime,
-		Controller: config.Controller,
+		Controller: &config.Controller,
 	}
 }

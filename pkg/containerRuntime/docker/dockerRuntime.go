@@ -3,8 +3,11 @@ package dockerRuntime
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"os"
+	"regexp"
+	"strings"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
@@ -25,13 +28,18 @@ type DockerRuntime struct {
 	cr.ContainerRuntime
 	Cli        *client.Client
 	autoRemove bool
+	outputFolderAbs string
 }
 
 const (
-	//This docker volume must be created before running the worker
-	volumeName = "fn-logs"
-	bindDest   = "/root/logs"
-	tmpfsDest  = "/root/tmpfs"
+	logsOutputDir = "functions/logs/" // Relative to project root
+	containerPrefix = "hyperfaas-"
+	imagePrefix = "hyperfaas-"
+)
+
+var (
+	// Regex that matches all chars that are not valid in a container name
+	forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 )
 
 func NewDockerRuntime(autoRemove bool) *DockerRuntime {
@@ -40,17 +48,35 @@ func NewDockerRuntime(autoRemove bool) *DockerRuntime {
 		log.Error().Msgf("Could not create Docker client: %v", err)
 		return nil
 	}
-	return &DockerRuntime{Cli: cli, autoRemove: autoRemove}
+
+	// Figure out where to put the logs
+	var outputFolderAbs string
+	// Get the current path
+	currentWd, _ := os.Getwd()
+	log.Info().Msgf("Current path: %s", currentWd)
+	// If the current path ends with /cmd/workerNode, remove it from the path to get the base path of the project
+	if strings.HasSuffix(currentWd, "cmd/workerNode") {
+		outputFolderAbs = currentWd[:len(currentWd)-14] + logsOutputDir
+	} else {
+		outputFolderAbs = currentWd + "/" + logsOutputDir
+	}
+	log.Info().Msgf("Logs directory: %s", outputFolderAbs)
+
+
+	// Create the logs directory
+	if _, err := os.Stat(logsOutputDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(logsOutputDir, 0755); err != nil {
+			log.Error().Msgf("Could not create logs directory: %v", err)
+			return nil
+		}
+	}
+
+	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs}
 }
 
 // Start a container with the given image tag and configuration.
 func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.Config) (string, error) {
-	// Pull the image
-
-	//Check if the image already exists
-	// Check if the image is present
-	//TODO: make this simpler and cleaner
-
+	// Start by checking if the image exists locally already
 	imageListArgs := filters.NewArgs()
 	imageListArgs.Add("reference", imageTag)
 	images, err := d.Cli.ImageList(ctx, image.ListOptions{Filters: imageListArgs})
@@ -60,22 +86,30 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 	}
 
 	if len(images) == 0 {
-		// Pull the image
+		// Pull the image from docker hub if necessary.
 		log.Printf("Pulling image %s", imageTag)
 		reader, err := d.Cli.ImagePull(ctx, imageTag, image.PullOptions{})
 
 		if err != nil {
+			log.Err(err).Msgf("Could not pull image %s", imageTag)
 			return "", status.Errorf(codes.NotFound, err.Error())
 		}
 
-		io.Copy(os.Stdout, reader)
-		reader.Close()
+		_, _ = io.Copy(os.Stdout, reader)
+		_ = reader.Close()
 
-		log.Printf("Pulled image %s", imageTag)
+		log.Info().Msgf("Pulled image %s", imageTag)
 	}
 
 	// Create the container
-	log.Printf("Creating container with image tag %s", imageTag)
+	log.Debug().Msgf("Creating container with image tag %s", imageTag)
+	containerName := containerPrefix + imageTag + "-" + uuid.New().String()[:8]
+	// only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed in the container name, just remove all forbidden characters
+	containerName = forbiddenChars.ReplaceAllString(containerName, "")
+	if err != nil {
+		log.Err(err).Msgf("Could not get absolute path of logs directory: %v", err)
+		return "", err
+	}
 	resp, err := d.Cli.ContainerCreate(ctx, &container.Config{
 		Image: imageTag,
 		ExposedPorts: nat.PortSet{
@@ -86,20 +120,18 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 		NetworkMode: "host",
 		Mounts: []mount.Mount{
 			{
-				Type:   mount.TypeVolume,
-				Source: volumeName,
-				Target: bindDest,
+				Type:   mount.TypeBind,
+				Source: d.outputFolderAbs,
+				Target: "/logs/",
 			},
 		},
-	}, &network.NetworkingConfig{}, nil, "")
+	}, &network.NetworkingConfig{}, nil, containerName)
 
 	if err != nil {
+		log.Err(err).Msgf("Could not create container with image tag %s", imageTag)
 		return "", err
 	}
-	log.Printf("Created container with ID %s , Warnings: %v", resp.ID, resp.Warnings)
-
-	// Start the container
-	log.Printf("Starting container with ID %s", resp.ID)
+	log.Debug().Msgf("Created and now Starting container with ID %s , Warnings: %v", resp.ID, resp.Warnings)
 	if err := d.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return "", err
 	}
@@ -140,10 +172,8 @@ func (d *DockerRuntime) Status(req *pb.StatusRequest, stream pb.Controller_Statu
 	return nil
 }
 
+// NotifyCrash notifies the caller if the container crashes. It hangs forever until the container either returns (where it returns nil) or crashes (where it returns an error)
 func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) error {
-	//Print all events to the log
-	//Events are this d.Cli.Events(ctx,	events.ListOptions{})
-	//eventsChan, errChan := d.Cli.Events(ctx, events.ListOptions{})
 	opt := events.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId}),
 	}
@@ -154,32 +184,25 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) erro
 			if !ok {
 				eventsChan = nil
 			} else {
-				log.Error().Msgf("DOCKEREVENT - Event instance ID %v: %s\n", instanceId, event.Status)
-				if event.Status == "die" {
-					return fmt.Errorf("Container died")
+				log.Error().Msgf("DOCKEREVENT - Event instance ID %v: %s\n", instanceId, event.Action)
+				if event.Action == "die" {
+					return fmt.Errorf("container died")
 				}
 			}
 		//When a function call is successful, Docker events  retruns an annoying error that we can ignore.
 		//WARNING: Maybe there can be other errors that we should not ignore.
 		//TODO: Find a better way to handle this
-		case err, ok := <-errChan:
+		case _, ok := <-errChan:
 			if !ok {
 				errChan = nil
-			} else {
-				// Ignore the error
-				//log.Error().Msgf("Error: %v\n", err)
-				log.Debug().Str("instanceId", instanceId).Err(err).Msg("Ignoring error from Docker events")
 			}
 		case <-ctx.Done():
-			log.Debug().Msg("Context cancelled, exiting")
 			return nil
 		}
 
-		// Exit the loop if both channels are closed
+		// return if both channels are closed
 		if eventsChan == nil && errChan == nil {
-			break
+			return nil
 		}
 	}
-
-	return nil
 }
