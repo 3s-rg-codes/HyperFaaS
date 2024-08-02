@@ -1,18 +1,17 @@
 # HyperFaaS Functions
 
-This directory contains different images of simple functions for testing purposes.
-To build and use the images, follow the instructions for the correct container runtime.
+This directory contains different images of simple functions.
+Currently, if you want to create a new function, just copy-paste one of the existing functions and modify it.
 
-## Docker Images
+As there is no trivial way to build the containers, run/look at the justfile for instructions on how to build them.
 
-Each folder containing a Dockerfile is a different Docker image that you can build. We build a go executable and pack it inside a Docker image to run it.
+# Go Functions
 
-To build the docker image, run `docker image build -t <tag:version> .` in the respective directory.
+Every subfolder of the `go` directory is a separate function. You can generate the image by running `just build-function-go <function-name>`.
 
-Example:
+## How it works internally
 
-<div style="color: grey;">
-<pre>
-docker image build -t hello:latest .
-</pre>
-</div>
+The Go functions are part of the main HyperFaaS module (for our convenience when developing). This means that building the images is not trivial, however.
+Every function needs to have a `main.go` file with the default main function. Everything else in the corresponding function directory will be copied as well during the build process.
+
+If you want to understand how 

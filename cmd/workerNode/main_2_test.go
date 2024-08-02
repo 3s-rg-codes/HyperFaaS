@@ -38,7 +38,7 @@ var ( //TODO: implement flags, do we need more?
 )
 
 // image tag array
-var imageTags = []string{"hello:latest", "crash:latest", "echo:latest", "sleep:latest"}
+var imageTags = []string{"hyperfaas-hello:latest", "hyperfaas-crash:latest", "hyperfaas-echo:latest", "hyperfaas-sleep:latest"}
 
 type controllerWorkload struct {
 	testName          string
@@ -259,6 +259,7 @@ func TestStartNonLocalImages(t *testing.T) {
 			ExpectedError:     true,
 			ExpectedErrorCode: codes.NotFound,
 		},
+		// TODO @Lucca: This does not work for me as the image is only available for linux/amd64, I have linux/arm64/v8. Please re-build the image with `docker build --platform linux/amd64,linux/arm64 ...`
 		{
 			testName:          "starting image that needs to be pulled",
 			ImageTag:          "luccadibe/hyperfaas-functions:hello",
@@ -280,7 +281,7 @@ func TestStartNonLocalImages(t *testing.T) {
 			localImages, err := runtime.Cli.ImageList(context.Background(), opt)
 
 			if err != nil {
-				t.Fatalf("Could not list local images: %v", err)
+				t.Fatalf("Could not list local go: %v", err)
 			}
 
 			if len(localImages) > 0 {

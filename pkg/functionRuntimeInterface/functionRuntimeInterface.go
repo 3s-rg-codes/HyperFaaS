@@ -50,19 +50,20 @@ func New(timeout int) *Function {
 	}
 }
 
+// Ready is called from inside the function instance container. It waits for a request from the caller server.
 func (f *Function) Ready(handler handler) {
 
-	//Set up logging
-	log := configLog("logs", "fn.log")
+	//Set up logging file inside the Docker container. Will be mounted to functions/logs
+	functionLog := configLog(fmt.Sprintf("/logs/%s-%s.log",time.Now().Format("2006-01-02-15-04-05"), f.id))
 
 	connection, err := grpc.NewClient(f.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 
-	log.Debug().Msgf("Connected to the worker: %v", f.address)
+	functionLog.Debug().Msgf("Connected to the worker: %v", f.address)
 
 	defer connection.Close()
 
 	if err != nil {
-		log.Error().Msgf("failed to connect: %v", err)
+		functionLog.Error().Msgf("failed to connect: %v", err)
 	}
 
 	c := pb.NewFunctionServiceClient(connection)
@@ -70,7 +71,7 @@ func (f *Function) Ready(handler handler) {
 	//Set the id in the response to the id of the container
 	f.response.Id = f.id
 
-	defer log.Info().Msgf("Closing connection.")
+	defer functionLog.Info().Msgf("Closing connection.")
 	first := true
 
 	for {
@@ -82,19 +83,19 @@ func (f *Function) Ready(handler handler) {
 		first = false
 
 		if err != nil {
-			log.Error().Msgf("failed to call: %v", err)
+			functionLog.Error().Msgf("failed to call: %v", err)
 			return
 		}
-		log.Debug().Msgf("Received request: %v", p.Data)
+		functionLog.Debug().Msgf("Received request: %v", p.Data)
 
 		f.request = &Request{p.Data, p.Id}
 
 		f.response, err = handler(ctx, f.request)
 
-		log.Debug().Msgf("Function handler called and generated response: %v", f.response.Data)
+		functionLog.Debug().Msgf("Function handler called and generated response: %v", f.response.Data)
 
 		if err != nil {
-			log.Error().Msgf("Function failed: %v", err)
+			functionLog.Error().Msgf("Function failed: %v", err)
 			return
 		}
 
@@ -102,9 +103,9 @@ func (f *Function) Ready(handler handler) {
 
 }
 
-func configLog(logDir string, logFile string) *zerolog.Logger {
+func configLog(logFile string) *zerolog.Logger {
 	// Open the log file
-	file, err := os.OpenFile(logDir+"/"+logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 
 	if err != nil {
 		panic(err)

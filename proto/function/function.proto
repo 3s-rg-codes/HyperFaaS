@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/luccadibe/w.git";
+option go_package = "github.com/3s-rg-codes/hyperfaas";
 package function;
 
 message Payload {

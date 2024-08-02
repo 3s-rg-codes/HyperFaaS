@@ -30,7 +30,6 @@ type WorkerConfig struct {
 func parseArgs() (wc WorkerConfig) {
 
 	flag.StringVar(&(wc.General.Id), "id", "", "Worker ID. (Env: WORKER_ID)")
-
 	flag.StringVar(&(wc.Runtime.Type), "runtime", "", "Container runtime type. (Env: RUNTIME_TYPE)")
 	flag.BoolVar(&(wc.Runtime.AutoRemove), "auto-remove", false, "Auto remove containers. (Env: RUNTIME_AUTOREMOVE)")
 	flag.StringVar(&(wc.Log.Level), "log-level", "", "Log level (Env: LOG_LEVEL)")
