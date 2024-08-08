@@ -35,6 +35,9 @@ var ( //TODO: implement flags, do we need more?
 	autoRemove              = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
 	testController          controller.Controller
 	runtime                 *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
+	CPUPeriod               = flag.Int64("cpuPeriod", 100000, "CPU period")
+	CPUQuota                = flag.Int64("cpuQuota", 50000, "CPU quota")
+	MemoryLimit             = (*flag.Int64("memoryLimit", 250000000, "Memory limit in MB")) * 1024 * 1024
 )
 
 // image tag array
@@ -124,7 +127,7 @@ func TestNormalExecution(t *testing.T) {
 	for _, testCase := range testCases {
 
 		t.Run(testCase.testName, func(t *testing.T) {
-			testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{}})
+			testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *CPUPeriod, Quota: *CPUQuota}, Memory: MemoryLimit}})
 
 			grpcStatus, ok := status.FromError(err)
 			if !ok {
@@ -313,7 +316,7 @@ func TestStartNonLocalImages(t *testing.T) {
 				}
 			}
 
-			_, err = client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{}})
+			_, err = client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *CPUPeriod, Quota: *CPUQuota}, Memory: MemoryLimit}})
 
 			grpcStatus, ok := status.FromError(err)
 

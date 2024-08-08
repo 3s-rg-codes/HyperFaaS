@@ -3,11 +3,12 @@ package dockerRuntime
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/google/uuid"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
@@ -26,15 +27,15 @@ import (
 
 type DockerRuntime struct {
 	cr.ContainerRuntime
-	Cli        *client.Client
-	autoRemove bool
+	Cli             *client.Client
+	autoRemove      bool
 	outputFolderAbs string
 }
 
 const (
-	logsOutputDir = "functions/logs/" // Relative to project root
+	logsOutputDir   = "functions/logs/" // Relative to project root
 	containerPrefix = "hyperfaas-"
-	imagePrefix = "hyperfaas-"
+	imagePrefix     = "hyperfaas-"
 )
 
 var (
@@ -61,7 +62,6 @@ func NewDockerRuntime(autoRemove bool) *DockerRuntime {
 		outputFolderAbs = currentWd + "/" + logsOutputDir
 	}
 	log.Info().Msgf("Logs directory: %s", outputFolderAbs)
-
 
 	// Create the logs directory
 	if _, err := os.Stat(logsOutputDir); os.IsNotExist(err) {
@@ -124,6 +124,11 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 				Source: d.outputFolderAbs,
 				Target: "/logs/",
 			},
+		},
+		Resources: container.Resources{
+			Memory:    int64(config.Memory),
+			CPUPeriod: int64(config.Cpu.Period),
+			CPUQuota:  int64(config.Cpu.Quota),
 		},
 	}, &network.NetworkingConfig{}, nil, containerName)
 

@@ -56,7 +56,7 @@ func doWorkload(t *testing.T, statsTestCase statsTest) *[]*stats.StatusUpdate {
 
 	for _, testCase := range statsTestCase.controllerWorkloads {
 
-		testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{}})
+		testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *CPUPeriod, Quota: *CPUQuota}, Memory: MemoryLimit}})
 
 		// Depending on the test case, the container may not start
 		if testCase.ExpectedError && err != nil {
