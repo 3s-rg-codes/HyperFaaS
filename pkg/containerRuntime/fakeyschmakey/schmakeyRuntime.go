@@ -10,8 +10,11 @@ import (
 	uuid2 "github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"sync"
 	"time"
 )
+
+var mutex = sync.RWMutex{}
 
 type FakeRuntime struct {
 	cr.ContainerRuntime
@@ -24,7 +27,9 @@ func NewFakeRuntime(duration time.Duration) *FakeRuntime {
 }
 
 func (fR *FakeRuntime) ContainerExists(instanceId string) bool {
+	mutex.Lock()
 	_, ok := fR.instanceMap[instanceId]
+	mutex.Unlock()
 	return ok
 }
 
@@ -33,16 +38,24 @@ func (fR *FakeRuntime) Start(ctx context.Context, imageTag string, config *pb.Co
 	uuid := uuid2.New().String()
 	switch imageTag {
 	case "hyperfaas-crash:latest":
+		mutex.Lock()
 		fR.instanceMap[uuid] = "crash"
+		mutex.Unlock()
 		go fakeFunction("crash", uuid)
 	case "hyperfaas-sleep:latest":
+		mutex.Lock()
 		fR.instanceMap[uuid] = "sleep"
+		mutex.Unlock()
 		go fakeFunction("sleep", uuid)
 	case "hyperfaas-echo:latest":
+		mutex.Lock()
 		fR.instanceMap[uuid] = "echo"
+		mutex.Unlock()
 		go fakeFunction("echo", uuid)
 	case "hyperfaas-hello:latest":
+		mutex.Lock()
 		fR.instanceMap[uuid] = "hello"
+		mutex.Unlock()
 		go fakeFunction("hello", uuid)
 	default:
 		return "", errors.New("no such image")
@@ -72,11 +85,15 @@ func (fR *FakeRuntime) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respo
 }
 
 func (fR *FakeRuntime) Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {
+	mutex.Lock()
 	_, ok := fR.instanceMap[req.Id]
+	mutex.Unlock()
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "no such container")
 	}
+	mutex.Lock()
 	delete(fR.instanceMap, req.Id)
+	mutex.Unlock()
 	return req, nil
 }
 
