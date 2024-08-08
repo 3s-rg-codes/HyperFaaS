@@ -9,8 +9,20 @@ message ImageTag {
 }
 
 message Config {
+  // container memory limit in bytes
+  int64 memory = 1;
+
+  CPUConfig cpu = 2;
 }
 
+// Container CPU configuration. If the host has 2 CPUs and the container should only use 1 CPU, set period to 100000 and quota to 50000.
+message CPUConfig {
+  // CPU CFS (Completely Fair Scheduler) period
+  int64 period = 1;
+  // CPU CFS (Completely Fair Scheduler) quota
+  int64 quota = 2;
+
+}
 message StartRequest {
   ImageTag image_tag = 1;
   Config config = 2;
