@@ -111,6 +111,8 @@ func setup() {
 		testController = controller.New(runtime)
 	case "mockRuntime":
 		testController = controller.New(fakeRuntime)
+	default:
+		log.Fatal().Msgf("FATAL: Invalid Runtime")
 	}
 	//CallerServer
 	go func() {

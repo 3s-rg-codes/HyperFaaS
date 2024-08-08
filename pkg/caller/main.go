@@ -98,13 +98,13 @@ func (s *CallerServer) UnregisterFunction(id string) {
 	fmt.Println("AFTER UNLOCK")
 
 	s.FunctionResponses.mu.Lock()
-	fmt.Println("AFTER LOCK 2")
+	fmt.Println("AFTER 2LOCK")
 	if _, ok := s.FunctionResponses.FrMap[id]; ok {
 		close(s.FunctionResponses.FrMap[id])
 		delete(s.FunctionResponses.FrMap, id)
 	}
 	s.FunctionResponses.mu.Unlock()
-	fmt.Println("AFTER UNLOCK 2")
+	fmt.Println("AFTER 2UNLOCK")
 }
 
 func (s *CallerServer) PassCallToChannel(id string, call string) {
