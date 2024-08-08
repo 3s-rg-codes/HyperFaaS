@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/fakeyschmakey"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/mockRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/rs/zerolog"
@@ -42,7 +42,7 @@ var (
 var (
 	testController controller.Controller
 	runtime        *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
-	fakeRuntime    *fakeyschmakey.FakeRuntime
+	fakeRuntime    *mockRuntime.FakeRuntime
 	failureCount   int
 	imageTags      = []string{"hyperfaas-hello:latest", "hyperfaas-crash:latest", "hyperfaas-echo:latest", "hyperfaas-sleep:latest"}
 	containerMap   map[int]*pb.InstanceID
@@ -98,8 +98,8 @@ func setup() {
 	switch *requestedRuntime {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime(*autoRemove) //did not work otherwise, using container runtime interface
-	case "fakeyschmakey":
-		fakeRuntime = fakeyschmakey.NewFakeRuntime(2)
+	case "mockRuntime":
+		fakeRuntime = mockRuntime.NewFakeRuntime(2)
 	}
 
 	//Log setup
@@ -109,7 +109,7 @@ func setup() {
 	switch *requestedRuntime {
 	case "docker":
 		testController = controller.New(runtime)
-	case "fakeyschmakey":
+	case "mockRuntime":
 		testController = controller.New(fakeRuntime)
 	}
 	//CallerServer
@@ -290,7 +290,7 @@ func ContainerExists(instanceID string) bool {
 	case "docker":
 		_, err := runtime.Cli.ContainerInspect(context.Background(), instanceID)
 		return err == nil
-	case "fakeyschmakey":
+	case "mockRuntime":
 		return fakeRuntime.ContainerExists(instanceID)
 	default:
 		return false

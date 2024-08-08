@@ -1,4 +1,4 @@
-package fakeyschmakey
+package mock
 
 import (
 	"context"

@@ -1,11 +1,11 @@
-package fakeyschmakey
+package mockRuntime
 
 import (
 	"context"
 	"errors"
 	fakeFunctions "github.com/3s-rg-codes/HyperFaaS/cmd/workerNode/functions"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/functionRuntimeInterface/fakeyschmakey"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/functionRuntimeInterface/mock"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	uuid2 "github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -109,7 +109,7 @@ func (fR *FakeRuntime) NotifyCrash(ctx context.Context, instanceId string) error
 }
 
 func fakeFunction(functionType string, id string) {
-	f := fakeyschmakey.New(120, id)
+	f := mock.New(120, id)
 
 	switch functionType {
 	case "crash":

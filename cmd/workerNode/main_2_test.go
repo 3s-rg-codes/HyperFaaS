@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/fakeyschmakey"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/mockRuntime"
 	"os"
 	"testing"
 	"time"
@@ -39,7 +39,7 @@ var ( //TODO: implement flags, do we need more?
 
 var (
 	runtime     *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
-	fakeRuntime *fakeyschmakey.FakeRuntime
+	fakeRuntime *mockRuntime.FakeRuntime
 )
 
 // image tag array
@@ -84,8 +84,8 @@ func setup() {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime(*autoRemove) //did not work otherwise while using container runtime interface
 		testController = controller.New(runtime)
-	case "fakeyschmakey":
-		fakeRuntime = fakeyschmakey.NewFakeRuntime(2)
+	case "mockRuntime":
+		fakeRuntime = mockRuntime.NewFakeRuntime(2)
 		testController = controller.New(fakeRuntime)
 	}
 
@@ -260,8 +260,8 @@ func TestCallNonExistingContainer(t *testing.T) {
 // TODO: This is very docker specific and should be generalized --> does not work with fake runtime so we skip it if we test with fake runtime
 func TestStartNonLocalImages(t *testing.T) {
 
-	if *requestedRuntime == "fakeyschmakey" {
-		t.Skip("This test does not work with fakeyschmakey")
+	if *requestedRuntime == "mockRuntime" {
+		t.Skip("This test does not work with mockRuntime")
 	}
 
 	flag.Parse()
@@ -339,7 +339,7 @@ func ContainerExists(instanceID string) bool {
 	case "docker":
 		_, err := runtime.Cli.ContainerInspect(context.Background(), instanceID)
 		return err == nil
-	case "fakeyschmakey":
+	case "mockRuntime":
 		return fakeRuntime.ContainerExists(instanceID)
 	default:
 		return false

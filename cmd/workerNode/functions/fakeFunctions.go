@@ -2,12 +2,12 @@ package functions
 
 import (
 	"context"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/functionRuntimeInterface/fakeyschmakey"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/functionRuntimeInterface/mock"
 	"time"
 )
 
-func HandlerHello(ctx context.Context, in *fakeyschmakey.Request) (*fakeyschmakey.Response, error) {
-	resp := &fakeyschmakey.Response{
+func HandlerHello(ctx context.Context, in *mock.Request) (*mock.Response, error) {
+	resp := &mock.Response{
 		Data: "HELLO WORLD!",
 		Id:   in.Id,
 	}
@@ -15,11 +15,11 @@ func HandlerHello(ctx context.Context, in *fakeyschmakey.Request) (*fakeyschmake
 	return resp, nil
 }
 
-func HandlerSleep(ctx context.Context, in *fakeyschmakey.Request) (*fakeyschmakey.Response, error) {
+func HandlerSleep(ctx context.Context, in *mock.Request) (*mock.Response, error) {
 	//sleep for 20 seconds
 	time.Sleep(20 * time.Second)
 
-	resp := &fakeyschmakey.Response{
+	resp := &mock.Response{
 		Data: "Finished Sleeping",
 		Id:   in.Id,
 	}
@@ -27,8 +27,8 @@ func HandlerSleep(ctx context.Context, in *fakeyschmakey.Request) (*fakeyschmake
 	return resp, nil
 }
 
-func HandlerCrash(ctx context.Context, in *fakeyschmakey.Request) (*fakeyschmakey.Response, error) {
-	resp := &fakeyschmakey.Response{
+func HandlerCrash(ctx context.Context, in *mock.Request) (*mock.Response, error) {
+	resp := &mock.Response{
 		Data: "",
 		Id:   in.Id,
 	}
@@ -41,8 +41,8 @@ func HandlerCrash(ctx context.Context, in *fakeyschmakey.Request) (*fakeyschmake
 	return resp, nil
 }
 
-func HandlerEcho(ctx context.Context, in *fakeyschmakey.Request) (*fakeyschmakey.Response, error) {
-	resp := &fakeyschmakey.Response{
+func HandlerEcho(ctx context.Context, in *mock.Request) (*mock.Response, error) {
+	resp := &mock.Response{
 		Data: in.Data,
 		Id:   in.Id,
 	}
