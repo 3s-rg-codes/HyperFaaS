@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/fakeyschmakey"
 	"os"
 	"testing"
 	"time"
@@ -34,7 +35,11 @@ var ( //TODO: implement flags, do we need more?
 	controllerServerAddress = flag.String("ServerAdress", SERVER_ADDRESS, "specify controller server adress")
 	autoRemove              = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
 	testController          controller.Controller
-	runtime                 *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
+)
+
+var (
+	runtime     *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
+	fakeRuntime *fakeyschmakey.FakeRuntime
 )
 
 // image tag array
@@ -77,14 +82,16 @@ func setup() {
 
 	switch *requestedRuntime {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(*autoRemove) //did not work otherwise, using container runtime interface
+		runtime = dockerRuntime.NewDockerRuntime(*autoRemove) //did not work otherwise while using container runtime interface
+		testController = controller.New(runtime)
+	case "fakeyschmakey":
+		fakeRuntime = fakeyschmakey.NewFakeRuntime(2)
+		testController = controller.New(fakeRuntime)
 	}
 
 	//Log setup
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).Level(zerolog.DebugLevel).With().Caller().Logger()
 
-	//Controller
-	testController = controller.New(runtime)
 	//CallerServer
 	go func() {
 		testController.StartServer()
@@ -163,7 +170,9 @@ func TestNormalExecution(t *testing.T) {
 			//TOLERANCE
 			time.Sleep(*DOCKER_TOLERANCE)
 
-			assert.Equal(t, ContainerExists(testContainerID.Id), false)
+			if *autoRemove == true {
+				assert.Equal(t, ContainerExists(testContainerID.Id), false)
+			}
 			assert.Equal(t, responseContainerID.Id, testContainerID.Id)
 
 			t.Logf("Stop succeded: %v", responseContainerID.Id)
@@ -176,7 +185,7 @@ func TestNormalExecution(t *testing.T) {
 	})
 }
 
-// Tests that a correct error is returned when a non existing function is stopped
+// Tests that a correct error is returned when a non-existing function is stopped
 func TestStopNonExistingContainer(t *testing.T) {
 
 	flag.Parse()
@@ -212,7 +221,7 @@ func TestStopNonExistingContainer(t *testing.T) {
 	})
 }
 
-// Tests that a correct error is returned when a non existing function is called
+// Tests that a correct error is returned when a non-existing function is called
 func TestCallNonExistingContainer(t *testing.T) {
 
 	flag.Parse()
@@ -248,7 +257,12 @@ func TestCallNonExistingContainer(t *testing.T) {
 	})
 }
 
+// TODO: This is very docker specific and should be generalized --> does not work with fake runtime so we skip it if we test with fake runtime
 func TestStartNonLocalImages(t *testing.T) {
+
+	if *requestedRuntime == "fakeyschmakey" {
+		t.Skip("This test does not work with fakeyschmakey")
+	}
 
 	flag.Parse()
 	client, connection := BuildMockClient(t)
@@ -319,24 +333,15 @@ func TestStartNonLocalImages(t *testing.T) {
 	})
 }
 
-/*
-func BuildMockClient(t *testing.T) (pb.ControllerClient, error) {
-	var err error
-	connection, err := grpc.NewClient(*controllerServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Errorf("Could not start client for testing purposes: %v.", err)
-		return nil, err
-	}
-	t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
-	testClient := pb.NewControllerClient(connection)
-	defer connection.Close()
-	return testClient, nil
-}
-
-*/
-
 func ContainerExists(instanceID string) bool {
 	// Check if the image is present
-	_, err := runtime.Cli.ContainerInspect(context.Background(), instanceID)
-	return err == nil
+	switch *requestedRuntime {
+	case "docker":
+		_, err := runtime.Cli.ContainerInspect(context.Background(), instanceID)
+		return err == nil
+	case "fakeyschmakey":
+		return fakeRuntime.ContainerExists(instanceID)
+	default:
+		return false
+	}
 }

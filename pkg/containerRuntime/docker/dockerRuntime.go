@@ -26,15 +26,15 @@ import (
 
 type DockerRuntime struct {
 	cr.ContainerRuntime
-	Cli        *client.Client
-	autoRemove bool
+	Cli             *client.Client
+	autoRemove      bool
 	outputFolderAbs string
 }
 
 const (
-	logsOutputDir = "functions/logs/" // Relative to project root
+	logsOutputDir   = "functions/logs/" // Relative to project root
 	containerPrefix = "hyperfaas-"
-	imagePrefix = "hyperfaas-"
+	imagePrefix     = "hyperfaas-"
 )
 
 var (
@@ -61,7 +61,6 @@ func NewDockerRuntime(autoRemove bool) *DockerRuntime {
 		outputFolderAbs = currentWd + "/" + logsOutputDir
 	}
 	log.Info().Msgf("Logs directory: %s", outputFolderAbs)
-
 
 	// Create the logs directory
 	if _, err := os.Stat(logsOutputDir); os.IsNotExist(err) {
@@ -148,13 +147,16 @@ func (d *DockerRuntime) Call(ctx context.Context, req *pb.CallRequest) (*pb.Resp
 }
 
 func (d *DockerRuntime) Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {
+	fmt.Println("ENTERING STOP")
 	// Check if the container exists
 	_, err := d.Cli.ContainerInspect(ctx, req.Id)
+	fmt.Println("AFTER INSPECT")
 	if err != nil {
 		log.Error().Msgf("Container %s does not exist", req.Id)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
+	fmt.Println("BEFORE ACTUAL DOCKER STOP")
 	// Stop the container
 	if err := d.Cli.ContainerStop(ctx, req.Id, container.StopOptions{}); err != nil {
 		return nil, err

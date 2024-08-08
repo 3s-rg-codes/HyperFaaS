@@ -28,6 +28,7 @@ func (s *Controller) Start(ctx context.Context, req *pb.StartRequest) (*pb.Insta
 
 	if err != nil {
 		s.statsManager.Enqueue(stats.Event().Container(instanceId).Start().WithStatus("failed"))
+		fmt.Println(err.Error())
 		return nil, err
 
 	}
@@ -69,8 +70,12 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 	go func() {
 		// Pass the call to the channel based on the instance ID
 		s.callerServer.PassCallToChannel(req.InstanceId.Id, req.Params.Data)
+
+		fmt.Println("Passed call to channel")
 		// stats
 		s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().WithStatus("success"))
+
+		fmt.Println("Enqueued stats")
 
 	}()
 
@@ -97,7 +102,6 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 }
 
 func (s *Controller) Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {
-
 	//unregister the function from the maps
 	s.callerServer.UnregisterFunction(req.Id)
 

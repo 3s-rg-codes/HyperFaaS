@@ -1,12 +1,10 @@
-package functionRuntimeInterface
+package fakeyschmakey
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"github.com/rs/zerolog/log"
 	"os"
-	"strings"
+	"path/filepath"
 	"time"
 
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/function"
@@ -35,26 +33,23 @@ type Function struct {
 	id       string
 }
 
-func New(timeout int) *Function {
-	address, ok := os.LookupEnv("CALLER_SERVER_ADDRESS")
-	if !ok {
-		log.Error().Msgf("Environment variable CALLER_SERVER_ADDRESS not found")
-	}
-
+func New(timeout int, id string) *Function {
 	return &Function{
 		timeout:  timeout,
-		address:  fmt.Sprint(address, ":50052"),
+		address:  "localhost:50052",
 		request:  &Request{},
 		response: &Response{},
-		id:       getID(),
+		id:       id,
 	}
 }
 
-// Ready is called from inside the function instance container. It waits for a request from the caller server.
 func (f *Function) Ready(handler handler) {
-
-	//Set up logging file inside the Docker container. Will be mounted to functions/logs
-	functionLog := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.id))
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(wd)
+	functionLog := configLog(fmt.Sprintf(wd+"/functions/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.id))
 	connection, err := grpc.NewClient(f.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 
 	functionLog.Debug().Msgf("Connected to the worker: %v", f.address)
@@ -99,11 +94,15 @@ func (f *Function) Ready(handler handler) {
 		}
 
 	}
-
 }
-
 func configLog(logFile string) *zerolog.Logger {
 	// Open the log file
+
+	err := os.MkdirAll(filepath.Dir(logFile), os.ModePerm)
+	if err != nil {
+		panic(err)
+	}
+
 	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 
 	if err != nil {
@@ -112,27 +111,4 @@ func configLog(logFile string) *zerolog.Logger {
 
 	log := zerolog.New(file).With().Timestamp().Logger()
 	return &log
-}
-
-func getID() string {
-	var id string
-	file, err := os.Open(".env")
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "CONTAINER_ID=") {
-			id = strings.TrimPrefix(line, "CONTAINER_ID=")
-			break
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		panic(err)
-	}
-	return id
 }

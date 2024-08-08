@@ -6,6 +6,7 @@ import (
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
+	fakeyschmakey "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/fakeyschmakey"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker"
 	"github.com/rs/zerolog"
@@ -87,6 +88,8 @@ func main() {
 	switch wc.Runtime.Type {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove)
+	case "fakeyschmakey":
+		runtime = fakeyschmakey.NewFakeRuntime(2)
 	default:
 		log.Error().Msg("No runtime specified")
 	}

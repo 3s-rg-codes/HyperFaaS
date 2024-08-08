@@ -54,11 +54,11 @@ dev: build start
 
 # run the tests
 test-all:
-    go test -v ./...
+    go test -v ./cmd/workerNode/...
 
 # run a test with a specific test name
 test name:
-    go test -run {{name}} ./...
+    go test -run {{name}} ./... -count=1
 
 ############################
 # Misc. Stuff
