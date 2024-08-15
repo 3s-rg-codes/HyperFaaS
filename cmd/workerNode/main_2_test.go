@@ -41,16 +41,17 @@ var ( //TODO: implement flags, do we need more?
 var imageTags = []string{"hyperfaas-hello:latest", "hyperfaas-crash:latest", "hyperfaas-echo:latest", "hyperfaas-sleep:latest"}
 
 type controllerWorkload struct {
-	testName          string
-	ImageTag          string
-	ExpectedError     bool
-	ReturnError       bool
-	ExpectsResponse   bool
-	ExpectedResponse  string
-	ErrorCode         codes.Code
-	ExpectedErrorCode codes.Code
-	CallPayload       string
-	InstanceID        string
+	testName               string
+	ImageTag               string
+	ExpectedError          bool
+	ReturnError            bool
+	ExpectsResponse        bool
+	ExpectedResponse       string
+	ExpectedResponseformat bool
+	ErrorCode              codes.Code
+	ExpectedErrorCode      codes.Code
+	CallPayload            string
+	InstanceID             string
 }
 
 // TestMain calls setup and teardown functions, and runs all other Test Functions
@@ -246,6 +247,24 @@ func TestCallNonExistingContainer(t *testing.T) {
 	t.Cleanup(func() {
 		connection.Close()
 	})
+}
+
+func TestMetrics(t *testing.T) {
+	flag.Parse()
+	client, connection := BuildMockClient(t)
+
+	metrics, err := client.Metrics(context.Background(), &pb.MetricsRequest{NodeID: "a"})
+	grpcStatus, ok := status.FromError(err)
+
+	if !ok {
+		t.Fatalf("Getting Metricsupdate failed: %v", grpcStatus.Code())
+	}
+	t.Logf("successfully got metrics: Percentage RAM used programs:%f%%\n, percentage per cpu: %v", metrics.UsedRamPercent, metrics.CpuPercentPercpu)
+
+	t.Cleanup(func() {
+		connection.Close()
+	})
+
 }
 
 func TestStartNonLocalImages(t *testing.T) {
