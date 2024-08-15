@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/rs/zerolog/log"
+	cpu "github.com/shirou/gopsutil/v4/cpu"
+	mem "github.com/shirou/gopsutil/v4/mem"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -145,6 +148,17 @@ func (s *Controller) Status(req *pb.StatusRequest, stream pb.Controller_StatusSe
 	}
 
 	return nil
+}
+
+func (s *Controller) Metrics(ctx context.Context, req *pb.MetricsRequest) (*pb.MetricsUpdate, error) {
+
+	cpu_percentage_percpu, err1 := cpu.Percent(time.Millisecond*10, true)
+	virtual_mem, err2 := mem.VirtualMemory()
+
+	if err1 != nil || err2 != nil {
+		return nil, err1
+	}
+	return &pb.MetricsUpdate{CpuPercentPercpu: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
 }
 
 func New(runtime cr.ContainerRuntime) Controller {

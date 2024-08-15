@@ -248,6 +248,24 @@ func TestCallNonExistingContainer(t *testing.T) {
 	})
 }
 
+func TestMetrics(t *testing.T) {
+	flag.Parse()
+	client, connection := BuildMockClient(t)
+
+	metrics, err := client.Metrics(context.Background(), &pb.MetricsRequest{NodeID: "a"})
+	grpcStatus, ok := status.FromError(err)
+
+	if !ok {
+		t.Fatalf("Getting Metricsupdate failed: %v", grpcStatus.Code())
+	}
+	t.Logf("successfully got metrics: Percentage RAM used programs:%f%%\n, percentage per cpu: %v", metrics.UsedRamPercent, metrics.CpuPercentPercpu)
+
+	t.Cleanup(func() {
+		connection.Close()
+	})
+
+}
+
 func TestStartNonLocalImages(t *testing.T) {
 
 	flag.Parse()
