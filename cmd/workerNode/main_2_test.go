@@ -41,17 +41,16 @@ var ( //TODO: implement flags, do we need more?
 var imageTags = []string{"hyperfaas-hello:latest", "hyperfaas-crash:latest", "hyperfaas-echo:latest", "hyperfaas-sleep:latest"}
 
 type controllerWorkload struct {
-	testName               string
-	ImageTag               string
-	ExpectedError          bool
-	ReturnError            bool
-	ExpectsResponse        bool
-	ExpectedResponse       string
-	ExpectedResponseformat bool
-	ErrorCode              codes.Code
-	ExpectedErrorCode      codes.Code
-	CallPayload            string
-	InstanceID             string
+	testName          string
+	ImageTag          string
+	ExpectedError     bool
+	ReturnError       bool
+	ExpectsResponse   bool
+	ExpectedResponse  string
+	ErrorCode         codes.Code
+	ExpectedErrorCode codes.Code
+	CallPayload       string
+	InstanceID        string
 }
 
 // TestMain calls setup and teardown functions, and runs all other Test Functions
