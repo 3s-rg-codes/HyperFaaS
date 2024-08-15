@@ -262,7 +262,6 @@ func TestStartNonLocalImages(t *testing.T) {
 			ExpectedError:     true,
 			ExpectedErrorCode: codes.NotFound,
 		},
-		// TODO @Lucca: This does not work for me as the image is only available for linux/amd64, I have linux/arm64/v8. Please re-build the image with `docker build --platform linux/amd64,linux/arm64 ...`
 		{
 			testName:          "starting image that needs to be pulled",
 			ImageTag:          "luccadibe/hyperfaas-functions:hello",
