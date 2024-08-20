@@ -7,7 +7,7 @@ WORKDIR /root
 COPY pkg/ ./pkg/
 COPY proto/function ./proto/function
 
-RUN python -m grpc_tools.protoc -I./proto/function --python_out=. --grpc_python_out=. ./proto/function/*.proto
+RUN python -m grpc_tools.protoc --python_out=. --grpc_python_out=. ./proto/function/*.proto
 
 FROM python:3.12
 

@@ -46,7 +46,7 @@ class Function:
             while True:
                 try:
                     deadline = time.time() + self.timeout
-                    p = c.Ready((ctx, ), timeout=self.timeout)
+                    p = c.Ready(( ), timeout=self.timeout)
                     first = False
                     logging.debug(f"Received request: {p.data}")
                     self.request = Request(data=p.data, id=p.id)
