@@ -23,7 +23,7 @@ import (
 
 const (
 	DURATION        = 2 * time.Second
-	TIMEOUT         = 20 * time.Second
+	TIMEOUT         = 40
 	RUNTIME         = "docker"
 	SERVER_ADDRESS  = "localhost:50051"
 	CONTAINER_COUNT = 10
@@ -36,7 +36,7 @@ var (
 	controllerServerAddress = flag.String("ServerAdress", SERVER_ADDRESS, "specify controller server adress")
 	autoRemove              = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
 	containerCount          = flag.Int("containerCount", CONTAINER_COUNT, "Number of containers to be created")
-	timeout                 = flag.Duration("timeout", TIMEOUT, "Timeout for waiting for container response")
+	timeout                 = flag.Duration("timeout", TIMEOUT*time.Second, "Timeout for waiting for container response")
 )
 
 var (
@@ -49,8 +49,10 @@ var (
 )
 
 var (
-	mutex sync.RWMutex
-	wg    sync.WaitGroup
+	mutex    sync.RWMutex
+	swgStart SafeWaitGroup
+	swgCall  SafeWaitGroup
+	swgStop  SafeWaitGroup
 )
 
 func TestMain(m *testing.M) {
@@ -134,7 +136,8 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 			ImageTag:          imageTags[0],
 			ExpectedError:     false,
 			ExpectedErrorCode: codes.OK,
-			CallPayload:       "",
+			CallPayload:       "test",
+			ExpectedResponse:  "HELLO WORLD!",
 		},
 		{
 			testName:          "normal execution of echo image",
@@ -147,7 +150,7 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 		},
 	}
 
-	wg.Add(*containerCount)
+	swgStart.Add(*containerCount)
 
 	for i := 0; i < *containerCount; i++ {
 		i := i
@@ -176,14 +179,17 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 			containerMap[i] = testContainerID
 			statistics.successfullyStarted++
 			mutex.Unlock()
-			wg.Done()
+			swgStart.Done()
 		}()
 	}
 
-	if !waitWithTimeout(&wg, *timeout) {
-		t.Logf("Timeout reached, now calling containers")
-	}
-	wg.Add(*containerCount)
+	/*
+		if !waitWithTimeout(&swg, *timeout) {
+			t.Logf("Timeout reached, now calling containers")
+		}
+	*/
+	time.Sleep(*timeout)
+	swgCall.Add(*containerCount)
 
 	for i := 0; i < *containerCount; i++ {
 		i := i
@@ -196,7 +202,7 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 				t.Logf("Container not found in map")
 				return
 			}
-			fmt.Println(testContainerID.Id)
+			//fmt.Println(testContainerID.Id)
 			//____________________________Calling________________________________
 			response, err := client.Call(context.Background(), &pb.CallRequest{InstanceId: testContainerID, Params: &pb.Params{Data: testCases[i%2].CallPayload}})
 
@@ -208,19 +214,24 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 
 			assert.Equal(t, grpcStatus.Code(), testCases[i%2].ExpectedErrorCode)
 			//No error expected here so no need to check if its the expected error
+			assert.Equal(t, testCases[i%2].ExpectedResponse, response.Data)
 
 			t.Logf("Call succeded: %v", response.Data)
 			mutex.Lock()
 			statistics.successfullyCalled++
 			mutex.Unlock()
-			wg.Done()
+			swgCall.Done()
 		}()
 	}
 
-	if !waitWithTimeout(&wg, *timeout) {
-		t.Logf("Timeout reached, now stopping containers")
-	}
-	wg.Add(*containerCount)
+	/*
+		if !waitWithTimeout(&swg, *timeout) {
+			t.Logf("Timeout reached, now stopping containers")
+		}
+
+	*/
+	time.Sleep(*timeout)
+	swgStop.Add(*containerCount)
 
 	for i := 0; i < *containerCount; i++ {
 		i := i
@@ -242,7 +253,7 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 				return
 			}
 			//TOLERANCE
-			time.Sleep(*dockerTolerance)
+			time.Sleep(*dockerTolerance) //TODO: should this be zero if we arent using docker?
 
 			assert.Equal(t, ContainerExists(testContainerID.Id), false)
 			assert.Equal(t, responseContainerID.Id, testContainerID.Id)
@@ -252,16 +263,19 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 			delete(containerMap, i)
 			statistics.successfullyStopped++
 			mutex.Unlock()
-			wg.Done()
+			swgStop.Done()
 		}()
 	}
+
+	time.Sleep(*timeout)
 	//____________________________Cleanup________________________________
 	//wait for all Goroutines to finish with Waitgroup
+	/*
+		if !waitWithTimeout(&swg, *timeout) {
+			t.Logf("Timeout reached, now evaluating test")
+		}
 
-	if !waitWithTimeout(&wg, *timeout) {
-		t.Logf("Timeout reached, now evaluating test")
-	}
-	wg.Add(*containerCount)
+	*/
 
 	t.Cleanup(func() {
 		err := connection.Close()
@@ -299,11 +313,11 @@ func ContainerExists(instanceID string) bool {
 	}
 }
 
-func waitWithTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
+func waitWithTimeout(swg *SafeWaitGroup, timeout time.Duration) bool {
 	done := make(chan struct{})
 	go func() {
-		wg.Wait()
-		close(done)
+		swg.Wait()
+		defer close(done)
 	}()
 
 	select {
@@ -311,6 +325,7 @@ func waitWithTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
 		return true
 
 	case <-time.After(timeout):
+		swg.Reset()
 		return false
 	}
 }
