@@ -3,13 +3,14 @@ package mockRuntime
 import (
 	"context"
 	"errors"
-	fakeFunctions "github.com/3s-rg-codes/HyperFaaS/cmd/workerNode/functions"
+	"fmt"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/functionRuntimeInterface/mock"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	uuid2 "github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -34,53 +35,55 @@ func (fR *FakeRuntime) ContainerExists(instanceId string) bool {
 }
 
 func (fR *FakeRuntime) Start(ctx context.Context, imageTag string, config *pb.Config) (string, error) {
-	time.Sleep(fR.simulatedLatency)
 	uuid := uuid2.New().String()
 	switch imageTag {
 	case "hyperfaas-crash:latest":
 		mutex.Lock()
 		fR.instanceMap[uuid] = "crash"
 		mutex.Unlock()
-		go fakeFunction("crash", uuid)
 	case "hyperfaas-sleep:latest":
 		mutex.Lock()
 		fR.instanceMap[uuid] = "sleep"
 		mutex.Unlock()
-		go fakeFunction("sleep", uuid)
 	case "hyperfaas-echo:latest":
 		mutex.Lock()
 		fR.instanceMap[uuid] = "echo"
 		mutex.Unlock()
-		go fakeFunction("echo", uuid)
 	case "hyperfaas-hello:latest":
 		mutex.Lock()
 		fR.instanceMap[uuid] = "hello"
 		mutex.Unlock()
-		go fakeFunction("hello", uuid)
 	default:
 		return "", errors.New("no such image")
 	}
 	return uuid, nil
 }
 
-func (fR *FakeRuntime) Call(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
-	/*
-		if _, ok := fR.instanceMap[req.InstanceId.Id]; !ok {
-			return nil, status.Errorf(codes.NotFound, "no such container")
-		}
-		switch fR.instanceMap[req.InstanceId.Id] {
-		case "crash": //crash the container
-			panic("crash")
-		case "sleep": //sleep for 2 seconds
-			time.Sleep(2 * time.Second)
-			return &pb.Response{Data: "slept for 2 seconds"}, nil
-		case "echo": //echo the input
-			return &pb.Response{Data: req.Params.Data}, nil
-		case "hello": //return hello
-			return &pb.Response{Data: "Hello World"}, nil
-		}
+func (fR *FakeRuntime) ContainerCall(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
+	log.Debug().Msgf("Passing call with payload: %v to channel of instance ID %s", req.Params.Data, req.InstanceId.Id)
 
-	*/
+	if !fR.ContainerExists(req.InstanceId.Id) {
+		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
+		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
+		return nil, status.Errorf(codes.NotFound, err.Error())
+	}
+
+	switch fR.instanceMap[req.InstanceId.Id] {
+	case "echo":
+		return &pb.Response{Data: req.Params.Data}, nil
+	case "hello":
+		return &pb.Response{Data: "HELLO WORLD!"}, nil
+	case "sleep":
+		sleepTime, err := strconv.Atoi(req.Params.Data)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid argument")
+		}
+		time.Sleep(time.Duration(sleepTime) * time.Second)
+		return &pb.Response{}, nil
+	case "crash":
+		return nil, status.Errorf(codes.Internal, "crash")
+	}
+
 	return &pb.Response{}, nil
 }
 
@@ -106,19 +109,4 @@ func (fR *FakeRuntime) NotifyCrash(ctx context.Context, instanceId string) error
 	ch := make(chan struct{})
 	<-ch //blocks forever
 	return nil
-}
-
-func fakeFunction(functionType string, id string) {
-	f := mock.New(120, id)
-
-	switch functionType {
-	case "crash":
-		f.Ready(fakeFunctions.HandlerCrash)
-	case "sleep":
-		f.Ready(fakeFunctions.HandlerSleep)
-	case "echo":
-		f.Ready(fakeFunctions.HandlerEcho)
-	case "hello":
-		f.Ready(fakeFunctions.HandlerHello)
-	}
 }

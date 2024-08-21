@@ -57,48 +57,56 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
-	// Check if container crashes
-	containerCrashed := make(chan error)
-	//defer close(containerCrashed)
-
-	go func() {
-		containerCrashed <- s.runtime.NotifyCrash(ctx, req.InstanceId.Id)
-	}()
-
-	log.Debug().Msgf("Passing call with payload: %v to channel of instance ID %s", req.Params.Data, req.InstanceId.Id)
-
-	go func() {
-		// Pass the call to the channel based on the instance ID
-		s.callerServer.PassCallToChannel(req.InstanceId.Id, req.Params.Data)
-
-		fmt.Println("Passed call to channel")
-		// stats
-		s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().WithStatus("success"))
-
-		fmt.Println("Enqueued stats")
-
-	}()
-
-	select {
-
-	case data := <-s.callerServer.FunctionResponses.FrMap[req.InstanceId.Id]:
-
-		s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Response().WithStatus("success"))
-
-		log.Debug().Msgf("Extracted response: '%v' from container with instance ID %s", data, req.InstanceId.Id)
-		response := &pb.Response{Data: data}
-		return response, nil
-
-	case err := <-containerCrashed:
-
-		s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Die())
-
-		log.Error().Msgf("Container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
-
-		return nil, fmt.Errorf("container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
-
+	response, err := s.runtime.ContainerCall(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 
+	return response, nil
+	/*
+		// Check if container crashes
+		containerCrashed := make(chan error)
+		//defer close(containerCrashed)
+
+		go func() {
+			containerCrashed <- s.runtime.NotifyCrash(ctx, req.InstanceId.Id)
+		}()
+
+		log.Debug().Msgf("Passing call with payload: %v to channel of instance ID %s", req.Params.Data, req.InstanceId.Id)
+
+		go func() {
+			// Pass the call to the channel based on the instance ID
+			s.callerServer.PassCallToChannel(req.InstanceId.Id, req.Params.Data)
+
+			//fmt.Println("Passed call to channel")
+			// stats
+			s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().WithStatus("success"))
+
+			//fmt.Println("Enqueued stats")
+
+		}()
+
+		select {
+
+		case data := <-s.callerServer.FunctionResponses.FrMap[req.InstanceId.Id]:
+
+			s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Response().WithStatus("success"))
+
+			log.Debug().Msgf("Extracted response: '%v' from container with instance ID %s", data, req.InstanceId.Id)
+			response := &pb.Response{Data: data}
+			return response, nil
+
+		case err := <-containerCrashed:
+
+			s.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Die())
+
+			log.Error().Msgf("Container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
+
+			return nil, fmt.Errorf("container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
+
+		}
+
+	*/
 }
 
 func (s *Controller) Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {

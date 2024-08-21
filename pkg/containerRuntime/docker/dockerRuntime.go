@@ -3,6 +3,8 @@ package dockerRuntime
 import (
 	"context"
 	"fmt"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
 	"github.com/google/uuid"
 	"io"
 	"os"
@@ -29,6 +31,8 @@ type DockerRuntime struct {
 	Cli             *client.Client
 	autoRemove      bool
 	outputFolderAbs string
+	callerServer    caller.CallerServer
+	statsManager    stats.StatsManager
 }
 
 const (
@@ -70,7 +74,11 @@ func NewDockerRuntime(autoRemove bool) *DockerRuntime {
 		}
 	}
 
-	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs}
+	return &DockerRuntime{
+		Cli:             cli,
+		autoRemove:      autoRemove,
+		outputFolderAbs: outputFolderAbs,
+	}
 }
 
 // Start a container with the given image tag and configuration.
@@ -138,11 +146,49 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 	return resp.ID, nil
 }
 
-func (d *DockerRuntime) Call(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
+func (d *DockerRuntime) ContainerCall(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
 
-	//TODO implement container monitoring, if container fails, return error message in call
+	// Check if container crashes
+	containerCrashed := make(chan error)
+	//defer close(containerCrashed)
 
-	return &pb.Response{}, nil
+	go func() {
+		containerCrashed <- d.NotifyCrash(ctx, req.InstanceId.Id)
+	}()
+
+	log.Debug().Msgf("Passing call with payload: %v to channel of instance ID %s", req.Params.Data, req.InstanceId.Id)
+
+	go func() {
+		// Pass the call to the channel based on the instance ID
+		d.callerServer.PassCallToChannel(req.InstanceId.Id, req.Params.Data)
+
+		fmt.Println("Passed call to channel")
+		// stats
+		d.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().WithStatus("success"))
+
+		//fmt.Println("Enqueued stats")
+
+	}()
+
+	select {
+
+	case data := <-d.callerServer.FunctionResponses.FrMap[req.InstanceId.Id]:
+
+		d.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Response().WithStatus("success"))
+
+		log.Debug().Msgf("Extracted response: '%v' from container with instance ID %s", data, req.InstanceId.Id)
+		response := &pb.Response{Data: data}
+		return response, nil
+
+	case err := <-containerCrashed:
+
+		d.statsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Die())
+
+		log.Error().Msgf("Container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
+
+		return nil, fmt.Errorf("container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
+
+	}
 
 }
 
