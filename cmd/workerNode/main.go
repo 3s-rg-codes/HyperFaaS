@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
 	"os"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
@@ -84,10 +86,17 @@ func main() {
 	}
 
 	var runtime cr.ContainerRuntime
+
+	cs := caller.New()
+	sm := stats.New()
+
+	cs.Start()
+	sm.StartStreamingToListeners()
+
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove)
+		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, &cs, &sm)
 	case "mockRuntime":
 		runtime = mock.NewFakeRuntime(2)
 	default:
@@ -104,7 +113,7 @@ func main() {
 	},
 	)
 
-	// Start the worker server
+	// Start the controller server
 	w.Controller.StartServer()
 
 }

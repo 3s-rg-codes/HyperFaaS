@@ -4,7 +4,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/mockRuntime"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
 	"os"
 	"testing"
 	"time"
@@ -82,11 +84,22 @@ func setup() {
 
 	switch *requestedRuntime {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(*autoRemove) //did not work otherwise while using container runtime interface
+		cs := caller.New()
+		sm := stats.New()
+
+		go cs.Start()
+		go sm.StartStreamingToListeners()
+
+		runtime = dockerRuntime.NewDockerRuntime(*autoRemove, &cs, &sm) //did not work otherwise while using container runtime interface
 		testController = controller.New(runtime)
+
+		log.Info().Msgf("Docker Runtime initialized")
+
 	case "mockRuntime":
 		fakeRuntime = mockRuntime.NewFakeRuntime(2)
 		testController = controller.New(fakeRuntime)
+	default:
+		log.Fatal().Msgf("FATAL: Invalid Runtime")
 	}
 
 	//Log setup

@@ -34,7 +34,7 @@ func (fR *FakeRuntime) ContainerExists(instanceId string) bool {
 	return ok
 }
 
-func (fR *FakeRuntime) Start(ctx context.Context, imageTag string, config *pb.Config) (string, error) {
+func (fR *FakeRuntime) RuntimeStart(ctx context.Context, imageTag string, config *pb.Config) (string, error) {
 	uuid := uuid2.New().String()
 	switch imageTag {
 	case "hyperfaas-crash:latest":
@@ -59,7 +59,7 @@ func (fR *FakeRuntime) Start(ctx context.Context, imageTag string, config *pb.Co
 	return uuid, nil
 }
 
-func (fR *FakeRuntime) ContainerCall(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
+func (fR *FakeRuntime) RuntimeCall(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
 	log.Debug().Msgf("Passing call with payload: %v to channel of instance ID %s", req.Params.Data, req.InstanceId.Id)
 
 	if !fR.ContainerExists(req.InstanceId.Id) {
@@ -87,7 +87,7 @@ func (fR *FakeRuntime) ContainerCall(ctx context.Context, req *pb.CallRequest) (
 	return &pb.Response{}, nil
 }
 
-func (fR *FakeRuntime) Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {
+func (fR *FakeRuntime) RuntimeStop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {
 	mutex.Lock()
 	_, ok := fR.instanceMap[req.Id]
 	mutex.Unlock()
@@ -100,12 +100,12 @@ func (fR *FakeRuntime) Stop(ctx context.Context, req *pb.InstanceID) (*pb.Instan
 	return req, nil
 }
 
-func (fR *FakeRuntime) Status(req *pb.StatusRequest, stream pb.Controller_StatusServer) error {
-
+func (fR *FakeRuntime) RuntimeStatus(req *pb.StatusRequest, stream pb.Controller_StatusServer) error {
+	fmt.Println("¯\\_(ツ)_/¯")
 	return nil
 }
 
-func (fR *FakeRuntime) NotifyCrash(ctx context.Context, instanceId string) error {
+func (fR *FakeRuntime) RuntimeNotifyCrash(ctx context.Context, instanceId string) error {
 	ch := make(chan struct{})
 	<-ch //blocks forever
 	return nil
