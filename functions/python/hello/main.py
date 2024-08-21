@@ -1,18 +1,9 @@
-import contextvars
-from urllib import request
+from functions.python.functionRuntimeInterface import Request, Handler, Response, function_runtime_interface
 
-from pkg.pyFunctionRuntimeInterface.pyFuntionRuntimeInterface import Function, new, Response, Request
+
+def handler(context, req: Request) -> Response:
+    return Response(data="Hello World", id=req.id)
 
 
 def main():
-    function = new(120)
-
-    function.ready(handler)
-
-
-def handler(ctx, req: Request) -> Response:
-    response: Response = Response(
-        data="HELLO WORLD!",
-        id=req.id
-    )
-    return response
+    function_runtime_interface(handler)

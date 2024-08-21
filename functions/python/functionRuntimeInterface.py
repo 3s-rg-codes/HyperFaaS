@@ -2,18 +2,34 @@ import contextvars
 import logging
 import os
 from dataclasses import dataclass
+from typing import Callable
+
 import grpc
 
 from proto.function import function_pb2_grpc, function_pb2
 
 
-def main():
+@dataclass
+class Response:
+    data: str
+    id: str
+
+
+@dataclass
+class Request:
+    data: str
+    id: str
+
+
+Handler = Callable[[contextvars.ContextVar, Request], Response]
+
+
+def function_runtime_interface(handler: Handler):
     address = os.getenv("CALLER_SERVER_ADDRESS")
     if address is None:
-     address = ""
-     address="{}:50052".format(address)
-    ide = getID()
-
+        address = ""
+        address = "{}:50052".format(address)
+    ide = get_id()
 
     with (grpc.insecure_channel(address) as channel):
         c = function_pb2_grpc.FunctionServiceStub(channel)
@@ -22,16 +38,16 @@ def main():
         firstexec = True
         while True:
             if firstexec:
-              p = c.Ready()
+                p = c.Ready()
             logging.debug(f"Received request: {p.data}")
-            resp = handler(Request(id=p.id, data=p.data),ctx)
+            resp = handler(ctx, Request(id=p.id, data=p.data))
             logging.debug(f"Function handler called and generated response: {resp.data}")
-            payload = function_pb2.Payload(data=resp.data,id=resp.id, firstExecution=firstexec)
+            payload = function_pb2.Payload(data=resp.data, id=resp.id, firstExecution=firstexec)
             firstexec = False
             p = c.Ready(payload)
 
 
-def getID():
+def get_id():
     id = ""
     try:
         with open('.env', 'r') as file:
@@ -43,16 +59,3 @@ def getID():
         raise e
 
     return id
-
-@dataclass
-class Response:
-    data: str
-    id: str
-
-@dataclass
-class Request:
-    data:str
-    id: str
-
-def handler(request, context) -> Response:
-    return Response(data="Hello World", id=request.id)

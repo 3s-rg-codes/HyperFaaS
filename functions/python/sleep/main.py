@@ -1,20 +1,16 @@
-import contextvars
 import time
-from urllib import request
 
-from pkg.pyFunctionRuntimeInterface.pyFuntionRuntimeInterface import Function, new, Response, Request
-
-
-def main():
-    function = new(120)
-
-    function.ready(handler)
+from functions.python.functionRuntimeInterface import Request, Handler, Response, function_runtime_interface
 
 
-def handler(ctx, req: Request) -> Response:
+def handler(context, req: Request) -> Response:
     time.sleep(20)
     resp: Response = Response(
         data="finished sleeping",
         id=req.id
     )
     return resp
+
+
+def main():
+    function_runtime_interface(handler)
