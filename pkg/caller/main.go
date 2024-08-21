@@ -9,6 +9,8 @@ import (
 
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type CallerServer struct {
@@ -36,7 +38,13 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 
 	// Wait for the function to be called
 	log.Debug().Msgf("Looking at channel for a call with instance ID %s", payload.Id)
-	call := <-s.ExtractCallFromChannel(payload.Id)
+	call, ok := <-s.ExtractCallFromChannel(payload.Id)
+
+	if !ok {
+		log.Error().Msgf("Channel for instance ID %s is closed", payload.Id)
+		return nil, status.Error(codes.Internal, "Channel closed")
+	}
+
 	log.Debug().Msgf("Received call: %s", call)
 
 	// Send the call to the function instance
@@ -106,7 +114,7 @@ func (s *CallerServer) PassCallToChannel(id string, call string) {
 	}
 }
 
-func (s *CallerServer) ExtractCallFromChannel(id string) <-chan string {
+func (s *CallerServer) ExtractCallFromChannel(id string) chan string {
 	s.FunctionCalls.mu.RLock()
 	ch, ok := s.FunctionCalls.FcMap[id]
 	s.FunctionCalls.mu.RUnlock()
@@ -117,7 +125,7 @@ func (s *CallerServer) ExtractCallFromChannel(id string) <-chan string {
 	return nil
 }
 
-func (s *CallerServer) ExtractResponseFromChannel(id string) <-chan string {
+func (s *CallerServer) ExtractResponseFromChannel(id string) chan string {
 	s.FunctionResponses.mu.RLock()
 	ch, ok := s.FunctionResponses.FrMap[id]
 	s.FunctionResponses.mu.RUnlock()

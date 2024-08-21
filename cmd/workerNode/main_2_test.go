@@ -113,7 +113,7 @@ func TestNormalExecution(t *testing.T) {
 			ImageTag:          imageTags[0],
 			ExpectedError:     false,
 			ExpectedErrorCode: codes.OK,
-			CallPayload:       "",
+			CallPayload:       "TESTPAYLOAD",
 		},
 		{
 			testName:          "normal execution of echo image",

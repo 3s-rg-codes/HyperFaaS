@@ -26,6 +26,7 @@ type ControllerClient interface {
 	Call(ctx context.Context, in *CallRequest, opts ...grpc.CallOption) (*Response, error)
 	Stop(ctx context.Context, in *InstanceID, opts ...grpc.CallOption) (*InstanceID, error)
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (Controller_StatusClient, error)
+	Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsUpdate, error)
 }
 
 type controllerClient struct {
@@ -95,6 +96,15 @@ func (x *controllerStatusClient) Recv() (*StatusUpdate, error) {
 	return m, nil
 }
 
+func (c *controllerClient) Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsUpdate, error) {
+	out := new(MetricsUpdate)
+	err := c.cc.Invoke(ctx, "/worker.Controller/Metrics", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControllerServer is the server API for Controller service.
 // All implementations must embed UnimplementedControllerServer
 // for forward compatibility
@@ -103,6 +113,7 @@ type ControllerServer interface {
 	Call(context.Context, *CallRequest) (*Response, error)
 	Stop(context.Context, *InstanceID) (*InstanceID, error)
 	Status(*StatusRequest, Controller_StatusServer) error
+	Metrics(context.Context, *MetricsRequest) (*MetricsUpdate, error)
 	mustEmbedUnimplementedControllerServer()
 }
 
@@ -121,6 +132,9 @@ func (UnimplementedControllerServer) Stop(context.Context, *InstanceID) (*Instan
 }
 func (UnimplementedControllerServer) Status(*StatusRequest, Controller_StatusServer) error {
 	return status.Errorf(codes.Unimplemented, "method Status not implemented")
+}
+func (UnimplementedControllerServer) Metrics(context.Context, *MetricsRequest) (*MetricsUpdate, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Metrics not implemented")
 }
 func (UnimplementedControllerServer) mustEmbedUnimplementedControllerServer() {}
 
@@ -210,6 +224,24 @@ func (x *controllerStatusServer) Send(m *StatusUpdate) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Controller_Metrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServer).Metrics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/worker.Controller/Metrics",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServer).Metrics(ctx, req.(*MetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Controller_ServiceDesc is the grpc.ServiceDesc for Controller service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -228,6 +260,10 @@ var Controller_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Stop",
 			Handler:    _Controller_Stop_Handler,
+		},
+		{
+			MethodName: "Metrics",
+			Handler:    _Controller_Metrics_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
