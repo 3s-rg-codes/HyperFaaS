@@ -39,12 +39,14 @@ def function_runtime_interface(handler: Handler):
         while True:
             if firstexec:
                 p = c.Ready()
+            else:
+                p = c.Ready(payload)
             logging.debug(f"Received request: {p.data}")
             resp = handler(ctx, Request(id=p.id, data=p.data))
             logging.debug(f"Function handler called and generated response: {resp.data}")
             payload = function_pb2.Payload(data=resp.data, id=resp.id, firstExecution=firstexec)
             firstexec = False
-            p = c.Ready(payload)
+
 
 
 def get_id():
