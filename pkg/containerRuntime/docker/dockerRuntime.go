@@ -4,14 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
-	"github.com/google/uuid"
-	"io"
-	"os"
-	"regexp"
-	"strings"
-
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
@@ -21,9 +15,16 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"io"
+	"math"
+	"os"
+	"regexp"
+	"strings"
+	"time"
 )
 
 type DockerRuntime struct {
@@ -42,66 +43,78 @@ const (
 )
 
 var (
-	// Regex that matches all chars that are not valid in a container name
-	forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
+	forbiddenChars         = regexp.MustCompile("[^a-zA-Z0-9_.-]")
+	maxTries       int     = 3  //TODO should probably be set through a flag
+	initialTimeout float64 = 10 //TODO should probably be set through a flag
 )
 
-func NewDockerRuntime(autoRemove bool, caller *caller.CallerServer, stats *stats.StatsManager) *DockerRuntime {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
+func NewDockerRuntime(autoRemove bool, caller *caller.CallerServer, stats *stats.StatsManager) (*DockerRuntime, error) {
+
+	var cli *client.Client
+	var err error
+	for i := 0; ; i++ {
+		cli, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		if err == nil {
+			break
+		}
 		log.Error().Msgf("Could not create Docker client: %v", err)
-		return nil
+		if i == maxTries {
+			return nil, status.Errorf(codes.Internal, err.Error())
+		}
+		delay(i)
 	}
 
 	// Figure out where to put the logs
-	var outputFolderAbs string
-	// Get the current path
-	currentWd, _ := os.Getwd()
-	log.Info().Msgf("Current path: %s", currentWd)
-	// If the current path ends with /cmd/workerNode, remove it from the path to get the base path of the project
-	if strings.HasSuffix(currentWd, "cmd/workerNode") {
-		outputFolderAbs = currentWd[:len(currentWd)-14] + logsOutputDir
-	} else {
-		outputFolderAbs = currentWd + "/" + logsOutputDir
+	outputFolderAbs, err := determineLogDir()
+	if err != nil {
+		return nil, err
 	}
+
 	log.Info().Msgf("Logs directory: %s", outputFolderAbs)
-
-	// Create the logs directory
-	if _, err := os.Stat(logsOutputDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(logsOutputDir, 0755); err != nil {
-			log.Error().Msgf("Could not create logs directory: %v", err)
-			return nil
-		}
-	}
-
 	return &DockerRuntime{
 		Cli:             cli,
 		autoRemove:      autoRemove,
 		outputFolderAbs: outputFolderAbs,
 		callerServer:    caller,
 		statsManager:    stats,
-	}
+	}, nil
 }
 
-// Start a container with the given image tag and configuration.
 func (d *DockerRuntime) RuntimeStart(ctx context.Context, imageTag string, config *pb.Config) (string, error) {
 	// Start by checking if the image exists locally already
 	imageListArgs := filters.NewArgs()
 	imageListArgs.Add("reference", imageTag)
-	images, err := d.Cli.ImageList(ctx, image.ListOptions{Filters: imageListArgs})
 
-	if err != nil {
-		return "", fmt.Errorf("could not list Docker images: %v", err)
+	var images []image.Summary
+	var err error
+	for i := 0; ; i++ {
+		images, err = d.Cli.ImageList(ctx, image.ListOptions{Filters: imageListArgs})
+		if err == nil {
+			break
+		}
+		log.Error().Msgf("Could not list Docker images: %v", err)
+		if i == maxTries {
+			return "", status.Errorf(codes.Unavailable, err.Error()) //TODO is this the right error code?
+		}
+		delay(i)
 	}
 
 	if len(images) == 0 {
 		// Pull the image from docker hub if necessary.
 		log.Printf("Pulling image %s", imageTag)
-		reader, err := d.Cli.ImagePull(ctx, imageTag, image.PullOptions{})
 
-		if err != nil {
-			log.Err(err).Msgf("Could not pull image %s", imageTag)
-			return "", status.Errorf(codes.NotFound, err.Error())
+		var reader io.ReadCloser
+		var err error
+		for i := 0; ; i++ {
+			reader, err = d.Cli.ImagePull(ctx, imageTag, image.PullOptions{})
+			if err == nil {
+				break
+			}
+			log.Error().Msgf("Could not pull image %s", imageTag)
+			if i == maxTries {
+				return "", status.Errorf(codes.NotFound, err.Error())
+			}
+			delay(i)
 		}
 
 		_, _ = io.Copy(os.Stdout, reader)
@@ -115,36 +128,54 @@ func (d *DockerRuntime) RuntimeStart(ctx context.Context, imageTag string, confi
 	containerName := containerPrefix + imageTag + "-" + uuid.New().String()[:8]
 	// only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed in the container name, just remove all forbidden characters
 	containerName = forbiddenChars.ReplaceAllString(containerName, "")
+	/* ?????????????
 	if err != nil {
 		log.Err(err).Msgf("Could not get absolute path of logs directory: %v", err)
-		//s.runtime.statsManager.Enqueue(stats.Event().Container(instanceId).Start().WithStatus("failed"))
-		//TODO this line doesnt make sense because if the container didnt start we dont have na id to log the fail to, how else can we do this
-		return "", err
+		return nil, err
 	}
-	resp, err := d.Cli.ContainerCreate(ctx, &container.Config{
-		Image: imageTag,
-		ExposedPorts: nat.PortSet{
-			"50052/tcp": struct{}{},
-		},
-	}, &container.HostConfig{
-		AutoRemove:  d.autoRemove,
-		NetworkMode: "host",
-		Mounts: []mount.Mount{
-			{
-				Type:   mount.TypeBind,
-				Source: d.outputFolderAbs,
-				Target: "/logs/",
-			},
-		},
-	}, &network.NetworkingConfig{}, nil, containerName)
+	*/
+	//d.statsManager.Enqueue(stats.Event().Container(containerName).Start().WithStatus("failed"))
+	var resp container.CreateResponse
 
-	if err != nil {
-		log.Err(err).Msgf("Could not create container with image tag %s", imageTag)
-		return "", err
+	for i := 0; ; i++ {
+		resp, err = d.Cli.ContainerCreate(ctx, &container.Config{
+			Image: imageTag,
+			ExposedPorts: nat.PortSet{
+				"50052/tcp": struct{}{},
+			},
+		}, &container.HostConfig{
+			AutoRemove:  d.autoRemove,
+			NetworkMode: "host",
+			Mounts: []mount.Mount{
+				{
+					Type:   mount.TypeBind,
+					Source: d.outputFolderAbs,
+					Target: "/logs/",
+				},
+			},
+		}, &network.NetworkingConfig{}, nil, containerName)
+		if err == nil {
+			break
+		}
+		log.Error().Msgf("Could not create container with image tag %s", imageTag)
+		if i == maxTries {
+			return "", status.Errorf(codes.Unavailable, err.Error())
+		}
+		delay(i)
 	}
+
 	log.Debug().Msgf("Created and now Starting container with ID %s , Warnings: %v", resp.ID, resp.Warnings)
-	if err := d.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		return "", err
+
+	for i := 0; ; i++ {
+		err = d.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{})
+		if err == nil {
+			break
+		}
+		log.Error().Msgf("Could not start container with ID %s", resp.ID)
+		if i == maxTries {
+			return "", status.Errorf(codes.Unavailable, err.Error())
+		}
+		delay(i)
 	}
 
 	d.statsManager.Enqueue(stats.Event().Container(resp.ID).Start().WithStatus("success"))
@@ -156,6 +187,7 @@ func (d *DockerRuntime) RuntimeStart(ctx context.Context, imageTag string, confi
 func (d *DockerRuntime) RuntimeCall(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
 
 	//Check if the instance ID is present in the FunctionCalls map
+	//We dont have to retry this since its go internal
 
 	if _, ok := d.callerServer.FunctionCalls.FcMap[req.InstanceId.Id]; !ok {
 		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
@@ -208,7 +240,7 @@ func (d *DockerRuntime) RuntimeCall(ctx context.Context, req *pb.CallRequest) (*
 
 		log.Error().Msgf("Container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
 
-		return nil, fmt.Errorf("container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
+		return nil, status.Errorf(codes.Internal, fmt.Errorf("container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err).Error())
 
 	}
 
@@ -219,17 +251,31 @@ func (d *DockerRuntime) RuntimeStop(ctx context.Context, req *pb.InstanceID) (*p
 	d.callerServer.UnregisterFunction(req.Id)
 
 	// Check if the container exists
-	_, err := d.Cli.ContainerInspect(ctx, req.Id)
-	if err != nil {
+
+	var err error
+	for i := 0; ; i++ {
+		_, err = d.Cli.ContainerInspect(ctx, req.Id)
+		if err == nil {
+			break
+		}
 		log.Error().Msgf("Container %s does not exist", req.Id)
-		d.statsManager.Enqueue(stats.Event().Container(req.Id).Stop().WithStatus("failed"))
-		return nil, status.Errorf(codes.NotFound, err.Error())
+		if i == maxTries {
+			d.statsManager.Enqueue(stats.Event().Container(req.Id).Stop().WithStatus("failed"))
+			return nil, status.Errorf(codes.NotFound, err.Error())
+		}
 	}
 
 	// Stop the container
-	if err := d.Cli.ContainerStop(ctx, req.Id, container.StopOptions{}); err != nil {
-		d.statsManager.Enqueue(stats.Event().Container(req.Id).Stop().WithStatus("failed"))
-		return nil, err
+	for i := 0; ; i++ {
+		err = d.Cli.ContainerStop(ctx, req.Id, container.StopOptions{})
+		if err == nil {
+			break
+		}
+		log.Error().Msgf("Could not stop container with ID %s", req.Id)
+		if i == maxTries {
+			d.statsManager.Enqueue(stats.Event().Container(req.Id).Stop().WithStatus("failed"))
+			return nil, status.Errorf(codes.Unavailable, err.Error())
+		}
 	}
 
 	log.Debug().Msgf("Stopped container with instance ID %s", req.Id)
@@ -302,4 +348,52 @@ func (d *DockerRuntime) RuntimeNotifyCrash(ctx context.Context, instanceId strin
 			return nil
 		}
 	}
+}
+
+func delay(i int) {
+	delay := time.Duration(math.Pow(initialTimeout, float64(i))) * time.Millisecond
+	time.Sleep(delay)
+}
+
+func determineLogDir() (string, error) {
+	var result string
+	// Get the current path
+	currentWd, err := os.Getwd()
+	if err != nil {
+		log.Err(err).Msgf("Could not get current path: %v", err)
+		return "", status.Errorf(codes.Unknown, "Could not get current path: %v", err)
+	}
+	currentWd = strings.ReplaceAll(currentWd, "\\", "/")
+	log.Info().Msgf("Current path: %s", currentWd)
+
+	pathSplit := strings.Split(currentWd, "/")
+	index := -1
+	for i := len(pathSplit) - 1; i >= 0; i-- {
+		if pathSplit[i] == "HyperFaaS" {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		log.Error().Msgf("Could not find base path of project")
+		return "", status.Errorf(codes.NotFound, "Could not find base path of project")
+	}
+	// Join the path back together
+	for i := 0; i <= index; i++ {
+		result += pathSplit[i] + "/"
+	}
+
+	outputFolderAbs := result + logsOutputDir
+
+	log.Info().Msgf("Logs directory: %s", outputFolderAbs)
+
+	// Create the logs directory
+	if _, err := os.Stat(outputFolderAbs); os.IsNotExist(err) {
+		if err := os.MkdirAll(outputFolderAbs, 0755); err != nil {
+			log.Error().Msgf("Could not create logs directory: %v", err)
+			return "", status.Errorf(codes.Unknown, "Could not create logs directory: %v", err)
+		}
+	}
+
+	return outputFolderAbs, nil
 }

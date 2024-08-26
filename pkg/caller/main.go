@@ -2,7 +2,6 @@ package caller
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"sync"
 
@@ -74,7 +73,7 @@ func New() CallerServer {
 
 // RegisterFunction adds message channels for the given function ID
 func (s *CallerServer) RegisterFunction(id string) {
-	fmt.Println("THIS IS REGISTER FUNCTION BEFORE LOCKS")
+	//fmt.Println("THIS IS REGISTER FUNCTION BEFORE LOCKS")
 	s.FunctionCalls.mu.Lock()
 	//defer s.FunctionCalls.mu.Unlock()
 	s.FunctionCalls.FcMap[id] = make(chan string, 1)
@@ -84,45 +83,45 @@ func (s *CallerServer) RegisterFunction(id string) {
 	//defer s.FunctionResponses.mu.Unlock()
 	s.FunctionResponses.FrMap[id] = make(chan string, 1)
 	s.FunctionResponses.mu.Unlock()
-	fmt.Println("THIS IS REGISTER FUNCTION AFTER LOCKS")
+	//fmt.Println("THIS IS REGISTER FUNCTION AFTER LOCKS")
 }
 
 func (s *CallerServer) UnregisterFunction(id string) {
 	s.FunctionCalls.mu.Lock()
-	fmt.Println("AFTER LOCK")
+	//fmt.Println("AFTER LOCK")
 	if _, ok := s.FunctionCalls.FcMap[id]; ok {
 		close(s.FunctionCalls.FcMap[id])
 		delete(s.FunctionCalls.FcMap, id)
 	}
 	s.FunctionCalls.mu.Unlock()
-	fmt.Println("AFTER UNLOCK")
+	//fmt.Println("AFTER UNLOCK")
 
 	s.FunctionResponses.mu.Lock()
-	fmt.Println("AFTER 2LOCK")
+	//fmt.Println("AFTER 2LOCK")
 	if _, ok := s.FunctionResponses.FrMap[id]; ok {
 		close(s.FunctionResponses.FrMap[id])
 		delete(s.FunctionResponses.FrMap, id)
 	}
 	s.FunctionResponses.mu.Unlock()
-	fmt.Println("AFTER 2UNLOCK")
+	//fmt.Println("AFTER 2UNLOCK")
 }
 
 func (s *CallerServer) PassCallToChannel(id string, call string) {
 	s.FunctionCalls.mu.RLock()
-	fmt.Println("FunctionCalls Locked Pass")
+	//fmt.Println("FunctionCalls Locked Pass")
 	defer s.FunctionCalls.mu.RUnlock()
 	if ch, ok := s.FunctionCalls.FcMap[id]; ok {
 		ch <- call
 	}
-	fmt.Println("FunctionCalls Unlocked Pass")
+	//fmt.Println("FunctionCalls Unlocked Pass")
 }
 
 func (s *CallerServer) ExtractCallFromChannel(id string) <-chan string {
 	s.FunctionCalls.mu.RLock()
-	fmt.Println("FunctionCalls Locked Extract")
+	//fmt.Println("FunctionCalls Locked Extract")
 	ch, ok := s.FunctionCalls.FcMap[id]
 	s.FunctionCalls.mu.RUnlock()
-	fmt.Println("FunctionCalls Unlocked Extract")
+	//fmt.Println("FunctionCalls Unlocked Extract")
 
 	if ok {
 		return ch
@@ -132,10 +131,10 @@ func (s *CallerServer) ExtractCallFromChannel(id string) <-chan string {
 
 func (s *CallerServer) ExtractResponseFromChannel(id string) <-chan string {
 	s.FunctionResponses.mu.RLock()
-	fmt.Println("FunctionResponses Locked")
+	//fmt.Println("FunctionResponses Locked")
 	ch, ok := s.FunctionResponses.FrMap[id]
 	s.FunctionResponses.mu.RUnlock()
-	fmt.Println("FunctionResponses Unlocked")
+	//fmt.Println("FunctionResponses Unlocked")
 	if ok {
 		return ch
 	}
@@ -144,10 +143,10 @@ func (s *CallerServer) ExtractResponseFromChannel(id string) <-chan string {
 
 func (s *CallerServer) PushResponseToChannel(id string, response string) {
 	s.FunctionResponses.mu.RLock()
-	fmt.Println("FunctionResponses Locked")
+	//fmt.Println("FunctionResponses Locked")
 	defer s.FunctionResponses.mu.RUnlock()
 	if ch, ok := s.FunctionResponses.FrMap[id]; ok {
 		ch <- response
 	}
-	fmt.Println("FunctionResponses Unlocked")
+	//fmt.Println("FunctionResponses Unlocked")
 }

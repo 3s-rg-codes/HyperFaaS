@@ -103,10 +103,15 @@ func setup() {
 		cs := caller.New()
 		sm := stats.New()
 
-		cs.Start()
-		sm.StartStreamingToListeners()
+		go cs.Start()
+		go sm.StartStreamingToListeners()
 
-		runtime = dockerRuntime.NewDockerRuntime(*autoRemove, &cs, &sm) //did not work otherwise, using container runtime interface
+		var err error
+		runtime, err = dockerRuntime.NewDockerRuntime(*autoRemove, &cs, &sm) //did not work otherwise, using container runtime interface
+		if err != nil {
+			log.Fatal().Msgf("FATAL: Could not start docker runtime: %v", err)
+			return
+		}
 	case "mockRuntime":
 		fakeRuntime = mockRuntime.NewFakeRuntime(2)
 	default:
@@ -190,6 +195,7 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 			swgStart.Done()
 		}()
 	}
+	t.Logf("Waiting for containers to start")
 
 	/*
 		if !waitWithTimeout(&swg, *timeout) {
@@ -197,6 +203,7 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 		}
 	*/
 	time.Sleep(*timeout)
+	t.Logf("Timeout reached, now calling containers")
 	swgCall.Add(*containerCount)
 
 	for i := 0; i < *containerCount; i++ {
@@ -231,6 +238,7 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 			swgCall.Done()
 		}()
 	}
+	t.Logf("Waiting for containers to call")
 
 	/*
 		if !waitWithTimeout(&swg, *timeout) {
@@ -239,6 +247,7 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 
 	*/
 	time.Sleep(*timeout)
+	t.Logf("Timeout reached, now stopping containers")
 	swgStop.Add(*containerCount)
 
 	for i := 0; i < *containerCount; i++ {
@@ -274,8 +283,10 @@ func TestConcurrencyStartAndStop(t *testing.T) {
 			swgStop.Done()
 		}()
 	}
+	t.Logf("Waiting for containers to stop")
 
 	time.Sleep(*timeout)
+	t.Logf("Timeout reached, now evaluating test")
 	//____________________________Cleanup________________________________
 	//wait for all Goroutines to finish with Waitgroup
 	/*

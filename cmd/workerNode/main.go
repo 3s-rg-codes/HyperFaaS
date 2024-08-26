@@ -90,13 +90,16 @@ func main() {
 	cs := caller.New()
 	sm := stats.New()
 
-	cs.Start()
-	sm.StartStreamingToListeners()
+	go cs.Start()
+	go sm.StartStreamingToListeners()
 
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, &cs, &sm)
+		runtime, err = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, &cs, &sm)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Could not create Docker runtime")
+		}
 	case "mockRuntime":
 		runtime = mock.NewFakeRuntime(2)
 	default:

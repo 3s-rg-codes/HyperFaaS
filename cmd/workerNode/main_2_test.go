@@ -90,7 +90,13 @@ func setup() {
 		go cs.Start()
 		go sm.StartStreamingToListeners()
 
-		runtime = dockerRuntime.NewDockerRuntime(*autoRemove, &cs, &sm) //did not work otherwise while using container runtime interface
+		var err error
+
+		runtime, err = dockerRuntime.NewDockerRuntime(*autoRemove, &cs, &sm) //did not work otherwise while using container runtime interface
+		if err != nil {
+			log.Fatal().Msgf("FATAL: Could not initialize Docker Runtime: %v", err)
+			return
+		}
 		testController = controller.New(runtime)
 
 		log.Info().Msgf("Docker Runtime initialized")
