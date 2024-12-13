@@ -26,15 +26,15 @@ import (
 
 type DockerRuntime struct {
 	cr.ContainerRuntime
-	Cli        *client.Client
-	autoRemove bool
+	Cli             *client.Client
+	autoRemove      bool
 	outputFolderAbs string
 }
 
 const (
-	logsOutputDir = "functions/logs/" // Relative to project root
+	logsOutputDir   = "functions/logs/" // Relative to project root
 	containerPrefix = "hyperfaas-"
-	imagePrefix = "hyperfaas-"
+	imagePrefix     = "hyperfaas-"
 )
 
 var (
@@ -62,7 +62,6 @@ func NewDockerRuntime(autoRemove bool) *DockerRuntime {
 	}
 	log.Info().Msgf("Logs directory: %s", outputFolderAbs)
 
-
 	// Create the logs directory
 	if _, err := os.Stat(logsOutputDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(logsOutputDir, 0755); err != nil {
@@ -80,6 +79,10 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 	imageListArgs := filters.NewArgs()
 	imageListArgs.Add("reference", imageTag)
 	images, err := d.Cli.ImageList(ctx, image.ListOptions{Filters: imageListArgs})
+
+	for _, img := range images {
+		log.Debug().Msgf("Found image %s", img.RepoTags)
+	}
 
 	if err != nil {
 		return "", fmt.Errorf("could not list Docker images: %v", err)
