@@ -1,8 +1,6 @@
 package worker
 
-import (
-	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
-)
+import "github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 
 type Config struct {
 	Id         string

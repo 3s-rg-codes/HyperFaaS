@@ -4,10 +4,11 @@ import (
 	"flag"
 	"os"
 
-	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
-	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
+	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
+	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/worker"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -82,16 +83,17 @@ func main() {
 		log.Fatal().Err(err).Msg("TODO - handle error")
 	}
 
+	cs := caller.New()
 	var runtime cr.ContainerRuntime
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove)
+		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, cs)
 	default:
 		log.Error().Msg("No runtime specified")
 	}
 
-	c := controller.New(runtime)
+	c := controller.New(runtime, cs)
 
 	w := worker.New(&worker.Config{
 		Id:         wc.General.Id,

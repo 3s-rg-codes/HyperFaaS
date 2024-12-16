@@ -3,13 +3,15 @@ package dockerRuntime
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"os"
 	"regexp"
 	"strings"
 
-	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
+	"github.com/google/uuid"
+
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
+	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
@@ -26,23 +28,23 @@ import (
 
 type DockerRuntime struct {
 	cr.ContainerRuntime
-	Cli        *client.Client
-	autoRemove bool
+	Cli             *client.Client
+	autoRemove      bool
 	outputFolderAbs string
 }
 
 const (
-	logsOutputDir = "functions/logs/" // Relative to project root
+	logsOutputDir   = "functions/logs/" // Relative to project root
 	containerPrefix = "hyperfaas-"
-	imagePrefix = "hyperfaas-"
+	imagePrefix     = "hyperfaas-"
 )
 
 var (
-	// Regex that matches all chars that are not valid in a container name
+	// Regex that matches all chars that are not valid in a container names
 	forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 )
 
-func NewDockerRuntime(autoRemove bool) *DockerRuntime {
+func NewDockerRuntime(autoRemove bool, cs *caller.CallerServer) *DockerRuntime {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Error().Msgf("Could not create Docker client: %v", err)
@@ -61,7 +63,6 @@ func NewDockerRuntime(autoRemove bool) *DockerRuntime {
 		outputFolderAbs = currentWd + "/" + logsOutputDir
 	}
 	log.Info().Msgf("Logs directory: %s", outputFolderAbs)
-
 
 	// Create the logs directory
 	if _, err := os.Stat(logsOutputDir); os.IsNotExist(err) {
@@ -124,6 +125,11 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 				Source: d.outputFolderAbs,
 				Target: "/logs/",
 			},
+		},
+		Resources: container.Resources{
+			Memory:    int64(config.Memory),
+			CPUPeriod: int64(config.Cpu.Period),
+			CPUQuota:  int64(config.Cpu.Quota),
 		},
 	}, &network.NetworkingConfig{}, nil, containerName)
 

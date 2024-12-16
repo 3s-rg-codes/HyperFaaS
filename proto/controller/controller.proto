@@ -9,8 +9,20 @@ message ImageTag {
 }
 
 message Config {
+  // container memory limit in bytes
+  int64 memory = 1;
+
+  CPUConfig cpu = 2;
 }
 
+// Container CPU configuration. If the host has 2 CPUs and the container should only use 1 CPU, set period to 100000 and quota to 50000.
+message CPUConfig {
+  // CPU CFS (Completely Fair Scheduler) period
+  int64 period = 1;
+  // CPU CFS (Completely Fair Scheduler) quota
+  int64 quota = 2;
+
+}
 message StartRequest {
   ImageTag image_tag = 1;
   Config config = 2;
@@ -53,10 +65,34 @@ message MetricsUpdate{
   repeated double cpu_percent_percpu = 2;
 }
 
+message InstanceState {
+  string instance_id = 1;
+  bool is_active = 2;
+  // Duration fields stored in milliseconds
+  int64 time_since_last_work = 3;
+  int64 uptime = 4;
+}
+
+message FunctionState {
+  string function_id = 1;
+  repeated InstanceState running = 2;
+  repeated InstanceState idle = 3;
+}
+
+message StateResponse {
+  // List of function states for this worker
+  repeated FunctionState functions = 1;
+}
+
+message StateRequest {
+  string node_id = 1;
+}
+
 service Controller {
   rpc Start (StartRequest) returns (InstanceID);
   rpc Call (CallRequest) returns (Response);
   rpc Stop (InstanceID) returns (InstanceID);
   rpc Status (StatusRequest) returns (stream StatusUpdate);
   rpc Metrics (MetricsRequest) returns (MetricsUpdate);
+  rpc State (StateRequest) returns (StateResponse);
 }
