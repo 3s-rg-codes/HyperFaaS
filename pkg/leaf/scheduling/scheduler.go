@@ -2,14 +2,17 @@ package scheduling
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
+
+	"math/rand"
 )
 
 type Scheduler interface {
 	// A scheduling decision.
 	// A functionID needs an available instance because there is a request for it.
-	// The scheduler will return the SchedulingDecision, which just maps functionIDs to workerIDs.
+	// The scheduler will return the SchedulingDecision, which just maps functionIDs to workerIPs.
 	// That is all we need for now to know where to send the call.
 	// Scaling down can potentially also be done here.
 
@@ -20,10 +23,12 @@ type Scheduler interface {
 	UpdateState(ctx context.Context, state WorkerStateMap) error
 }
 
-// WorkerStateMap maps worker IDs to their registered functions
+// WorkerStateMap maps worker IPs to their registered functions
 type WorkerStateMap map[string][]FunctionState
 
-// SchedulingDecision maps function IDs to the worker ID that should run it
+// SchedulingDecision maps function IDs to the worker IP that should run it.
+// Caveat: if there is an available instance on a worker, the correct endpoint in the worker is Call (uses instanceID)
+// If there is no available instance, the correct endpoint in the worker would be Start (uses ImageTag currently)
 type SchedulingDecision map[string]string
 
 // FunctionState represents the state of a function and its instances
@@ -42,18 +47,21 @@ type InstanceState struct {
 }
 
 type naiveScheduler struct {
-	workers WorkerStateMap
-	mu      sync.Mutex
+	workers   WorkerStateMap
+	mu        sync.Mutex
+	workerIPs []string
+	logger    *slog.Logger
 }
 
-func NewNaiveScheduler() *naiveScheduler {
-	return &naiveScheduler{workers: make(WorkerStateMap)}
+func NewNaiveScheduler(workerIPs []string, logger *slog.Logger) *naiveScheduler {
+	return &naiveScheduler{workers: make(WorkerStateMap), workerIPs: workerIPs, logger: logger}
 }
 
 func (s *naiveScheduler) UpdateState(ctx context.Context, state WorkerStateMap) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.workers = state
+	s.logger.Debug("Updated worker state", "state", state)
 	return nil
 }
 
@@ -70,10 +78,17 @@ func (s *naiveScheduler) Schedule(ctx context.Context, functionID string, state 
 				// There is an idle instance on the worker
 				if len(function.Idle) > 0 {
 					decision[functionID] = workerID
+					s.logger.Debug("Scheduled function", "functionID", functionID, "workerID", workerID)
+					return decision, nil
 				}
 			}
 		}
 	}
+
+	// If we get here, there is no available instance on any worker
+	// TODO: pick worker with lowest load , for now just a random worker ip
+	decision[functionID] = s.workerIPs[rand.Intn(len(s.workerIPs))]
+	s.logger.Info("No instance found, scheduling to random worker", "functionID", functionID, "workerID", decision[functionID])
 
 	return decision, nil
 }
