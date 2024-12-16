@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/leaf";
+
+package leaf;
+
+message FindInstanceRequest {
+    string function_id = 1;
+}
+
+message FindInstanceResponse {
+    string instance_id = 1;
+    string worker_ip = 2;
+}
+
+service Leaf {
+    rpc FindInstance(FindInstanceRequest) returns (FindInstanceResponse);
+}
+

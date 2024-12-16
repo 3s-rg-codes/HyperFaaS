@@ -2,6 +2,7 @@ package scraping
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
@@ -18,19 +19,36 @@ type Scraper interface {
 var workerIPs = []string{}
 
 const (
-	scrapeInterval = 50 * time.Millisecond
 	// TODO use real id
 	leafLeaderID = "leafLeader"
+	timeout      = 30 * time.Second
 )
 
 type scraper struct {
 	workerIPs         []string
-	workerConnections map[string]*pb.ControllerClient
+	workerConnections map[string]pb.ControllerClient
 	// cache of the current state of the workers
-	state scheduling.WorkerStateMap
+	scrapeInterval time.Duration
+	state          scheduling.WorkerStateMap
+	logger         *slog.Logger
+}
+
+func NewScraper(scrapeInterval time.Duration, logger *slog.Logger) Scraper {
+	return &scraper{
+		scrapeInterval: scrapeInterval,
+		logger:         logger,
+	}
 }
 
 func (s *scraper) Scrape(ctx context.Context) (scheduling.WorkerStateMap, error) {
+	for _, workerIP := range s.workerIPs {
+		workerState, err := s.getWorkerState(workerIP)
+		if err != nil {
+			return nil, err
+		}
+		s.state[workerIP] = workerState
+		s.logger.Debug("Scraped worker state", "workerIP", workerIP, "state", workerState)
+	}
 	return s.state, nil
 }
 
@@ -49,14 +67,9 @@ func New(workerIPs []string) Scraper {
 	for _, workerIP := range s.workerIPs {
 		s.state[workerIP] = make([]scheduling.FunctionState, 0)
 	}
-
 	return s
 }
 
-// TODO: Implement the scraping logic
-// Scrape the workers and update the state
-// This will be called periodically by the leafLeader
-// And build the basis for the scheduling decision
 func (s *scraper) getWorkerState(workerIP string) ([]scheduling.FunctionState, error) {
 	if s.workerConnections[workerIP] == nil {
 		conn, err := grpc.NewClient(workerIP, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -67,8 +80,49 @@ func (s *scraper) getWorkerState(workerIP string) ([]scheduling.FunctionState, e
 		s.workerConnections[workerIP] = pb.NewControllerClient(conn)
 	}
 
-	state, err := s.workerConnections[workerIP].State(ctx, &hyperfaas.StateRequest{
-		NodeID: leafLeaderID,
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	state, err := s.workerConnections[workerIP].State(ctx, &pb.StateRequest{
+		NodeId: leafLeaderID,
 	})
-	return nil, nil
+	if err != nil {
+		return nil, err
+	}
+
+	// turn StateResponse into WorkerState ([]scheduling.FunctionState)
+	// TODO: im not sure if this is the best way to do this. Haven't found a best practice for this yet.
+	// directly using the
+	workerState := make([]scheduling.FunctionState, len(state.Functions))
+	for i, function := range state.Functions {
+		// Convert running instances
+		runningInstances := make([]scheduling.InstanceState, len(function.Running))
+		for j, instance := range function.Running {
+			runningInstances[j] = scheduling.InstanceState{
+				InstanceID:        instance.InstanceId,
+				IsActive:          instance.IsActive,
+				TimeSinceLastWork: time.Duration(instance.TimeSinceLastWork) * time.Millisecond,
+				Uptime:            time.Duration(instance.Uptime) * time.Millisecond,
+			}
+		}
+
+		// Convert idle instances
+		idleInstances := make([]scheduling.InstanceState, len(function.Idle))
+		for j, instance := range function.Idle {
+			idleInstances[j] = scheduling.InstanceState{
+				InstanceID:        instance.InstanceId,
+				IsActive:          instance.IsActive,
+				TimeSinceLastWork: time.Duration(instance.TimeSinceLastWork) * time.Millisecond,
+				Uptime:            time.Duration(instance.Uptime) * time.Millisecond,
+			}
+		}
+
+		workerState[i] = scheduling.FunctionState{
+			FunctionID: function.FunctionId,
+			Running:    runningInstances,
+			Idle:       idleInstances,
+		}
+	}
+
+	return workerState, nil
 }
