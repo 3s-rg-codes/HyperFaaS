@@ -168,11 +168,11 @@ func (s *Controller) Metrics(ctx context.Context, req *pb.MetricsRequest) (*pb.M
 	return &pb.MetricsUpdate{CpuPercentPercpu: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
 }
 
-func New(runtime cr.ContainerRuntime) Controller {
+func New(runtime cr.ContainerRuntime, cs *caller.CallerServer) Controller {
 
 	return Controller{
 		runtime:      runtime,
-		CallerServer: caller.New(),
+		CallerServer: *cs,
 		StatsManager: stats.New(),
 	}
 

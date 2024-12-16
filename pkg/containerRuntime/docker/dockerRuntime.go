@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/docker/docker/api/types/container"
@@ -39,11 +40,11 @@ const (
 )
 
 var (
-	// Regex that matches all chars that are not valid in a container name
+	// Regex that matches all chars that are not valid in a container names
 	forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 )
 
-func NewDockerRuntime(autoRemove bool) *DockerRuntime {
+func NewDockerRuntime(autoRemove bool, cs *caller.CallerServer) *DockerRuntime {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Error().Msgf("Could not create Docker client: %v", err)

@@ -68,8 +68,8 @@ func (s *CallerServer) Start() {
 	defer grpcServer.Stop()
 }
 
-func New() CallerServer {
-	return CallerServer{
+func New() *CallerServer {
+	return &CallerServer{
 		FunctionCalls: FunctionCalls{
 			FcMap: make(map[string]chan string),
 		},
