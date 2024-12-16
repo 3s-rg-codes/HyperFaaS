@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
-	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
+	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"

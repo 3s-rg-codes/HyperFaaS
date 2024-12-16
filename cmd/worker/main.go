@@ -4,11 +4,11 @@ import (
 	"flag"
 	"os"
 
-	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
-	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
-	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
+	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
+	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/worker"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -92,8 +92,6 @@ func main() {
 	default:
 		log.Error().Msg("No runtime specified")
 	}
-
-	
 
 	c := controller.New(runtime, cs)
 

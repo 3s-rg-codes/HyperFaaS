@@ -10,8 +10,8 @@ import (
 
 	"gotest.tools/v3/assert"
 
-	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime/docker"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/controller"
+	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"

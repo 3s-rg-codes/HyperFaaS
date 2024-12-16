@@ -6,9 +6,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/3s-rg-codes/HyperFaaS/pkg/caller"
-	cr "github.com/3s-rg-codes/HyperFaaS/pkg/containerRuntime"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
+	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/rs/zerolog/log"
 	cpu "github.com/shirou/gopsutil/v4/cpu"

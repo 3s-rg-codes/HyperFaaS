@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/3s-rg-codes/HyperFaaS/pkg/stats"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"

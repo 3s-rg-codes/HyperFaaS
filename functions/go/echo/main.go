@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	functionRuntimeInterface "github.com/3s-rg-codes/HyperFaaS/pkg/functionRuntimeInterface"
+
+	functionRuntimeInterface "github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
 )
 
 func main() {
