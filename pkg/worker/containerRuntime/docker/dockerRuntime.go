@@ -3,13 +3,6 @@ package dockerRuntime
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
-	"regexp"
-	"strings"
-
-	"github.com/google/uuid"
-
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
@@ -21,9 +14,15 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"io"
+	"os"
+	"regexp"
+	"strings"
+	"time"
 )
 
 type DockerRuntime struct {
@@ -174,7 +173,6 @@ func (d *DockerRuntime) Stop(ctx context.Context, req *pb.InstanceID) (*pb.Insta
 // TODO Status over docker Volume
 
 func (d *DockerRuntime) Status(req *pb.StatusRequest, stream pb.Controller_StatusServer) error {
-
 	return nil
 }
 
@@ -211,4 +209,74 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) erro
 			return nil
 		}
 	}
+}
+
+func (d *DockerRuntime) State(ctx context.Context, req *pb.StateRequest) (*pb.StateResponse, error) {
+	// List all containers managed by the runtime
+	containers, err := d.Cli.ContainerList(ctx, container.ListOptions{
+		All: true, // Include both running and stopped containers
+	})
+	if err != nil {
+		log.Error().Msgf("Failed to list containers.")
+		return nil, err
+	}
+
+	// Initialize a map to store function state information
+	functionStates := make(map[string]*pb.FunctionState)
+
+	for _, container := range containers {
+		// Get the function ID (assumed to be stored in container image tag)
+		functionID := container.Image
+
+		// Inspect the container to get additional information
+		containerDetails, err := d.Cli.ContainerInspect(ctx, container.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		// get ContainerState
+		containerState := containerDetails.State
+
+		isActive := containerState.Running
+		// Calculate uptime and time since last work (example placeholders)
+		startedAt, err := time.Parse(time.RFC3339, containerState.StartedAt)
+		finishedAt, err := time.Parse(time.RFC3339, containerState.FinishedAt)
+
+		uptime := time.Since(startedAt)
+		// Placeholder for actual time since last work logic (if available)
+		timeSinceLastWork := time.Since(finishedAt) // Replace with actual logic
+
+		instanceState := &pb.InstanceState{
+			InstanceId:        container.ID,
+			IsActive:          isActive,
+			TimeSinceLastWork: int64(timeSinceLastWork),
+			Uptime:            int64(uptime),
+		}
+
+		// Add instance to the corresponding function state
+		if _, exists := functionStates[functionID]; !exists {
+			functionStates[functionID] = &pb.FunctionState{
+				FunctionId: functionID,
+				Running:    []*pb.InstanceState{},
+				Idle:       []*pb.InstanceState{},
+			}
+		}
+
+		if isActive {
+			functionStates[functionID].Running = append(functionStates[functionID].Running, instanceState)
+		} else {
+			functionStates[functionID].Idle = append(functionStates[functionID].Idle, instanceState)
+		}
+	}
+
+	// Convert the map to a list of function states
+	var functionStateList []*pb.FunctionState
+	for _, state := range functionStates {
+		functionStateList = append(functionStateList, state)
+	}
+
+	// Create and return the response
+	return &pb.StateResponse{
+		Functions: functionStateList,
+	}, nil
 }

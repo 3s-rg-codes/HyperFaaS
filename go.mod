@@ -3,7 +3,7 @@ module github.com/3s-rg-codes/HyperFaaS
 go 1.22.4
 
 require (
-	github.com/docker/docker v27.0.0+incompatible
+	github.com/docker/docker v27.4.0+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/google/uuid v1.6.0
 	github.com/rs/zerolog v1.33.0
