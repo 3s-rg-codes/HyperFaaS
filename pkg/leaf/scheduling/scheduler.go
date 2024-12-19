@@ -3,10 +3,10 @@ package scheduling
 import (
 	"context"
 	"log/slog"
+	"math/rand"
+	"sort"
 	"sync"
 	"time"
-
-	"math/rand"
 )
 
 type Scheduler interface {
@@ -53,6 +53,15 @@ type naiveScheduler struct {
 	logger    *slog.Logger
 }
 
+func New(strategy string, workerIPs []string, logger *slog.Logger) Scheduler {
+	switch strategy {
+	case "naive":
+		return NewNaiveScheduler(workerIPs, logger)
+	default:
+		return NewNaiveScheduler(workerIPs, logger)
+	}
+}
+
 func NewNaiveScheduler(workerIPs []string, logger *slog.Logger) *naiveScheduler {
 	return &naiveScheduler{workers: make(WorkerStateMap), workerIPs: workerIPs, logger: logger}
 }
@@ -66,7 +75,7 @@ func (s *naiveScheduler) UpdateState(ctx context.Context, state WorkerStateMap) 
 }
 
 func (s *naiveScheduler) Schedule(ctx context.Context, functionID string, state WorkerStateMap) (SchedulingDecision, error) {
-	// copy the state
+
 	decision := make(SchedulingDecision)
 
 	for workerID, functions := range state {
@@ -82,6 +91,53 @@ func (s *naiveScheduler) Schedule(ctx context.Context, functionID string, state 
 					return decision, nil
 				}
 			}
+		}
+	}
+
+	// If we get here, there is no available instance on any worker
+	// TODO: pick worker with lowest load , for now just a random worker ip
+	decision[functionID] = s.workerIPs[rand.Intn(len(s.workerIPs))]
+	s.logger.Info("No instance found, scheduling to random worker", "functionID", functionID, "workerID", decision[functionID])
+
+	return decision, nil
+}
+
+type mruScheduler struct {
+	workers   WorkerStateMap
+	mu        sync.Mutex
+	workerIPs []string
+	logger    *slog.Logger
+}
+
+func NewMRUScheduler(workerIPs []string, logger *slog.Logger) *mruScheduler {
+	return &mruScheduler{workers: make(WorkerStateMap), workerIPs: workerIPs, logger: logger}
+}
+
+func (s *mruScheduler) UpdateState(ctx context.Context, state WorkerStateMap) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.workers = state
+	s.logger.Debug("Updated worker state", "state", state)
+	return nil
+}
+
+func (s *mruScheduler) Schedule(ctx context.Context, functionID string, state WorkerStateMap) (SchedulingDecision, error) {
+	decision := make(SchedulingDecision)
+
+	for workerID, functions := range state {
+
+		for _, function := range functions {
+			if function.FunctionID != functionID || len(function.Running) == 0 {
+				continue
+			}
+
+			sort.Slice(function.Running, func(i, j int) bool {
+				return function.Running[i].TimeSinceLastWork > function.Running[j].TimeSinceLastWork
+			})
+
+			decision[functionID] = workerID
+			s.logger.Debug("Scheduled function", "functionID", functionID, "workerID", workerID)
+			return decision, nil
 		}
 	}
 
