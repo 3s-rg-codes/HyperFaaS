@@ -12,7 +12,11 @@ import (
 )
 
 type Scraper interface {
+	// Scrape the state of all workers
 	Scrape(ctx context.Context) (scheduling.WorkerStateMap, error)
+	// A single worker's state
+	GetWorkerState(workerIP string) ([]scheduling.FunctionState, error)
+	// Set the worker IPs to scrape
 	SetWorkerIPs(workerIPs []string)
 }
 
@@ -42,7 +46,7 @@ func NewScraper(scrapeInterval time.Duration, logger *slog.Logger) Scraper {
 
 func (s *scraper) Scrape(ctx context.Context) (scheduling.WorkerStateMap, error) {
 	for _, workerIP := range s.workerIPs {
-		workerState, err := s.getWorkerState(workerIP)
+		workerState, err := s.GetWorkerState(workerIP)
 		if err != nil {
 			return nil, err
 		}
@@ -70,7 +74,7 @@ func New(workerIPs []string) Scraper {
 	return s
 }
 
-func (s *scraper) getWorkerState(workerIP string) ([]scheduling.FunctionState, error) {
+func (s *scraper) GetWorkerState(workerIP string) ([]scheduling.FunctionState, error) {
 	if s.workerConnections[workerIP] == nil {
 		conn, err := grpc.NewClient(workerIP, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
@@ -90,9 +94,11 @@ func (s *scraper) getWorkerState(workerIP string) ([]scheduling.FunctionState, e
 		return nil, err
 	}
 
-	// turn StateResponse into WorkerState ([]scheduling.FunctionState)
-	// TODO: im not sure if this is the best way to do this. Haven't found a best practice for this yet.
-	// directly using the
+	return convertStateResponseToWorkerState(state), nil
+}
+
+// convertStateResponseToWorkerState converts a StateResponse to []scheduling.FunctionState
+func convertStateResponseToWorkerState(state *pb.StateResponse) []scheduling.FunctionState {
 	workerState := make([]scheduling.FunctionState, len(state.Functions))
 	for i, function := range state.Functions {
 		// Convert running instances
@@ -123,6 +129,5 @@ func (s *scraper) getWorkerState(workerIP string) ([]scheduling.FunctionState, e
 			Idle:       idleInstances,
 		}
 	}
-
-	return workerState, nil
+	return workerState
 }
