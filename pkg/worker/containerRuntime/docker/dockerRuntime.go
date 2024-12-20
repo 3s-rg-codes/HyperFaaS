@@ -3,6 +3,7 @@ package dockerRuntime
 import (
 	"context"
 	"fmt"
+	"github.com/docker/docker/api/types/mount"
 	"io"
 	"os"
 	"regexp"
@@ -17,7 +18,6 @@ import (
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
@@ -45,7 +45,7 @@ var (
 )
 
 func NewDockerRuntime(autoRemove bool, cs *caller.CallerServer) *DockerRuntime {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.NewClientWithOpts(client.WithHost("unix:///var/run/docker.sock"), client.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Error().Msgf("Could not create Docker client: %v", err)
 		return nil
@@ -118,18 +118,18 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 		},
 	}, &container.HostConfig{
 		AutoRemove:  d.autoRemove,
-		NetworkMode: "host",
+		NetworkMode: "hyperfaas-network",
 		Mounts: []mount.Mount{
 			{
-				Type:   mount.TypeBind,
-				Source: d.outputFolderAbs,
+				Type:   mount.TypeVolume,
+				Source: "function-logs",
 				Target: "/logs/",
 			},
 		},
 		Resources: container.Resources{
-			Memory:    int64(config.Memory),
-			CPUPeriod: int64(config.Cpu.Period),
-			CPUQuota:  int64(config.Cpu.Quota),
+			//Memory:    int64(config.Memory),
+			//CPUPeriod: int64(config.Cpu.Period),
+			//CPUQuota:  int64(config.Cpu.Quota),
 		},
 	}, &network.NetworkingConfig{}, nil, containerName)
 
