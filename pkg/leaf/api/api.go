@@ -6,5 +6,5 @@ package api
 
 // potentially also some endpoints could be called by workers ??
 
-// The main "state" of the leader is all of the worker IPs.
+// The main "state" of the leader is all the worker IPs.
 // Would only be changed if a worker is added or removed.

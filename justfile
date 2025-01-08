@@ -30,10 +30,13 @@ build-functions-go:
 # build a single go function
 build-function-go function_name:
     # Pro Tip: you can add `--progress=plain` as argument to build, and then the full output of your build will be shown.
-    docker build -t hyperfaas-{{function_name}} -f functions/go/Dockerfile --build-arg FUNCTION_NAME="{{function_name}}" .
+    docker build -t hyperfaas-{{function_name}} -f ./function.Dockerfile --build-arg FUNCTION_NAME="{{function_name}}" .
 
 # build all
 build: build-functions-go build-worker
+
+
+
 
 ############################
 # Running Stuff
@@ -41,12 +44,23 @@ build: build-functions-go build-worker
 
 # run the worker with default configurations. Make sure to run just build every time you change the code
 # Alternatively, run just dev if you want to make sure you are always running the latest code
+start-rebuild:
+    @echo Starting docker service"
+    docker compose up --build
+
 start:
-    @echo "Running the worker"
-    ./bin/main -id="a" -runtime="docker" -log-level="debug" -log-handler="dev" -auto-remove="true"
+    @echo Starting docker service"
+    docker compose up
+
+stop:
+    @echo Stopping docker service"
+    docker compose down
 
 # generates proto, builds binary, builds docker go and runs the workser
 dev: build start
+
+
+
 
 ############################
 # Testing Stuff

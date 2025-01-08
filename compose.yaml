@@ -1,0 +1,37 @@
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: worker.Dockerfile
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - function-logs:/root/functions/logs
+    ports:
+      - "50051:50051"
+    networks:
+      - hyperfaas-network
+    develop:
+      watch:
+        - action: rebuild
+          path: .
+          target: .
+  leader:
+    build:
+      context: .
+      dockerfile: leaf.Dockerfile
+    networks:
+        - hyperfaas-network
+    develop:
+        watch:
+            - action: rebuild
+              path: .
+              target: .
+
+volumes:
+  function-logs:
+    name: function-logs
+
+networks:
+  hyperfaas-network:  # Define the custom network name here
+    name: hyperfaas-network  # Specify the custom name for the network
+    driver: bridge

@@ -26,6 +26,6 @@ COPY ./functions/go/set_env.sh .
 COPY ./functions/go/${FUNCTION_NAME}/ ./
 
 EXPOSE 50052
-ENV CALLER_SERVER_ADDRESS=host.docker.internal
+ENV CALLER_SERVER_ADDRESS="worker"
 
-CMD ["sh", "-c" ,"source set_env.sh && echo 'ContainerId is: $CONTAINER_ID' && ./handler"]
+CMD ["sh", "-c" ,"source set_env.sh && echo 'ContainerId is: $CONTAINER_ID' && ./handler &&"]

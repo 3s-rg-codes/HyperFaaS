@@ -54,7 +54,7 @@ func New(timeout int) *Function {
 func (f *Function) Ready(handler handler) {
 
 	//Set up logging file inside the Docker container. Will be mounted to functions/logs
-	functionLog := configLog(fmt.Sprintf("/logs/%s-%s.log",time.Now().Format("2006-01-02-15-04-05"), f.id))
+	functionLog := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.id))
 
 	connection, err := grpc.NewClient(f.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 
@@ -108,7 +108,9 @@ func configLog(logFile string) *zerolog.Logger {
 	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 
 	if err != nil {
-		panic(err)
+		console := zerolog.New(os.Stdout).With().Timestamp().Logger()
+		console.Error().Msgf("Failed to create log file: %s, using stdout", err.Error())
+		return &console
 	}
 
 	log := zerolog.New(file).With().Timestamp().Logger()
