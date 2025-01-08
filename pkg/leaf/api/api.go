@@ -4,8 +4,10 @@ import (
 	"context"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scraping"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
+	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
+	"google.golang.org/grpc"
 )
 
 // grpc api endpoints that leafLeader will expose
@@ -18,23 +20,80 @@ import (
 type LeafServer struct {
 	pb.UnimplementedLeafServer
 	scheduler scheduling.Scheduler
-	scraper   scraping.Scraper
 }
 
-func (s *LeafServer) FindInstance(ctx context.Context, req *pb.FindInstanceRequest) (*pb.FindInstanceResponse, error) {
-	state, err := s.scraper.Scrape(ctx)
+func (s *LeafServer) ScheduleCall(ctx context.Context, req *pb.ScheduleCallRequest) (*pb.ScheduleCallResponse, error) {
+
+	workerID, instanceID, err := s.scheduler.Schedule(ctx, state.FunctionID(req.FunctionId))
 	if err != nil {
 		return nil, err
 	}
 
-	decision, err := s.scheduler.Schedule(ctx, req.FunctionId, state)
+	if instanceID == "" {
+		instanceID, err = startInstance(ctx, workerID, state.FunctionID(req.FunctionId))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Update State to reflect that we are sending a call to this worker
+	// Issue: what if the worker dies / container crashes before the call is processed? This update to the state would be erroneous.
+	// We would need some logic that reconciles the state in case of failures.
+	go s.scheduler.UpdateState(ctx, workerID, state.FunctionID(req.FunctionId), instanceID)
+
+	resp, err := callWorker(ctx, workerID, instanceID, req)
 	if err != nil {
 		return nil, err
 	}
 
-	return &pb.FindInstanceResponse{InstanceId: decision[req.FunctionId], WorkerIp: decision[req.FunctionId]}, nil
+	return resp, nil
 }
 
-func NewLeafServer(scheduler scheduling.Scheduler, scraper scraping.Scraper) *LeafServer {
-	return &LeafServer{scheduler: scheduler, scraper: scraper}
+func NewLeafServer(scheduler scheduling.Scheduler) *LeafServer {
+	return &LeafServer{scheduler: scheduler}
+}
+
+// TODO: refactor this to use a pool of connections.
+// https://promisefemi.vercel.app/blog/grpc-client-connection-pooling
+// https://github.com/processout/grpc-go-pool/blob/master/pool.go
+func callWorker(ctx context.Context, workerID state.WorkerID, instanceID state.InstanceID, req *pb.ScheduleCallRequest) (*pb.ScheduleCallResponse, error) {
+	conn, err := grpc.NewClient(string(workerID))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	client := workerpb.NewControllerClient(conn)
+
+	callReq := &workerpb.CallRequest{
+		InstanceId: &workerpb.InstanceID{Id: string(instanceID)},
+		Data:       req.Data,
+	}
+
+	resp, err := client.Call(ctx, callReq)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.ScheduleCallResponse{Data: resp.Data, Error: resp.Error}, nil
+}
+
+func startInstance(ctx context.Context, workerID state.WorkerID, functionId state.FunctionID) (state.InstanceID, error) {
+	conn, err := grpc.NewClient(string(workerID))
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	client := workerpb.NewControllerClient(conn)
+
+	// Todo : we need to agree on either functionId or imageTag
+	startReq := &workerpb.StartRequest{
+		ImageTag: &workerpb.ImageTag{Tag: string(functionId)},
+	}
+
+	instanceID, err := client.Start(ctx, startReq)
+	if err != nil {
+		return "", err
+	}
+
+	return state.InstanceID(instanceID.Id), nil
 }

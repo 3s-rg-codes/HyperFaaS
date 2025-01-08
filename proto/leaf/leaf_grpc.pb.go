@@ -22,7 +22,8 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type LeafClient interface {
-	FindInstance(ctx context.Context, in *FindInstanceRequest, opts ...grpc.CallOption) (*FindInstanceResponse, error)
+	// Schedules a function call on the worker identified by the provided function ID.
+	ScheduleCall(ctx context.Context, in *ScheduleCallRequest, opts ...grpc.CallOption) (*ScheduleCallResponse, error)
 }
 
 type leafClient struct {
@@ -33,9 +34,9 @@ func NewLeafClient(cc grpc.ClientConnInterface) LeafClient {
 	return &leafClient{cc}
 }
 
-func (c *leafClient) FindInstance(ctx context.Context, in *FindInstanceRequest, opts ...grpc.CallOption) (*FindInstanceResponse, error) {
-	out := new(FindInstanceResponse)
-	err := c.cc.Invoke(ctx, "/leaf.Leaf/FindInstance", in, out, opts...)
+func (c *leafClient) ScheduleCall(ctx context.Context, in *ScheduleCallRequest, opts ...grpc.CallOption) (*ScheduleCallResponse, error) {
+	out := new(ScheduleCallResponse)
+	err := c.cc.Invoke(ctx, "/leaf.Leaf/ScheduleCall", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +47,8 @@ func (c *leafClient) FindInstance(ctx context.Context, in *FindInstanceRequest, 
 // All implementations must embed UnimplementedLeafServer
 // for forward compatibility
 type LeafServer interface {
-	FindInstance(context.Context, *FindInstanceRequest) (*FindInstanceResponse, error)
+	// Schedules a function call on the worker identified by the provided function ID.
+	ScheduleCall(context.Context, *ScheduleCallRequest) (*ScheduleCallResponse, error)
 	mustEmbedUnimplementedLeafServer()
 }
 
@@ -54,8 +56,8 @@ type LeafServer interface {
 type UnimplementedLeafServer struct {
 }
 
-func (UnimplementedLeafServer) FindInstance(context.Context, *FindInstanceRequest) (*FindInstanceResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FindInstance not implemented")
+func (UnimplementedLeafServer) ScheduleCall(context.Context, *ScheduleCallRequest) (*ScheduleCallResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ScheduleCall not implemented")
 }
 func (UnimplementedLeafServer) mustEmbedUnimplementedLeafServer() {}
 
@@ -70,20 +72,20 @@ func RegisterLeafServer(s grpc.ServiceRegistrar, srv LeafServer) {
 	s.RegisterService(&Leaf_ServiceDesc, srv)
 }
 
-func _Leaf_FindInstance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FindInstanceRequest)
+func _Leaf_ScheduleCall_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScheduleCallRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(LeafServer).FindInstance(ctx, in)
+		return srv.(LeafServer).ScheduleCall(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/leaf.Leaf/FindInstance",
+		FullMethod: "/leaf.Leaf/ScheduleCall",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LeafServer).FindInstance(ctx, req.(*FindInstanceRequest))
+		return srv.(LeafServer).ScheduleCall(ctx, req.(*ScheduleCallRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -96,8 +98,8 @@ var Leaf_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*LeafServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "FindInstance",
-			Handler:    _Leaf_FindInstance_Handler,
+			MethodName: "ScheduleCall",
+			Handler:    _Leaf_ScheduleCall_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

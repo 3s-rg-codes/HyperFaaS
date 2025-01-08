@@ -3,11 +3,12 @@ package dockerRuntime
 import (
 	"context"
 	"fmt"
-	"github.com/docker/docker/api/types/mount"
 	"io"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/docker/docker/api/types/mount"
 
 	"github.com/google/uuid"
 
@@ -145,11 +146,11 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.C
 	return resp.ID, nil
 }
 
-func (d *DockerRuntime) Call(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
+func (d *DockerRuntime) Call(ctx context.Context, req *pb.CallRequest) (*pb.CallResponse, error) {
 
 	//TODO implement container monitoring, if container fails, return error message in call
 
-	return &pb.Response{}, nil
+	return &pb.CallResponse{}, nil
 
 }
 

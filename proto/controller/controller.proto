@@ -1,6 +1,7 @@
 syntax = "proto3";
 
-option go_package = "github.com/luccadibe/w.git";
+option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/controller";
+import "common/common.proto";
 
 package worker;
 
@@ -39,10 +40,12 @@ message Params {
 message CallRequest {
   InstanceID instance_id = 1;
   Params params = 2;
+  bytes data = 3;
 }
 
-message Response {
-  string data = 1;
+message CallResponse {
+  bytes data = 1;
+  common.Error error = 2;
 }
 
 message StatusUpdate {
@@ -90,7 +93,7 @@ message StateRequest {
 
 service Controller {
   rpc Start (StartRequest) returns (InstanceID);
-  rpc Call (CallRequest) returns (Response);
+  rpc Call (CallRequest) returns (CallResponse);
   rpc Stop (InstanceID) returns (InstanceID);
   rpc Status (StatusRequest) returns (stream StatusUpdate);
   rpc Metrics (MetricsRequest) returns (MetricsUpdate);

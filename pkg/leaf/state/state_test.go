@@ -1,4 +1,4 @@
-package scraping
+package state
 
 import (
 	"context"
@@ -7,8 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
-	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"
@@ -27,30 +26,30 @@ type MockWorkerControllerClient struct {
 	mock.Mock
 }
 
-func (m *MockWorkerControllerClient) State(ctx context.Context, req *pb.StateRequest, opts ...grpc.CallOption) (*pb.StateResponse, error) {
+func (m *MockWorkerControllerClient) State(ctx context.Context, req *controller.StateRequest, opts ...grpc.CallOption) (*controller.StateResponse, error) {
 	args := m.Called(ctx, req)
-	return args.Get(0).(*pb.StateResponse), args.Error(1)
+	return args.Get(0).(*controller.StateResponse), args.Error(1)
 }
 func TestConvertStateResponseToWorkerState(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    *pb.StateResponse
-		expected []scheduling.FunctionState
+		input    *controller.StateResponse
+		expected []FunctionState
 	}{
 		{
 			name: "empty response",
-			input: &pb.StateResponse{
-				Functions: []*pb.FunctionState{},
+			input: &controller.StateResponse{
+				Functions: []*controller.FunctionState{},
 			},
-			expected: []scheduling.FunctionState{},
+			expected: []FunctionState{},
 		},
 		{
 			name: "single function with instances",
-			input: &pb.StateResponse{
-				Functions: []*pb.FunctionState{
+			input: &controller.StateResponse{
+				Functions: []*controller.FunctionState{
 					{
 						FunctionId: "func1",
-						Running: []*pb.InstanceState{
+						Running: []*controller.InstanceState{
 							{
 								InstanceId:        "instance1",
 								IsActive:          true,
@@ -58,7 +57,7 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 								Uptime:            5000, // 5 seconds in milliseconds
 							},
 						},
-						Idle: []*pb.InstanceState{
+						Idle: []*controller.InstanceState{
 							{
 								InstanceId:        "instance2",
 								IsActive:          false,
@@ -69,10 +68,10 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 					},
 				},
 			},
-			expected: []scheduling.FunctionState{
+			expected: []FunctionState{
 				{
 					FunctionID: "func1",
-					Running: []scheduling.InstanceState{
+					Running: []InstanceState{
 						{
 							InstanceID:        "instance1",
 							IsActive:          true,
@@ -80,7 +79,7 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 							Uptime:            5 * time.Second,
 						},
 					},
-					Idle: []scheduling.InstanceState{
+					Idle: []InstanceState{
 						{
 							InstanceID:        "instance2",
 							IsActive:          false,
@@ -107,17 +106,17 @@ func TestScraperGetWorkerState(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	s := &scraper{
-		workerConnections: map[string]pb.ControllerClient{
+		workerConnections: map[WorkerID]controller.ControllerClient{
 			"worker1": mockClient,
 		},
 		logger: logger,
 	}
 
-	expectedResponse := &pb.StateResponse{
-		Functions: []*pb.FunctionState{
+	expectedResponse := &controller.StateResponse{
+		Functions: []*controller.FunctionState{
 			{
 				FunctionId: "func1",
-				Running: []*pb.InstanceState{
+				Running: []*controller.InstanceState{
 					{
 						InstanceId:        "instance1",
 						IsActive:          true,
@@ -131,7 +130,7 @@ func TestScraperGetWorkerState(t *testing.T) {
 
 	// Configure mock: when State() is called with any context and the leaf leader ID,
 	// return our expectedResponse with no erro
-	mockClient.On("State", mock.Anything, &pb.StateRequest{NodeId: leafLeaderID}).
+	mockClient.On("State", mock.Anything, &controller.StateRequest{NodeId: leafLeaderID}).
 		Return(expectedResponse, nil)
 
 	state, err := s.GetWorkerState("worker1")
@@ -155,21 +154,21 @@ func TestScraper_Scrape(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	s := &scraper{
-		workerIPs: []string{"worker1", "worker2"},
-		workerConnections: map[string]pb.ControllerClient{
+		workerIDs: []WorkerID{"worker1", "worker2"},
+		workerConnections: map[WorkerID]controller.ControllerClient{
 			"worker1": mockClient,
 			"worker2": mockClient,
 		},
-		state:          make(scheduling.WorkerStateMap),
+		state:          make(WorkerStateMap),
 		logger:         logger,
 		scrapeInterval: 1 * time.Second,
 	}
 
-	expectedResponse := &pb.StateResponse{
-		Functions: []*pb.FunctionState{
+	expectedResponse := &controller.StateResponse{
+		Functions: []*controller.FunctionState{
 			{
 				FunctionId: "func1",
-				Running: []*pb.InstanceState{
+				Running: []*controller.InstanceState{
 					{
 						InstanceId:        "instance1",
 						IsActive:          true,
@@ -181,7 +180,7 @@ func TestScraper_Scrape(t *testing.T) {
 		},
 	}
 
-	mockClient.On("State", mock.Anything, &pb.StateRequest{NodeId: leafLeaderID}).
+	mockClient.On("State", mock.Anything, &controller.StateRequest{NodeId: leafLeaderID}).
 		Return(expectedResponse, nil)
 
 	state, err := s.Scrape(context.Background())
@@ -206,18 +205,18 @@ func TestScraper_Scrape(t *testing.T) {
 	mockClient.AssertExpectations(t)
 }
 
-func (m *MockWorkerControllerClient) Call(ctx context.Context, in *pb.CallRequest, opts ...grpc.CallOption) (*pb.Response, error) {
+func (m *MockWorkerControllerClient) Call(ctx context.Context, in *controller.CallRequest, opts ...grpc.CallOption) (*controller.CallResponse, error) {
 	return nil, nil
 }
-func (m *MockWorkerControllerClient) Metrics(ctx context.Context, in *pb.MetricsRequest, opts ...grpc.CallOption) (*pb.MetricsUpdate, error) {
+func (m *MockWorkerControllerClient) Metrics(ctx context.Context, in *controller.MetricsRequest, opts ...grpc.CallOption) (*controller.MetricsUpdate, error) {
 	return nil, nil
 }
-func (m *MockWorkerControllerClient) Start(ctx context.Context, in *pb.StartRequest, opts ...grpc.CallOption) (*pb.InstanceID, error) {
+func (m *MockWorkerControllerClient) Start(ctx context.Context, in *controller.StartRequest, opts ...grpc.CallOption) (*controller.InstanceID, error) {
 	return nil, nil
 }
-func (m *MockWorkerControllerClient) Stop(ctx context.Context, in *pb.InstanceID, opts ...grpc.CallOption) (*pb.InstanceID, error) {
+func (m *MockWorkerControllerClient) Stop(ctx context.Context, in *controller.InstanceID, opts ...grpc.CallOption) (*controller.InstanceID, error) {
 	return nil, nil
 }
-func (m *MockWorkerControllerClient) Status(ctx context.Context, in *pb.StatusRequest, opts ...grpc.CallOption) (pb.Controller_StatusClient, error) {
+func (m *MockWorkerControllerClient) Status(ctx context.Context, in *controller.StatusRequest, opts ...grpc.CallOption) (controller.Controller_StatusClient, error) {
 	return nil, nil
 }
