@@ -139,9 +139,9 @@ func TestScraperGetWorkerState(t *testing.T) {
 	assert.Len(t, state, 1)
 
 	// Check if the state is as expected
-	assert.Equal(t, "func1", state[0].FunctionID)
+	assert.Equal(t, FunctionID("func1"), state[0].FunctionID)
 	assert.Len(t, state[0].Running, 1)
-	assert.Equal(t, "instance1", state[0].Running[0].InstanceID)
+	assert.Equal(t, InstanceID("instance1"), state[0].Running[0].InstanceID)
 	assert.Equal(t, 1*time.Second, state[0].Running[0].TimeSinceLastWork)
 	assert.Equal(t, 5*time.Second, state[0].Running[0].Uptime)
 
@@ -187,16 +187,16 @@ func TestScraper_Scrape(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, state, 2)
-	assert.Contains(t, state, "worker1")
-	assert.Contains(t, state, "worker2")
+	assert.Contains(t, state, WorkerID("worker1"))
+	assert.Contains(t, state, WorkerID("worker2"))
 
 	// Check if the state is as expected
-	assert.Equal(t, "func1", state["worker1"][0].FunctionID)
-	assert.Equal(t, "func1", state["worker2"][0].FunctionID)
+	assert.Equal(t, FunctionID("func1"), state["worker1"][0].FunctionID)
+	assert.Equal(t, FunctionID("func1"), state["worker2"][0].FunctionID)
 	assert.Len(t, state["worker1"][0].Running, 1)
 	assert.Len(t, state["worker2"][0].Running, 1)
-	assert.Equal(t, "instance1", state["worker1"][0].Running[0].InstanceID)
-	assert.Equal(t, "instance1", state["worker2"][0].Running[0].InstanceID)
+	assert.Equal(t, InstanceID("instance1"), state["worker1"][0].Running[0].InstanceID)
+	assert.Equal(t, InstanceID("instance1"), state["worker2"][0].Running[0].InstanceID)
 	assert.Equal(t, 1*time.Second, state["worker1"][0].Running[0].TimeSinceLastWork)
 	assert.Equal(t, 1*time.Second, state["worker2"][0].Running[0].TimeSinceLastWork)
 	assert.Equal(t, 5*time.Second, state["worker1"][0].Running[0].Uptime)

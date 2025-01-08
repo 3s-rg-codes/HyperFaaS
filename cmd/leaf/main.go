@@ -11,18 +11,18 @@ import (
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/api"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scraping"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"google.golang.org/grpc"
 )
 
-type workerIPs []string
+type workerIDs []string
 
-func (i *workerIPs) String() string {
+func (i *workerIDs) String() string {
 	return fmt.Sprintf("%v", *i)
 }
 
-func (i *workerIPs) Set(value string) error {
+func (i *workerIDs) Set(value string) error {
 	*i = append(*i, value)
 	return nil
 }
@@ -33,22 +33,28 @@ func (i *workerIPs) Set(value string) error {
 // scrape intervals, batching of requests to the scheduler, etc.
 
 func main() {
-	workerIPs := workerIPs{}
+	workerIDs := workerIDs{}
 	scrapeInterval := flag.Duration("scrape-interval", 50*time.Millisecond, "The interval at which to scrape the workers")
-	flag.Var(&workerIPs, "worker-ips", "The IP addresses of the workers to manage")
+	flag.Var(&workerIDs, "worker-ids", "The IDs of the workers to manage")
 	flag.Parse()
 
 	// Logging with slog
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	scraper := scraping.NewScraper(*scrapeInterval, logger)
+	scraper := state.NewScraper(*scrapeInterval, logger)
 
 	// For now, we just set these once. In the future, we will have a way to update the worker IPs if needed.
-	scraper.SetWorkerIPs(workerIPs)
+	var ids []state.WorkerID
+	for _, id := range workerIDs {
+		ids = append(ids, state.WorkerID(id))
+	}
+	scraper.SetWorkerIDs(ids)
 
-	scheduler := scheduling.NewNaiveScheduler(workerIPs, logger)
+	workerState := make(state.WorkerStateMap)
 
-	server := api.NewLeafServer(scheduler, scraper)
+	scheduler := scheduling.NewNaiveScheduler(workerState, ids, logger)
+
+	server := api.NewLeafServer(scheduler)
 
 	listener, err := net.Listen("tcp", ":50052")
 	if err != nil {

@@ -28,36 +28,42 @@ type Scheduler interface {
 type naiveScheduler struct {
 	workerState state.WorkerStateMap
 	mu          sync.Mutex
-	workerIPs   []string
+	workerIDs   []state.WorkerID
 	logger      *slog.Logger
 }
 
-func New(strategy string, workerIPs []string, logger *slog.Logger) Scheduler {
+func New(strategy string, workerState state.WorkerStateMap, workerIDs []state.WorkerID, logger *slog.Logger) Scheduler {
 	switch strategy {
 	case "naive":
-		return NewNaiveScheduler(workerIPs, logger)
+		return NewNaiveScheduler(workerState, workerIDs, logger)
 	case "mru":
-		return NewMRUScheduler(workerIPs, logger)
+		return NewMRUScheduler(workerState, workerIDs, logger)
 	default:
 		return nil
 	}
 }
 
-func NewNaiveScheduler(workerIPs []string, logger *slog.Logger) *naiveScheduler {
-	return &naiveScheduler{workerState: make(state.WorkerStateMap), workerIPs: workerIPs, logger: logger}
+func NewNaiveScheduler(workerState state.WorkerStateMap, workerIDs []state.WorkerID, logger *slog.Logger) *naiveScheduler {
+	return &naiveScheduler{workerState: workerState, workerIDs: workerIDs, logger: logger}
 }
 
 func (s *naiveScheduler) UpdateState(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, function := range s.workerState[workerID] {
+	// Find the index of the function we want to modify
+	for i, function := range s.workerState[workerID] {
 		if function.FunctionID == functionID {
-			for i, instance := range function.Idle {
+			// Find the idle instance and remove it
+			for j, instance := range function.Idle {
 				if instance.InstanceID == instanceID {
-					function.Idle[i].TimeSinceLastWork = 0
+					// Function is no longer idle, remove it from the list
+					s.workerState[workerID][i].Idle = append(function.Idle[:j], function.Idle[j+1:]...)
 					break
 				}
 			}
+			// add it to the running list
+			s.workerState[workerID][i].Running = append(function.Running, state.InstanceState{InstanceID: instanceID})
+			break
 		}
 	}
 	s.logger.Debug("Updated worker state", "workerID", workerID, "functionID", functionID, "instanceID", instanceID)
@@ -84,7 +90,7 @@ func (s *naiveScheduler) Schedule(ctx context.Context, functionID state.Function
 	}
 
 	// If we get here, there is no available instance on any worker
-	worker = state.WorkerID(s.workerIPs[rand.Intn(len(s.workerIPs))])
+	worker = s.workerIDs[rand.Intn(len(s.workerIDs))]
 	s.logger.Info("No instance found, scheduling to random worker", "functionID", functionID, "workerID", worker)
 	// Union types would be nice here...
 	return worker, state.InstanceID(""), nil
@@ -93,25 +99,31 @@ func (s *naiveScheduler) Schedule(ctx context.Context, functionID state.Function
 type mruScheduler struct {
 	workerState state.WorkerStateMap
 	mu          sync.Mutex
-	workerIPs   []string
+	workerIDs   []state.WorkerID
 	logger      *slog.Logger
 }
 
-func NewMRUScheduler(workerIPs []string, logger *slog.Logger) *mruScheduler {
-	return &mruScheduler{workerState: make(state.WorkerStateMap), workerIPs: workerIPs, logger: logger}
+func NewMRUScheduler(workerState state.WorkerStateMap, workerIDs []state.WorkerID, logger *slog.Logger) *mruScheduler {
+	return &mruScheduler{workerState: workerState, workerIDs: workerIDs, logger: logger}
 }
 
 func (s *mruScheduler) UpdateState(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, function := range s.workerState[workerID] {
+	// Find the index of the function we want to modify
+	for i, function := range s.workerState[workerID] {
 		if function.FunctionID == functionID {
-			for i, instance := range function.Idle {
+			// Find the idle instance and remove it
+			for j, instance := range function.Idle {
 				if instance.InstanceID == instanceID {
-					function.Idle[i].TimeSinceLastWork = 0
+					// Function is no longer idle, remove it from the list
+					s.workerState[workerID][i].Idle = append(function.Idle[:j], function.Idle[j+1:]...)
 					break
 				}
 			}
+			// add it to the running list
+			s.workerState[workerID][i].Running = append(function.Running, state.InstanceState{InstanceID: instanceID})
+			break
 		}
 	}
 	s.logger.Debug("Updated worker state", "workerID", workerID, "functionID", functionID, "instanceID", instanceID)
@@ -129,7 +141,7 @@ func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID
 			}
 
 			sort.Slice(function.Idle, func(i, j int) bool {
-				return function.Idle[i].TimeSinceLastWork > function.Idle[j].TimeSinceLastWork
+				return function.Idle[i].TimeSinceLastWork < function.Idle[j].TimeSinceLastWork
 			})
 
 			worker = state.WorkerID(workerID)
@@ -140,7 +152,7 @@ func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID
 
 	// If we get here, there is no available instance on any worker
 	// TODO: pick worker with lowest load , for now just a random worker ip
-	worker = state.WorkerID(s.workerIPs[rand.Intn(len(s.workerIPs))])
+	worker = s.workerIDs[rand.Intn(len(s.workerIDs))]
 	s.logger.Info("No instance found, scheduling to random worker", "functionID", functionID, "workerID", worker)
 
 	return worker, state.InstanceID(""), nil
