@@ -4,7 +4,7 @@
 // - protoc             v5.27.0
 // source: controller/controller.proto
 
-package w_git
+package controller
 
 import (
 	context "context"
@@ -23,7 +23,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ControllerClient interface {
 	Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*InstanceID, error)
-	Call(ctx context.Context, in *CallRequest, opts ...grpc.CallOption) (*Response, error)
+	Call(ctx context.Context, in *CallRequest, opts ...grpc.CallOption) (*CallResponse, error)
 	Stop(ctx context.Context, in *InstanceID, opts ...grpc.CallOption) (*InstanceID, error)
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (Controller_StatusClient, error)
 	Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsUpdate, error)
@@ -47,8 +47,8 @@ func (c *controllerClient) Start(ctx context.Context, in *StartRequest, opts ...
 	return out, nil
 }
 
-func (c *controllerClient) Call(ctx context.Context, in *CallRequest, opts ...grpc.CallOption) (*Response, error) {
-	out := new(Response)
+func (c *controllerClient) Call(ctx context.Context, in *CallRequest, opts ...grpc.CallOption) (*CallResponse, error) {
+	out := new(CallResponse)
 	err := c.cc.Invoke(ctx, "/worker.Controller/Call", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ func (c *controllerClient) State(ctx context.Context, in *StateRequest, opts ...
 // for forward compatibility
 type ControllerServer interface {
 	Start(context.Context, *StartRequest) (*InstanceID, error)
-	Call(context.Context, *CallRequest) (*Response, error)
+	Call(context.Context, *CallRequest) (*CallResponse, error)
 	Stop(context.Context, *InstanceID) (*InstanceID, error)
 	Status(*StatusRequest, Controller_StatusServer) error
 	Metrics(context.Context, *MetricsRequest) (*MetricsUpdate, error)
@@ -135,7 +135,7 @@ type UnimplementedControllerServer struct {
 func (UnimplementedControllerServer) Start(context.Context, *StartRequest) (*InstanceID, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Start not implemented")
 }
-func (UnimplementedControllerServer) Call(context.Context, *CallRequest) (*Response, error) {
+func (UnimplementedControllerServer) Call(context.Context, *CallRequest) (*CallResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Call not implemented")
 }
 func (UnimplementedControllerServer) Stop(context.Context, *InstanceID) (*InstanceID, error) {

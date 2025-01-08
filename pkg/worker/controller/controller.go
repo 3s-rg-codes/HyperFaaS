@@ -43,7 +43,7 @@ func (s *Controller) Start(ctx context.Context, req *pb.StartRequest) (*pb.Insta
 
 // This function passes the call through the channel of the instance ID in the FunctionCalls map
 // runtime.Call is also called to check for errors
-func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Response, error) {
+func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.CallResponse, error) {
 
 	// Check if the instance ID is present in the FunctionCalls map
 	if _, ok := s.CallerServer.FunctionCalls.FcMap[req.InstanceId.Id]; !ok {
@@ -84,7 +84,8 @@ func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.Respons
 		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Response().WithStatus("success"))
 
 		log.Debug().Msgf("Extracted response: '%v' from container with instance ID %s", data, req.InstanceId.Id)
-		response := &pb.Response{Data: data}
+		// TODO: implement []byte for data everywhere.
+		response := &pb.CallResponse{Data: []byte(data)}
 		return response, nil
 
 	case err := <-containerCrashed:

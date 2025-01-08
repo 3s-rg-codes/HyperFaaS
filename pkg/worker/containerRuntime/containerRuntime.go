@@ -11,7 +11,7 @@ type ContainerRuntime interface {
 	// Start a container with the given image tag and configuration.
 	Start(ctx context.Context, imageTag string, config *pb.Config) (string, error)
 	// Call a container with the given request.
-	Call(ctx context.Context, req *pb.CallRequest) (*pb.Response, error)
+	Call(ctx context.Context, req *pb.CallRequest) (*pb.CallResponse, error)
 	// Stop a container with the given instance ID.
 	Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error)
 	// Status returns the status of a container with the given instance ID.
