@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"testing"
 	"time"
@@ -12,11 +13,10 @@ import (
 
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -33,7 +33,7 @@ var ( //TODO: implement flags, do we need more?
 	//config                  = flag.String("config", "", "specify Config") TODO WIP, not implemented yet(?)
 	controllerServerAddress = flag.String("ServerAdress", SERVER_ADDRESS, "specify controller server adress")
 	autoRemove              = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
-	testController          controller.Controller
+	testController          *controller.Controller
 	runtime                 *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
 	CPUPeriod               = flag.Int64("cpuPeriod", 100000, "CPU period")
 	CPUQuota                = flag.Int64("cpuQuota", 50000, "CPU quota")
@@ -52,7 +52,7 @@ type controllerWorkload struct {
 	ExpectedResponse  string
 	ErrorCode         codes.Code
 	ExpectedErrorCode codes.Code
-	CallPayload       string
+	CallPayload       []byte
 	InstanceID        string
 }
 
@@ -80,14 +80,14 @@ func setup() {
 
 	switch *requestedRuntime {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(*autoRemove) //did not work otherwise, using container runtime interface
+		runtime = dockerRuntime.NewDockerRuntime(*autoRemove, slog.Default().With("runtime", "docker")) //did not work otherwise, using container runtime interface
 	}
 
 	//Log setup
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).Level(zerolog.DebugLevel).With().Caller().Logger()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	//Controller
-	testController = controller.New(runtime)
+	testController = controller.NewController(runtime, slog.Default(), *controllerServerAddress)
 	//CallerServer
 	go func() {
 		testController.StartServer()
@@ -113,14 +113,14 @@ func TestNormalExecution(t *testing.T) {
 			ImageTag:          imageTags[0],
 			ExpectedError:     false,
 			ExpectedErrorCode: codes.OK,
-			CallPayload:       "TESTPAYLOAD",
+			CallPayload:       []byte("TESTPAYLOAD"),
 		},
 		{
 			testName:          "normal execution of echo image",
 			ImageTag:          imageTags[2],
 			ExpectedError:     false,
 			ExpectedErrorCode: codes.OK,
-			CallPayload:       "Hello World",
+			CallPayload:       []byte("Hello World"),
 		},
 	}
 
@@ -142,7 +142,7 @@ func TestNormalExecution(t *testing.T) {
 
 			t.Logf("Start succeded: %v", testContainerID.Id)
 
-			response, err := client.Call(context.Background(), &pb.CallRequest{InstanceId: testContainerID, Params: &pb.Params{Data: testCase.CallPayload}})
+			response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: testContainerID, Data: testCase.CallPayload})
 
 			grpcStatus, ok = status.FromError(err)
 
@@ -196,7 +196,7 @@ func TestStopNonExistingContainer(t *testing.T) {
 	for _, testCase := range testCases {
 
 		t.Run(testCase.testName, func(t *testing.T) {
-			_, err := client.Stop(context.Background(), &pb.InstanceID{Id: testCase.InstanceID})
+			_, err := client.Stop(context.Background(), &common.InstanceID{Id: testCase.InstanceID})
 
 			grpcStatus, ok := status.FromError(err)
 
@@ -232,7 +232,7 @@ func TestCallNonExistingContainer(t *testing.T) {
 	for _, testCase := range testCases {
 
 		t.Run(testCase.testName, func(t *testing.T) {
-			_, err := client.Call(context.Background(), &pb.CallRequest{InstanceId: &pb.InstanceID{Id: testCase.InstanceID}, Params: &pb.Params{}})
+			_, err := client.Call(context.Background(), &common.CallRequest{InstanceId: &common.InstanceID{Id: testCase.InstanceID}, Data: []byte("")})
 
 			grpcStatus, ok := status.FromError(err)
 

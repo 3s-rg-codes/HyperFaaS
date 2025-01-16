@@ -8,6 +8,7 @@ package controller
 
 import (
 	context "context"
+	common "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -22,9 +23,9 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ControllerClient interface {
-	Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*InstanceID, error)
-	Call(ctx context.Context, in *CallRequest, opts ...grpc.CallOption) (*CallResponse, error)
-	Stop(ctx context.Context, in *InstanceID, opts ...grpc.CallOption) (*InstanceID, error)
+	Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*common.InstanceID, error)
+	Call(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error)
+	Stop(ctx context.Context, in *common.InstanceID, opts ...grpc.CallOption) (*common.InstanceID, error)
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (Controller_StatusClient, error)
 	Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsUpdate, error)
 	State(ctx context.Context, in *StateRequest, opts ...grpc.CallOption) (*StateResponse, error)
@@ -38,27 +39,27 @@ func NewControllerClient(cc grpc.ClientConnInterface) ControllerClient {
 	return &controllerClient{cc}
 }
 
-func (c *controllerClient) Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*InstanceID, error) {
-	out := new(InstanceID)
-	err := c.cc.Invoke(ctx, "/worker.Controller/Start", in, out, opts...)
+func (c *controllerClient) Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*common.InstanceID, error) {
+	out := new(common.InstanceID)
+	err := c.cc.Invoke(ctx, "/controller.Controller/Start", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerClient) Call(ctx context.Context, in *CallRequest, opts ...grpc.CallOption) (*CallResponse, error) {
-	out := new(CallResponse)
-	err := c.cc.Invoke(ctx, "/worker.Controller/Call", in, out, opts...)
+func (c *controllerClient) Call(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error) {
+	out := new(common.CallResponse)
+	err := c.cc.Invoke(ctx, "/controller.Controller/Call", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerClient) Stop(ctx context.Context, in *InstanceID, opts ...grpc.CallOption) (*InstanceID, error) {
-	out := new(InstanceID)
-	err := c.cc.Invoke(ctx, "/worker.Controller/Stop", in, out, opts...)
+func (c *controllerClient) Stop(ctx context.Context, in *common.InstanceID, opts ...grpc.CallOption) (*common.InstanceID, error) {
+	out := new(common.InstanceID)
+	err := c.cc.Invoke(ctx, "/controller.Controller/Stop", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +67,7 @@ func (c *controllerClient) Stop(ctx context.Context, in *InstanceID, opts ...grp
 }
 
 func (c *controllerClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (Controller_StatusClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Controller_ServiceDesc.Streams[0], "/worker.Controller/Status", opts...)
+	stream, err := c.cc.NewStream(ctx, &Controller_ServiceDesc.Streams[0], "/controller.Controller/Status", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +100,7 @@ func (x *controllerStatusClient) Recv() (*StatusUpdate, error) {
 
 func (c *controllerClient) Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsUpdate, error) {
 	out := new(MetricsUpdate)
-	err := c.cc.Invoke(ctx, "/worker.Controller/Metrics", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/controller.Controller/Metrics", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +109,7 @@ func (c *controllerClient) Metrics(ctx context.Context, in *MetricsRequest, opts
 
 func (c *controllerClient) State(ctx context.Context, in *StateRequest, opts ...grpc.CallOption) (*StateResponse, error) {
 	out := new(StateResponse)
-	err := c.cc.Invoke(ctx, "/worker.Controller/State", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/controller.Controller/State", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -119,9 +120,9 @@ func (c *controllerClient) State(ctx context.Context, in *StateRequest, opts ...
 // All implementations must embed UnimplementedControllerServer
 // for forward compatibility
 type ControllerServer interface {
-	Start(context.Context, *StartRequest) (*InstanceID, error)
-	Call(context.Context, *CallRequest) (*CallResponse, error)
-	Stop(context.Context, *InstanceID) (*InstanceID, error)
+	Start(context.Context, *StartRequest) (*common.InstanceID, error)
+	Call(context.Context, *common.CallRequest) (*common.CallResponse, error)
+	Stop(context.Context, *common.InstanceID) (*common.InstanceID, error)
 	Status(*StatusRequest, Controller_StatusServer) error
 	Metrics(context.Context, *MetricsRequest) (*MetricsUpdate, error)
 	State(context.Context, *StateRequest) (*StateResponse, error)
@@ -132,13 +133,13 @@ type ControllerServer interface {
 type UnimplementedControllerServer struct {
 }
 
-func (UnimplementedControllerServer) Start(context.Context, *StartRequest) (*InstanceID, error) {
+func (UnimplementedControllerServer) Start(context.Context, *StartRequest) (*common.InstanceID, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Start not implemented")
 }
-func (UnimplementedControllerServer) Call(context.Context, *CallRequest) (*CallResponse, error) {
+func (UnimplementedControllerServer) Call(context.Context, *common.CallRequest) (*common.CallResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Call not implemented")
 }
-func (UnimplementedControllerServer) Stop(context.Context, *InstanceID) (*InstanceID, error) {
+func (UnimplementedControllerServer) Stop(context.Context, *common.InstanceID) (*common.InstanceID, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Stop not implemented")
 }
 func (UnimplementedControllerServer) Status(*StatusRequest, Controller_StatusServer) error {
@@ -173,7 +174,7 @@ func _Controller_Start_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/worker.Controller/Start",
+		FullMethod: "/controller.Controller/Start",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ControllerServer).Start(ctx, req.(*StartRequest))
@@ -182,7 +183,7 @@ func _Controller_Start_Handler(srv interface{}, ctx context.Context, dec func(in
 }
 
 func _Controller_Call_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CallRequest)
+	in := new(common.CallRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -191,16 +192,16 @@ func _Controller_Call_Handler(srv interface{}, ctx context.Context, dec func(int
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/worker.Controller/Call",
+		FullMethod: "/controller.Controller/Call",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServer).Call(ctx, req.(*CallRequest))
+		return srv.(ControllerServer).Call(ctx, req.(*common.CallRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _Controller_Stop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(InstanceID)
+	in := new(common.InstanceID)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -209,10 +210,10 @@ func _Controller_Stop_Handler(srv interface{}, ctx context.Context, dec func(int
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/worker.Controller/Stop",
+		FullMethod: "/controller.Controller/Stop",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServer).Stop(ctx, req.(*InstanceID))
+		return srv.(ControllerServer).Stop(ctx, req.(*common.InstanceID))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -248,7 +249,7 @@ func _Controller_Metrics_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/worker.Controller/Metrics",
+		FullMethod: "/controller.Controller/Metrics",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ControllerServer).Metrics(ctx, req.(*MetricsRequest))
@@ -266,7 +267,7 @@ func _Controller_State_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/worker.Controller/State",
+		FullMethod: "/controller.Controller/State",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ControllerServer).State(ctx, req.(*StateRequest))
@@ -278,7 +279,7 @@ func _Controller_State_Handler(srv interface{}, ctx context.Context, dec func(in
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Controller_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "worker.Controller",
+	ServiceName: "controller.Controller",
 	HandlerType: (*ControllerServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

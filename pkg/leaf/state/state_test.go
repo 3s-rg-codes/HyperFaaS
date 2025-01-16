@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -205,16 +206,16 @@ func TestScraper_Scrape(t *testing.T) {
 	mockClient.AssertExpectations(t)
 }
 
-func (m *MockWorkerControllerClient) Call(ctx context.Context, in *controller.CallRequest, opts ...grpc.CallOption) (*controller.CallResponse, error) {
+func (m *MockWorkerControllerClient) Call(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error) {
 	return nil, nil
 }
 func (m *MockWorkerControllerClient) Metrics(ctx context.Context, in *controller.MetricsRequest, opts ...grpc.CallOption) (*controller.MetricsUpdate, error) {
 	return nil, nil
 }
-func (m *MockWorkerControllerClient) Start(ctx context.Context, in *controller.StartRequest, opts ...grpc.CallOption) (*controller.InstanceID, error) {
+func (m *MockWorkerControllerClient) Start(ctx context.Context, in *controller.StartRequest, opts ...grpc.CallOption) (*common.InstanceID, error) {
 	return nil, nil
 }
-func (m *MockWorkerControllerClient) Stop(ctx context.Context, in *controller.InstanceID, opts ...grpc.CallOption) (*controller.InstanceID, error) {
+func (m *MockWorkerControllerClient) Stop(ctx context.Context, in *common.InstanceID, opts ...grpc.CallOption) (*common.InstanceID, error) {
 	return nil, nil
 }
 func (m *MockWorkerControllerClient) Status(ctx context.Context, in *controller.StatusRequest, opts ...grpc.CallOption) (controller.Controller_StatusClient, error) {

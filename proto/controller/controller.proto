@@ -1,9 +1,9 @@
 syntax = "proto3";
-
 option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/controller";
+
 import "common/common.proto";
 
-package worker;
+package controller;
 
 message ImageTag {
   string tag = 1;
@@ -25,27 +25,9 @@ message CPUConfig {
 
 }
 message StartRequest {
-  ImageTag image_tag = 1;
-  Config config = 2;
-}
-
-message InstanceID {
-  string id = 1;
-}
-
-message Params {
-  string data = 1;
-}
-
-message CallRequest {
-  InstanceID instance_id = 1;
-  Params params = 2;
-  bytes data = 3;
-}
-
-message CallResponse {
-  bytes data = 1;
-  common.Error error = 2;
+  string function_id = 1;
+  ImageTag image_tag = 2;
+  Config config = 3;
 }
 
 message StatusUpdate {
@@ -92,9 +74,9 @@ message StateRequest {
 }
 
 service Controller {
-  rpc Start (StartRequest) returns (InstanceID);
-  rpc Call (CallRequest) returns (CallResponse);
-  rpc Stop (InstanceID) returns (InstanceID);
+  rpc Start (StartRequest) returns (common.InstanceID);
+  rpc Call (common.CallRequest) returns (common.CallResponse);
+  rpc Stop (common.InstanceID) returns (common.InstanceID);
   rpc Status (StatusRequest) returns (stream StatusUpdate);
   rpc Metrics (MetricsRequest) returns (MetricsUpdate);
   rpc State (StateRequest) returns (StateResponse);

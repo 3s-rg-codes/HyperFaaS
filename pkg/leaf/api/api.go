@@ -5,8 +5,9 @@ import (
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
-	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
-	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	"github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"google.golang.org/grpc"
 )
 
@@ -18,11 +19,11 @@ import (
 // Would only be changed if a worker is added or removed.
 
 type LeafServer struct {
-	pb.UnimplementedLeafServer
+	leaf.UnimplementedLeafServer
 	scheduler scheduling.Scheduler
 }
 
-func (s *LeafServer) ScheduleCall(ctx context.Context, req *pb.ScheduleCallRequest) (*pb.ScheduleCallResponse, error) {
+func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
 
 	workerID, instanceID, err := s.scheduler.Schedule(ctx, state.FunctionID(req.FunctionId))
 	if err != nil {
@@ -56,16 +57,16 @@ func NewLeafServer(scheduler scheduling.Scheduler) *LeafServer {
 // TODO: refactor this to use a pool of connections.
 // https://promisefemi.vercel.app/blog/grpc-client-connection-pooling
 // https://github.com/processout/grpc-go-pool/blob/master/pool.go
-func callWorker(ctx context.Context, workerID state.WorkerID, instanceID state.InstanceID, req *pb.ScheduleCallRequest) (*pb.ScheduleCallResponse, error) {
+func callWorker(ctx context.Context, workerID state.WorkerID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
 	conn, err := grpc.NewClient(string(workerID))
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	client := workerpb.NewControllerClient(conn)
+	client := controller.NewControllerClient(conn)
 
-	callReq := &workerpb.CallRequest{
-		InstanceId: &workerpb.InstanceID{Id: string(instanceID)},
+	callReq := &common.CallRequest{
+		InstanceId: &common.InstanceID{Id: string(instanceID)},
 		Data:       req.Data,
 	}
 
@@ -74,7 +75,7 @@ func callWorker(ctx context.Context, workerID state.WorkerID, instanceID state.I
 		return nil, err
 	}
 
-	return &pb.ScheduleCallResponse{Data: resp.Data, Error: resp.Error}, nil
+	return &leaf.ScheduleCallResponse{Data: resp.Data, Error: resp.Error}, nil
 }
 
 func startInstance(ctx context.Context, workerID state.WorkerID, functionId state.FunctionID) (state.InstanceID, error) {
@@ -83,11 +84,11 @@ func startInstance(ctx context.Context, workerID state.WorkerID, functionId stat
 		return "", err
 	}
 	defer conn.Close()
-	client := workerpb.NewControllerClient(conn)
+	client := controller.NewControllerClient(conn)
 
 	// Todo : we need to agree on either functionId or imageTag
-	startReq := &workerpb.StartRequest{
-		ImageTag: &workerpb.ImageTag{Tag: string(functionId)},
+	startReq := &controller.StartRequest{
+		ImageTag: &controller.ImageTag{Tag: string(functionId)},
 	}
 
 	instanceID, err := client.Start(ctx, startReq)

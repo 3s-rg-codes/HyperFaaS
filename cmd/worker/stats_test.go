@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
-	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"
 	//"gotest.tools/v3/assert"
@@ -67,7 +67,7 @@ func doWorkload(t *testing.T, statsTestCase statsTest) *[]*stats.StatusUpdate {
 			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "start", Status: "success"})
 		}
 
-		response, err := client.Call(context.Background(), &pb.CallRequest{InstanceId: testContainerID, Params: &pb.Params{Data: testCase.CallPayload}})
+		response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: testContainerID, Data: testCase.CallPayload})
 
 		if testCase.ExpectedError && err != nil {
 			// add an error event to the stats
@@ -211,7 +211,7 @@ func ConnectNode(t *testing.T, nodeID string, wg1 *sync.WaitGroup, mutex *sync.M
 
 	s, err := client.Status(ctx, &pb.StatusRequest{NodeID: nodeID})
 	if err != nil {
-		log.Error().Msgf("Error (Node: %s): %v", nodeID, err)
+		t.Logf("Error (Node: %s): %v", nodeID, err)
 	}
 
 	for {
@@ -225,11 +225,11 @@ func ConnectNode(t *testing.T, nodeID string, wg1 *sync.WaitGroup, mutex *sync.M
 		default:
 			stat, err := s.Recv()
 			if err == io.EOF {
-				log.Info().Msgf("EOF (Node: %s)", nodeID)
+				t.Logf("EOF (Node: %s)", nodeID)
 				return
 			}
 			if err != nil {
-				log.Error().Msgf("Error: %v", err)
+				t.Logf("Error: %v", err)
 				return
 			}
 
@@ -267,7 +267,7 @@ func TestStats(t *testing.T) {
 			ExpectedError:     false,
 			ExpectsResponse:   true,
 			ExpectedErrorCode: codes.OK,
-			CallPayload:       "",
+			CallPayload:       []byte(""),
 		},
 	}
 
@@ -309,7 +309,7 @@ func TestStats(t *testing.T) {
 			wgWorkload.Add(1)
 			go func(wg1 *sync.WaitGroup) {
 				expectedStats := doWorkload(t, statsTestCase)
-				log.Debug().Msg("Workload is done")
+				t.Log("Workload is done")
 				wg1.Done()
 				statsChan <- expectedStats
 
