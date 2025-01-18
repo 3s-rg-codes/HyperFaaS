@@ -7,3 +7,16 @@ package common;
 message Error {
     string message = 1;
 }
+message InstanceID {
+    string id = 1;
+}
+
+message CallRequest {
+    InstanceID instance_id = 1;
+    bytes data = 2;
+}
+  
+message CallResponse {
+    bytes data = 1;
+    Error error = 2;
+}

@@ -19,6 +19,8 @@ services:
     build:
       context: .
       dockerfile: leaf.Dockerfile
+    ports:
+      - "50050:50050"
     networks:
         - hyperfaas-network
     develop:

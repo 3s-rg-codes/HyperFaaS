@@ -2,108 +2,109 @@ package main
 
 import (
 	"flag"
+	"log/slog"
 	"os"
 
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/worker"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 type WorkerConfig struct {
 	General struct {
-		Id string `env:"WORKER_ID"`
+		Address string `env:"WORKER_ADDRESS"`
 	}
 	Runtime struct {
 		Type       string `env:"RUNTIME_TYPE"`
 		AutoRemove bool   `env:"RUNTIME_AUTOREMOVE"`
 	}
-
 	Log struct {
-		Level   string `env:"LOG_LEVEL"`
-		Handler string `env:"LOG_HANDLER"`
+		Level    string `env:"LOG_LEVEL"`
+		Format   string `env:"LOG_FORMAT"`
+		FilePath string `env:"LOG_FILE"`
 	}
 }
 
 func parseArgs() (wc WorkerConfig) {
-
-	flag.StringVar(&(wc.General.Id), "id", "", "Worker ID. (Env: WORKER_ID)")
+	flag.StringVar(&(wc.General.Address), "address", "", "Worker address. (Env: WORKER_ADDRESS)")
 	flag.StringVar(&(wc.Runtime.Type), "runtime", "", "Container runtime type. (Env: RUNTIME_TYPE)")
 	flag.BoolVar(&(wc.Runtime.AutoRemove), "auto-remove", false, "Auto remove containers. (Env: RUNTIME_AUTOREMOVE)")
-	flag.StringVar(&(wc.Log.Level), "log-level", "", "Log level (Env: LOG_LEVEL)")
-	flag.StringVar(&(wc.Log.Handler), "log-handler", "", "Log handler (Env: LOG_HANDLER)")
+	flag.StringVar(&(wc.Log.Level), "log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
+	flag.StringVar(&(wc.Log.Format), "log-format", "text", "Log format (json or text) (Env: LOG_FORMAT)")
+	flag.StringVar(&(wc.Log.FilePath), "log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
 
 	flag.Parse()
 	return
 }
 
-func main() {
-	var err error
-
-	wc := parseArgs()
-
-	//Setup Logging
-	if wc.Log.Handler == "dev" {
-		log.Logger = log.Output(
-			zerolog.ConsoleWriter{
-				Out:     os.Stderr,
-				NoColor: false,
-			},
-		).With().Caller().Logger()
-
-		zerolog.DisableSampling(true)
-	} else if wc.Log.Handler != "prod" {
-		log.Fatal().Msg("Log ExtHandler has to be either dev or prod")
-	}
-
-	log.Info().Msgf("Current configuration:\n%+v", wc)
-
-	switch wc.Log.Level {
+func setupLogger(config WorkerConfig) *slog.Logger {
+	// Set up log level
+	var level slog.Level
+	switch config.Log.Level {
 	case "debug":
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		level = slog.LevelDebug
 	case "info":
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+		level = slog.LevelInfo
 	case "warn":
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+		level = slog.LevelWarn
 	case "error":
-		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
-	case "fatal":
-		zerolog.SetGlobalLevel(zerolog.FatalLevel)
-	case "panic":
-		zerolog.SetGlobalLevel(zerolog.PanicLevel)
+		level = slog.LevelError
 	default:
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-		log.Info().Msg("No Loglevel specified, using 'debug'")
+		level = slog.LevelInfo
 	}
 
-	if err != nil {
-		log.Fatal().Err(err).Msg("TODO - handle error")
+	// Set up log output
+	var output *os.File
+	var err error
+	if config.Log.FilePath != "" {
+		output, err = os.OpenFile(config.Log.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			slog.Error("Failed to open log file, falling back to stdout", "error", err)
+			output = os.Stdout
+		}
+	} else {
+		output = os.Stdout
 	}
 
-	cs := caller.New()
+	// Set up handler options
+	opts := &slog.HandlerOptions{
+		Level:     level,
+		AddSource: true,
+	}
+
+	// Create handler based on format
+	var handler slog.Handler
+	if config.Log.Format == "json" {
+		handler = slog.NewJSONHandler(output, opts)
+	} else {
+		handler = slog.NewTextHandler(output, opts)
+	}
+
+	// Create and set logger
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
+	return logger
+}
+
+func main() {
+	wc := parseArgs()
+	logger := setupLogger(wc)
+
+	logger.Info("Current configuration", "config", wc)
+
 	var runtime cr.ContainerRuntime
+
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, cs)
+		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, logger)
 	default:
-		log.Error().Msg("No runtime specified")
+		logger.Error("No runtime specified")
+		os.Exit(1)
 	}
 
-	c := controller.New(runtime, cs)
+	c := controller.NewController(runtime, logger, wc.General.Address)
 
-	w := worker.New(&worker.Config{
-		Id:         wc.General.Id,
-		Address:    "localhost:50051",
-		Runtime:    wc.Runtime.Type,
-		Controller: c,
-	},
-	)
-
-	// Start the worker server
-	w.Controller.StartServer()
-
+	c.StartServer()
 }

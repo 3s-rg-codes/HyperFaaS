@@ -6,7 +6,6 @@ require (
 	github.com/docker/docker v27.0.0+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/google/uuid v1.6.0
-	github.com/rs/zerolog v1.33.0
 	github.com/shirou/gopsutil/v4 v4.24.7
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/grpc v1.64.0
@@ -27,8 +26,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect

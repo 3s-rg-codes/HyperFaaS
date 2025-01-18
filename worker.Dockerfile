@@ -14,4 +14,4 @@ RUN go mod download
 #Copy main function
 RUN GOOS=linux go build -o main main.go
 
-CMD ["./main", "-id=my_worker_id", "-runtime=docker", "-log-level=debug", "-log-handler=dev", "auto-remove=true"]
+CMD ["./main", "-address=localhost:50051", "-runtime=docker", "-log-level=debug", "-log-format=text", "auto-remove=true"]

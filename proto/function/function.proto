@@ -4,12 +4,12 @@ option go_package = "github.com/3s-rg-codes/hyperfaas";
 package function;
 
 message Payload {
-    string data = 1;
+    bytes data = 1;
     string id = 2;
     bool firstExecution = 3;
 }
 message Call {
-    string data = 1;
+    bytes data = 1;
     string id = 2;
 }
 

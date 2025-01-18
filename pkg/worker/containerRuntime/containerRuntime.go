@@ -3,20 +3,21 @@ package containerRuntime
 import (
 	"context"
 
-	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 )
 
 // ContainerRuntime is an interface for starting and stopping containers.
 type ContainerRuntime interface {
 	// Start a container with the given image tag and configuration.
-	Start(ctx context.Context, imageTag string, config *pb.Config) (string, error)
+	Start(ctx context.Context, imageTag string, config *controller.Config) (string, error)
 	// Call a container with the given request.
-	Call(ctx context.Context, req *pb.CallRequest) (*pb.CallResponse, error)
+	Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error)
 	// Stop a container with the given instance ID.
-	Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error)
+	Stop(ctx context.Context, req *common.InstanceID) (*common.InstanceID, error)
 	// Status returns the status of a container with the given instance ID.
-	Status(req *pb.StatusRequest, stream pb.Controller_StatusServer) error
+	Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error
 
 	//NotifyCrash hangs and returns when the container exits: either it returns nil if the container exits normally, or an error if the container crashes.
-	NotifyCrash(ctx context.Context, instanceId string) error
+	NotifyCrash(ctx context.Context, instanceId *common.InstanceID) error
 }

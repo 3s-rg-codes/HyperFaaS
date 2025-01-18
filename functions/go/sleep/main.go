@@ -20,7 +20,7 @@ func handler(ctx context.Context, in *functionRuntimeInterface.Request) (*functi
 	time.Sleep(20 * time.Second)
 
 	resp := &functionRuntimeInterface.Response{
-		Data: "Finished Sleeping",
+		Data: []byte("Finished Sleeping"),
 		Id:   in.Id,
 	}
 
