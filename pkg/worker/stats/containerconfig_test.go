@@ -1,21 +1,48 @@
-package main
+package stats
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
+	"fmt"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
+	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
 	"testing"
 
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	helpers "github.com/3s-rg-codes/HyperFaaS/test_helpers"
 )
+
+var (
+	controllerServerAddress = flag.String("ServerAddress", helpers.SERVER_ADDRESS, "specify controller server address")
+	requestedRuntime        = flag.String("specifyRuntime", helpers.RUNTIME, "for now only docker, is also default")
+	autoRemove              = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
+)
+
+var runtime *dockerRuntime.DockerRuntime
 
 // Container CPU and Memory configuration is OS dependent. Currently the CPU and Memory configurations are implemented for our Docker containers,
 // but it is not clear how to verify the configurations. This test starts a container and prints the configurations obtained from ContainerStats.
 func TestContainerConfig(t *testing.T) {
 
-	client, connection := BuildMockClient(t)
+	flag.Parse()
+	flag.VisitAll(func(f *flag.Flag) {
+		isDefault := ""
+		if f.DefValue == f.Value.String() {
+			isDefault = " (USING DEFAULT VALUE)"
+		}
+		if f.Name[:5] != "test." || f.Name == "update" {
+			fmt.Printf("FLAG: %s = %s%s\n", f.Name, f.Value.String(), isDefault)
+		}
+	})
 
-	testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: imageTags[0]}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *CPUPeriod, Quota: *CPUQuota}, Memory: MemoryLimit}})
+	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	if err != nil {
+		t.Fatalf("Failed to build client: %v", err)
+	}
+
+	testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: helpers.ImageTags[0]}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *helpers.CPUPeriod, Quota: *helpers.CPUQuota}, Memory: helpers.MemoryLimit}})
 
 	if err != nil {
 		t.Fatalf("Failed to start container: %v", err)
@@ -23,12 +50,18 @@ func TestContainerConfig(t *testing.T) {
 
 	//_, _ := runtime.Cli.ContainerInspect(context.Background(), testContainerID.Id)
 
+	cs := caller.New()
+
+	switch *requestedRuntime {
+	case "docker":
+		runtime = dockerRuntime.NewDockerRuntime(*autoRemove, cs) //did not work otherwise, using container runtime interface
+	}
+
 	st, _ := runtime.Cli.ContainerStats(context.Background(), testContainerID.Id, false)
 
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(st.Body)
-	respBytes := buf.String()
-	respString := string(respBytes)
+	respString := buf.String()
 	t.Logf("Container stats: %v", respString)
 
 	var stats ContainerStats

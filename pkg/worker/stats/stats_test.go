@@ -1,14 +1,14 @@
-package main
+package stats
 
 import (
 	"context"
+	helpers "github.com/3s-rg-codes/HyperFaaS/test_helpers"
 	"io"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/stretchr/testify/assert"
@@ -21,7 +21,7 @@ type statsTest struct {
 	disconnects         bool
 	reconnects          bool
 	nodeIDs             []string
-	controllerWorkloads []controllerWorkload
+	controllerWorkloads []helpers.ControllerWorkload
 	timeout             time.Duration
 }
 
@@ -45,50 +45,53 @@ var workloadImageTags = []string{"hyperfaas-hello:latest", "hyperfaas-echo:lates
 	    "status": "success"
 		}
 */
-func doWorkload(t *testing.T, statsTestCase statsTest) *[]*stats.StatusUpdate {
+func doWorkload(t *testing.T, statsTestCase statsTest) *[]*StatusUpdate {
 
-	client, connection := BuildMockClient(t)
+	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	if err != nil {
+		t.Fatalf("Failed to build client: %v", err)
+	}
 
-	statusUpdates := []*stats.StatusUpdate{}
+	statusUpdates := []*StatusUpdate{}
 
-	// Wait for all of the nodes to be connected to the stream
+	// Wait for all the nodes to be connected to the stream
 	time.Sleep(4 * time.Second)
 
 	for _, testCase := range statsTestCase.controllerWorkloads {
 
-		testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *CPUPeriod, Quota: *CPUQuota}, Memory: MemoryLimit}})
+		testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *helpers.CPUPeriod, Quota: *helpers.CPUQuota}, Memory: helpers.MemoryLimit}})
 
 		// Depending on the test case, the container may not start
 		if testCase.ExpectedError && err != nil {
 			// add an error event to the stats
-			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "start", Status: "error"})
+			statusUpdates = append(statusUpdates, &StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "start", Status: "error"})
 		} else {
 			// add a success event to the stats
-			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "start", Status: "success"})
+			statusUpdates = append(statusUpdates, &StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "start", Status: "success"})
 		}
 
 		response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: testContainerID, Data: testCase.CallPayload})
 
 		if testCase.ExpectedError && err != nil {
 			// add an error event to the stats
-			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "call", Status: "error"})
+			statusUpdates = append(statusUpdates, &StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "call", Status: "error"})
 		} else {
 			// add a success event to the stats
-			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "call", Status: "success"})
+			statusUpdates = append(statusUpdates, &StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "call", Status: "success"})
 		}
 		//If there was a response, there is a container response event
 		if testCase.ExpectsResponse && response != nil {
-			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "response", Status: "success"})
+			statusUpdates = append(statusUpdates, &StatusUpdate{InstanceID: testContainerID.Id, Type: "container", Event: "response", Status: "success"})
 		}
 
 		responseContainerID, err := client.Stop(context.Background(), testContainerID)
 
 		if testCase.ExpectedError && err != nil {
 			// add an error event to the stats
-			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "error"})
+			statusUpdates = append(statusUpdates, &StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "error"})
 		} else if responseContainerID != nil && responseContainerID.Id == testContainerID.Id {
 			// add a success event to the stats
-			statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "success"})
+			statusUpdates = append(statusUpdates, &StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "success"})
 		}
 
 		//UNCOMMENT THIS TO INTENTIONALLY FAIL THE TEST
@@ -104,7 +107,7 @@ func doWorkload(t *testing.T, statsTestCase statsTest) *[]*stats.StatusUpdate {
 
 // Using assert.EqualExportedValues , this function checks if two arrays of structs have the same number of elements, and that these elements have the same values.
 // The order of the elements does not matter.
-func EqualStatusUpdates(t *testing.T, expected, actual []*stats.StatusUpdate) bool {
+func EqualStatusUpdates(t *testing.T, expected, actual []*StatusUpdate) bool {
 
 	if len(expected) != len(actual) {
 		return false
@@ -120,7 +123,10 @@ func EqualStatusUpdates(t *testing.T, expected, actual []*stats.StatusUpdate) bo
 
 // Tests that a node can reconnect to the StatusUpdate stream after disconecting.
 func TestStatusReconnection(t *testing.T) {
-	client, connection := BuildMockClient(t)
+	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	if err != nil {
+		t.Fatalf("Failed to build client: %v", err)
+	}
 
 	wg := sync.WaitGroup{}
 
@@ -201,9 +207,13 @@ func TestStatusReconnection(t *testing.T) {
 	})
 }
 
-func ConnectNode(t *testing.T, nodeID string, wg1 *sync.WaitGroup, mutex *sync.Mutex, recievedStatsPerNode map[string][]*stats.StatusUpdate, stopSignals map[string]chan bool, timeout time.Duration) {
+func ConnectNode(t *testing.T, nodeID string, wg1 *sync.WaitGroup, mutex *sync.Mutex, recievedStatsPerNode map[string][]*StatusUpdate, stopSignals map[string]chan bool, timeout time.Duration) {
 
-	client, connection := BuildMockClient(t)
+	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	if err != nil {
+		t.Fatalf("Failed to build client: %v", err)
+	}
+
 	defer connection.Close()
 	defer wg1.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -234,7 +244,7 @@ func ConnectNode(t *testing.T, nodeID string, wg1 *sync.WaitGroup, mutex *sync.M
 			}
 
 			// Copy the stats to a new struct to avoid copying mutex
-			statCopy := &stats.StatusUpdate{
+			statCopy := &StatusUpdate{
 				InstanceID: stat.InstanceId,
 				Type:       stat.Type,
 				Event:      stat.Event,
@@ -260,9 +270,9 @@ func ConnectNode(t *testing.T, nodeID string, wg1 *sync.WaitGroup, mutex *sync.M
 
 func TestStats(t *testing.T) {
 
-	controllerWorkloads := []controllerWorkload{
+	controllerWorkloads := []helpers.ControllerWorkload{
 		{
-			testName:          "normal execution of hello image",
+			TestName:          "normal execution of hello image",
 			ImageTag:          workloadImageTags[0],
 			ExpectedError:     false,
 			ExpectsResponse:   true,
@@ -304,7 +314,7 @@ func TestStats(t *testing.T) {
 		t.Run(statsTestCase.testName, func(t *testing.T) {
 			// To keep track of the workload
 			wgWorkload := sync.WaitGroup{}
-			statsChan := make(chan *[]*stats.StatusUpdate)
+			statsChan := make(chan *[]*StatusUpdate)
 
 			wgWorkload.Add(1)
 			go func(wg1 *sync.WaitGroup) {
@@ -329,7 +339,7 @@ func TestStats(t *testing.T) {
 			}
 
 			//recievedStatsPerNode is a map that stores the stats recieved by each node
-			recievedStatsPerNode := make(map[string][]*stats.StatusUpdate)
+			recievedStatsPerNode := make(map[string][]*StatusUpdate)
 
 			wgNodes := sync.WaitGroup{}
 			mu := sync.Mutex{}
@@ -362,13 +372,13 @@ func TestStats(t *testing.T) {
 				}
 
 				//  count occurrences of each StatusUpdate in the expected array
-				expectedCount := make(map[stats.StatusUpdate]int)
+				expectedCount := make(map[StatusUpdate]int)
 				for _, e := range *expected {
 					expectedCount[*e]++
 				}
 
 				//  count occurrences of each StatusUpdate in the actual array
-				actualCount := make(map[stats.StatusUpdate]int)
+				actualCount := make(map[StatusUpdate]int)
 				for _, a := range actual {
 					actualCount[*a]++
 				}
@@ -378,7 +388,7 @@ func TestStats(t *testing.T) {
 
 				assert.True(t, result, "The stats recieved by node %s are not equal to the expected stats", nodeID)
 
-				testController.StatsManager.RemoveListener(nodeID)
+				helpers.TestController.StatsManager.RemoveListener(nodeID)
 			}
 		})
 	}

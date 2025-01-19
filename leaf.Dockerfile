@@ -5,7 +5,7 @@ FROM golang:${GO_VERSION}-alpine as builder
 WORKDIR /root/
 COPY ./go.mod go.sum ./
 RUN go mod download
-COPY . . 
+COPY . .
 RUN go build -o leaf ./cmd/leaf/main.go
 
 FROM alpine:${ALPINE_VERSION}

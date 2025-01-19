@@ -15,6 +15,7 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	helpers "github.com/3s-rg-codes/HyperFaaS/test_helpers"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"google.golang.org/grpc/codes"
@@ -31,30 +32,11 @@ var ( //TODO: implement flags, do we need more?
 	DOCKER_TOLERANCE = flag.Duration("dockerTolerance", DURATION, "Tolerance for container start and stop in seconds")
 	requestedRuntime = flag.String("specifyRuntime", RUNTIME, "for now only docker, is also default")
 	//config                  = flag.String("config", "", "specify Config") TODO WIP, not implemented yet(?)
-	controllerServerAddress = flag.String("ServerAdress", SERVER_ADDRESS, "specify controller server adress")
+	controllerServerAddress = flag.String("ServerAddress", helpers.SERVER_ADDRESS, "specify controller server adress")
 	autoRemove              = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
 	testController          *controller.Controller
 	runtime                 *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
-	CPUPeriod               = flag.Int64("cpuPeriod", 100000, "CPU period")
-	CPUQuota                = flag.Int64("cpuQuota", 50000, "CPU quota")
-	MemoryLimit             = (*flag.Int64("memoryLimit", 250000000, "Memory limit in MB")) * 1024 * 1024
 )
-
-// image tag array
-var imageTags = []string{"hyperfaas-hello:latest", "hyperfaas-crash:latest", "hyperfaas-echo:latest", "hyperfaas-sleep:latest"}
-
-type controllerWorkload struct {
-	testName          string
-	ImageTag          string
-	ExpectedError     bool
-	ReturnError       bool
-	ExpectsResponse   bool
-	ExpectedResponse  string
-	ErrorCode         codes.Code
-	ExpectedErrorCode codes.Code
-	CallPayload       []byte
-	InstanceID        string
-}
 
 // TestMain calls setup and teardown functions, and runs all other Test Functions
 func TestMain(m *testing.M) {
@@ -87,10 +69,10 @@ func setup() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	//Controller
-	testController = controller.NewController(runtime, slog.Default(), *controllerServerAddress)
+	helpers.TestController = controller.NewController(runtime, slog.Default(), *controllerServerAddress)
 	//CallerServer
 	go func() {
-		testController.StartServer()
+		helpers.TestController.StartServer()
 	}()
 
 	//sleep for 5 seconds
@@ -98,36 +80,36 @@ func setup() {
 
 }
 
-func teardown() {
-	//testController.StopServer()
+var testCases = []helpers.ControllerWorkload{
+	{
+		TestName:          "normal execution of hello image",
+		ImageTag:          helpers.ImageTags[0],
+		ExpectedError:     false,
+		ExpectedErrorCode: codes.OK,
+		CallPayload:       []byte("TESTPAYLOAD"),
+	},
+	{
+		TestName:          "normal execution of echo image",
+		ImageTag:          helpers.ImageTags[2],
+		ExpectedError:     false,
+		ExpectedErrorCode: codes.OK,
+		CallPayload:       []byte("Hello World"),
+	},
 }
 
 // Tests a normal container lifecycle: Start, Call, Stop
 func TestNormalExecution(t *testing.T) {
 
 	flag.Parse()
-	client, connection := BuildMockClient(t)
-	testCases := []controllerWorkload{
-		{
-			testName:          "normal execution of hello image",
-			ImageTag:          imageTags[0],
-			ExpectedError:     false,
-			ExpectedErrorCode: codes.OK,
-			CallPayload:       []byte("TESTPAYLOAD"),
-		},
-		{
-			testName:          "normal execution of echo image",
-			ImageTag:          imageTags[2],
-			ExpectedError:     false,
-			ExpectedErrorCode: codes.OK,
-			CallPayload:       []byte("Hello World"),
-		},
+	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	if err != nil {
+		t.Fatalf("Could not start client for testing purposes: %v.", err)
 	}
 
 	for _, testCase := range testCases {
 
-		t.Run(testCase.testName, func(t *testing.T) {
-			testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *CPUPeriod, Quota: *CPUQuota}, Memory: MemoryLimit}})
+		t.Run(testCase.TestName, func(t *testing.T) {
+			testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *helpers.CPUPeriod, Quota: *helpers.CPUQuota}, Memory: helpers.MemoryLimit}})
 
 			grpcStatus, ok := status.FromError(err)
 			if !ok {
@@ -183,10 +165,14 @@ func TestNormalExecution(t *testing.T) {
 func TestStopNonExistingContainer(t *testing.T) {
 
 	flag.Parse()
-	client, connection := BuildMockClient(t)
-	testCases := []controllerWorkload{
+	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	if err != nil {
+		t.Fatalf("Could not start client for testing purposes: %v.", err)
+	}
+
+	testCases := []helpers.ControllerWorkload{
 		{
-			testName:          "stopping non existing container",
+			TestName:          "stopping non existing container",
 			InstanceID:        "nonExistingContainer",
 			ExpectedError:     true,
 			ExpectedErrorCode: codes.NotFound,
@@ -195,7 +181,7 @@ func TestStopNonExistingContainer(t *testing.T) {
 
 	for _, testCase := range testCases {
 
-		t.Run(testCase.testName, func(t *testing.T) {
+		t.Run(testCase.TestName, func(t *testing.T) {
 			_, err := client.Stop(context.Background(), &common.InstanceID{Id: testCase.InstanceID})
 
 			grpcStatus, ok := status.FromError(err)
@@ -219,10 +205,13 @@ func TestStopNonExistingContainer(t *testing.T) {
 func TestCallNonExistingContainer(t *testing.T) {
 
 	flag.Parse()
-	client, connection := BuildMockClient(t)
-	testCases := []controllerWorkload{
+	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	if err != nil {
+		t.Fatalf("Could not start client for testing purposes: %v.", err)
+	}
+	testCases := []helpers.ControllerWorkload{
 		{
-			testName:          "calling non existing container",
+			TestName:          "calling non existing container",
 			InstanceID:        "nonExistingContainer",
 			ExpectedError:     true,
 			ExpectedErrorCode: codes.NotFound,
@@ -231,8 +220,8 @@ func TestCallNonExistingContainer(t *testing.T) {
 
 	for _, testCase := range testCases {
 
-		t.Run(testCase.testName, func(t *testing.T) {
-			_, err := client.Call(context.Background(), &common.CallRequest{InstanceId: &common.InstanceID{Id: testCase.InstanceID}, Data: []byte("")})
+		t.Run(testCase.TestName, func(t *testing.T) {
+			_, err := client.Call(context.Background(), &common.CallRequest{InstanceId: &common.InstanceID{Id: testCase.InstanceID}, Data: []byte{}})
 
 			grpcStatus, ok := status.FromError(err)
 
@@ -253,7 +242,10 @@ func TestCallNonExistingContainer(t *testing.T) {
 
 func TestMetrics(t *testing.T) {
 	flag.Parse()
-	client, connection := BuildMockClient(t)
+	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	if err != nil {
+		t.Fatalf("Could not start client for testing purposes: %v.", err)
+	}
 
 	metrics, err := client.Metrics(context.Background(), &pb.MetricsRequest{NodeID: "a"})
 	grpcStatus, ok := status.FromError(err)
@@ -272,16 +264,20 @@ func TestMetrics(t *testing.T) {
 func TestStartNonLocalImages(t *testing.T) {
 
 	flag.Parse()
-	client, connection := BuildMockClient(t)
-	testCases := []controllerWorkload{
+	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	if err != nil {
+		t.Fatalf("Could not start client for testing purposes: %v.", err)
+	}
+
+	testCases := []helpers.ControllerWorkload{
 		{
-			testName:          "starting non existing image",
+			TestName:          "starting non existing image",
 			ImageTag:          "asjkdasjk678132613278hadjskdasjk2314678432768ajbfakjfakhj",
 			ExpectedError:     true,
 			ExpectedErrorCode: codes.NotFound,
 		},
 		{
-			testName:          "starting image that needs to be pulled",
+			TestName:          "starting image that needs to be pulled",
 			ImageTag:          "luccadibe/hyperfaas-functions:hello",
 			ExpectedError:     false,
 			ExpectedErrorCode: codes.OK,
@@ -290,7 +286,7 @@ func TestStartNonLocalImages(t *testing.T) {
 
 	for _, testCase := range testCases {
 
-		t.Run(testCase.testName, func(t *testing.T) {
+		t.Run(testCase.TestName, func(t *testing.T) {
 
 			//Check if the image already exists locally
 
@@ -315,7 +311,7 @@ func TestStartNonLocalImages(t *testing.T) {
 				}
 			}
 
-			_, err = client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *CPUPeriod, Quota: *CPUQuota}, Memory: MemoryLimit}})
+			_, err = client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *helpers.CPUPeriod, Quota: *helpers.CPUQuota}, Memory: helpers.MemoryLimit}})
 
 			grpcStatus, ok := status.FromError(err)
 

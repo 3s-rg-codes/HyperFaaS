@@ -2,74 +2,18 @@ package scheduling
 
 import (
 	"context"
+	helpers "github.com/3s-rg-codes/HyperFaaS/test_helpers"
 	"log/slog"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
 	"github.com/stretchr/testify/assert"
 )
 
-func CreateTestState() state.WorkerStateMap {
-	// The MRU instance is instance1 for func1 on worker1
-	return state.WorkerStateMap{
-		"worker1": []state.FunctionState{
-			{FunctionID: "func1", Idle: []state.InstanceState{
-				{InstanceID: "instance1",
-					TimeSinceLastWork: 1 * time.Second,
-					Uptime:            5 * time.Second,
-				},
-				{InstanceID: "instance2",
-					TimeSinceLastWork: 2 * time.Second,
-					Uptime:            4 * time.Second,
-				},
-				{InstanceID: "instance3",
-					TimeSinceLastWork: 3 * time.Second,
-					Uptime:            5 * time.Second,
-				},
-			},
-				Running: []state.InstanceState{
-					{InstanceID: "instance4",
-						TimeSinceLastWork: 4 * time.Second,
-						Uptime:            10 * time.Second,
-					},
-					{InstanceID: "instance5",
-						TimeSinceLastWork: 5 * time.Second,
-						Uptime:            10 * time.Second,
-					},
-				},
-			},
-		},
-		"worker2": []state.FunctionState{
-			{FunctionID: "func2", Idle: []state.InstanceState{
-				{InstanceID: "instance6",
-					TimeSinceLastWork: 2 * time.Second,
-					Uptime:            5 * time.Second,
-				},
-				{InstanceID: "instance7",
-					TimeSinceLastWork: 2 * time.Second,
-					Uptime:            4 * time.Second,
-				},
-			},
-				Running: []state.InstanceState{
-					{InstanceID: "instance8",
-						TimeSinceLastWork: 3 * time.Second,
-						Uptime:            5 * time.Second,
-					},
-					{InstanceID: "instance9",
-						TimeSinceLastWork: 4 * time.Second,
-						Uptime:            5 * time.Second,
-					},
-				},
-			},
-		},
-	}
-}
-
 func TestNaiveSchedulerUpdateState(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	initialState := CreateTestState()
+	initialState := helpers.CreateTestState()
 	scheduler := NewNaiveScheduler(initialState, []state.WorkerID{"worker1", "worker2"}, logger)
 	err := scheduler.UpdateState(context.Background(), "worker1", "func1", "instance1")
 	if err != nil {
@@ -92,7 +36,7 @@ func TestNaiveSchedulerUpdateState(t *testing.T) {
 
 func TestNaiveSchedulerSchedule(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	initialState := CreateTestState()
+	initialState := helpers.CreateTestState()
 	scheduler := NewNaiveScheduler(initialState, []state.WorkerID{"worker1", "worker2"}, logger)
 
 	decision, _, err := scheduler.Schedule(context.Background(), "func1")
@@ -105,7 +49,7 @@ func TestNaiveSchedulerSchedule(t *testing.T) {
 
 func TestMRUSchedulerSchedule(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	initialState := CreateTestState()
+	initialState := helpers.CreateTestState()
 	scheduler := NewMRUScheduler(initialState, []state.WorkerID{"worker1", "worker2"}, logger)
 
 	decision, instanceID, err := scheduler.Schedule(context.Background(), "func1")
