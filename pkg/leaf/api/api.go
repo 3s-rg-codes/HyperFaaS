@@ -38,7 +38,7 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("Starting new instance for function %s on worker %s", req.FunctionId, workerID)
+		log.Printf("Started new instance for function %s on worker %s, instanceID: %s", req.FunctionId, workerID, instanceID)
 		s.scheduler.UpdateInstanceState(workerID, state.FunctionID(req.FunctionId), instanceID, state.InstanceStateNew)
 	} else {
 		// An Idle instance was found

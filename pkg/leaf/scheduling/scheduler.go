@@ -247,10 +247,18 @@ func NewSyncMapScheduler(workerIDs []state.WorkerID, logger *slog.Logger) *syncM
 func (s *syncMapScheduler) Schedule(ctx context.Context, functionID state.FunctionID) (state.WorkerID, state.InstanceID, error) {
 	workerID, instanceID, err := s.workers.FindIdleInstance(functionID)
 	if err != nil {
-		// No idle instance found
 		// TODO: pick worker with lowest load
 		workerID = s.workerIDs[rand.Intn(len(s.workerIDs))]
-		s.logger.Info("No idle instance found, scheduling to random worker", "functionID", functionID, "workerID", workerID)
+
+		switch e := err.(type) {
+		case *state.FunctionNotRegisteredError:
+			s.logger.Info("Function not registered, creating on random worker", "functionID", functionID, "workerID", workerID)
+			s.CreateFunction(workerID, functionID)
+		case *state.NoIdleInstanceError:
+			s.logger.Info("No idle instance found, scheduling to random worker", "functionID", functionID, "workerID", workerID)
+		default:
+			s.logger.Error("Unexpected error type", "error", e)
+		}
 		return workerID, "", nil
 	}
 	return workerID, instanceID, nil

@@ -81,13 +81,14 @@ func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, insta
 		w.logger.Error("Instance state map not found", "workerID", workerID, "functionID", functionID)
 		return
 	}
-	w.logger.Info("Updating instance", "workerID", workerID, "functionID", functionID, "instanceState", instanceState, "instance", instance)
-	// Todo maybe make this cleaner.
+	w.logger.Debug("Updating instance", "workerID", workerID, "functionID", functionID, "instanceState", instanceState, "instance", instance)
+	// Todo maybe make this cleaner and update the timestamps.
 	switch instanceState {
 	case InstanceStateNew:
 		instanceStateMap.Store(InstanceStateRunning, append(w.GetInstances(workerID, functionID, InstanceStateRunning), instance))
 	case InstanceStateIdle:
 		// Insert into Idle slice
+		w.logger.Debug("Moving instance to idle", "workerID", workerID, "functionID", functionID, "instanceState", instanceState, "instance", instance, "totalIdle", len(w.GetInstances(workerID, functionID, instanceState)))
 		instanceStateMap.Store(instanceState, append(w.GetInstances(workerID, functionID, instanceState), instance))
 		// Remove from Running slice
 		runningInstances := w.GetInstances(workerID, functionID, InstanceStateRunning)
@@ -100,11 +101,13 @@ func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, insta
 		instanceStateMap.Store(InstanceStateRunning, runningInstances)
 	case InstanceStateRunning:
 		// Insert into Running slice
+		w.logger.Debug("Moving instance to running", "workerID", workerID, "functionID", functionID, "instanceState", instanceState, "instance", instance, "totalRunning", len(w.GetInstances(workerID, functionID, instanceState)))
 		instanceStateMap.Store(instanceState, append(w.GetInstances(workerID, functionID, instanceState), instance))
 		// Remove from Idle slice
 		idleInstances := w.GetInstances(workerID, functionID, InstanceStateIdle)
 		for i, idleInstance := range idleInstances {
 			if idleInstance.InstanceID == instance.InstanceID {
+				w.logger.Debug("Removing instance from idle", "workerID", workerID, "functionID", functionID, "instanceState", instanceState, "instance", instance, "totalIdle", len(idleInstances))
 				idleInstances = append(idleInstances[:i], idleInstances[i+1:]...)
 				break
 			}
@@ -140,7 +143,7 @@ func (w *Workers) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID,
 	var idleWorkerID WorkerID
 	var idleInstanceID InstanceID
 	found := false
-
+	functionExists := false
 	w.data.Range(func(workerID, functionMap interface{}) bool {
 		funcMap := functionMap.(*sync.Map)
 		function, ok := funcMap.Load(functionID)
@@ -149,6 +152,7 @@ func (w *Workers) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID,
 			return true // Continue iterating
 		}
 
+		functionExists = true
 		instanceStateMap := function.(*sync.Map)
 		idleInstances, ok := instanceStateMap.Load(InstanceStateIdle)
 		if !ok {
@@ -174,7 +178,10 @@ func (w *Workers) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID,
 	if found {
 		return idleWorkerID, idleInstanceID, nil
 	}
-	return "", "", fmt.Errorf("no idle instance found")
+	if !functionExists {
+		return "", "", &FunctionNotRegisteredError{FunctionID: functionID}
+	}
+	return "", "", &NoIdleInstanceError{FunctionID: functionID}
 }
 
 func (w *Workers) DebugPrint() {

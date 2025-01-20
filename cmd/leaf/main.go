@@ -52,6 +52,7 @@ func main() {
 
 	// For now, we just set these once. In the future, we will have a way to update the worker IPs if needed.
 	var ids []state.WorkerID
+	logger.Debug("Setting worker IDs", "workerIDs", workerIDs, "len", len(workerIDs))
 	for _, id := range workerIDs {
 		ids = append(ids, state.WorkerID(id))
 	}

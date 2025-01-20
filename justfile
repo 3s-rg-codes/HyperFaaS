@@ -47,16 +47,21 @@ build: build-functions-go build-worker
 # run the worker with default configurations. Make sure to run just build every time you change the code
 # Alternatively, run just dev if you want to make sure you are always running the latest code
 start-rebuild:
-    @echo Starting docker service"
+    @echo "Starting docker service"
     docker compose up --build
 
 start:
-    @echo Starting docker service"
+    @echo "Starting docker service"
     docker compose up
 
 stop:
-    @echo Stopping docker service"
+    @echo "Stopping docker service"
     docker compose down
+    
+d:
+    @echo "Starting docker service"
+    docker compose up --build --detach
+
 
 # generates proto, builds binary, builds docker go and runs the workser
 dev: build start

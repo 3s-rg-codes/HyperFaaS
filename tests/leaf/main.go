@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
+	"sync"
+	"time"
 
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"google.golang.org/grpc"
@@ -13,31 +16,72 @@ import (
 // Postman alternative xD...
 // Now seriously, why is postman soooo slow?
 func main() {
-	// Create connection to leaf server
 	conn, err := grpc.NewClient("localhost:50050", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
 
-	// Create leaf client
-	client := pb.NewLeafClient(conn)
+	leafClient := pb.NewLeafClient(conn)
 
-	// Create request
 	req := &pb.ScheduleCallRequest{
-		FunctionId: "hyperfaas-hello",
-		Data:       []byte("test data"),
+		FunctionId: "hyperfaas-simul",
+		Data:       []byte(""),
 	}
 
-	// Call ScheduleCall RPC
-	resp, err := client.ScheduleCall(context.Background(), req)
+	resp, err := leafClient.ScheduleCall(context.Background(), req)
 	if err != nil {
 		log.Fatalf("Failed to schedule call: %v", err)
 	}
 
-	if resp.Error != nil {
-		fmt.Printf("Error from function: %v\n", resp.Error)
-	} else {
-		fmt.Printf("Response data: %s\n", string(resp.Data))
+	fmt.Printf("Response data: %s\n", string(resp.Data))
+
+	// Create leaf client
+	client, conn := createClient()
+	defer conn.Close()
+	// Call ScheduleCall RPC
+	wg := sync.WaitGroup{}
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			testTwoCallsToSameFunction(client)
+		}()
 	}
+	wg.Wait()
+
+}
+
+func createClient() (pb.LeafClient, *grpc.ClientConn) {
+	conn, err := grpc.NewClient("localhost:50050", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+
+	return pb.NewLeafClient(conn), conn
+}
+
+func testTwoCallsToSameFunction(client pb.LeafClient) {
+	// sleep for random time between 100ms and 2 seconds
+	time.Sleep(time.Duration(rand.Intn(1900)+100) * time.Millisecond)
+	startReq := &pb.ScheduleCallRequest{
+		FunctionId: "hyperfaas-simul",
+		Data:       []byte(""),
+	}
+
+	resp, err := client.ScheduleCall(context.Background(), startReq)
+	if err != nil {
+		log.Fatalf("Failed to schedule first call: %v", err)
+	}
+
+	/* req := &pb.ScheduleCallRequest{
+		FunctionId: "hyperfaas-hello",
+		Data:       []byte(""),
+	}
+
+	resp, err = client.ScheduleCall(context.Background(), req)
+	if err != nil {
+		log.Fatalf("Failed to schedule second call: %v", err)
+	} */
+
+	fmt.Printf("Response data: %s\n", string(resp.Data))
 }
