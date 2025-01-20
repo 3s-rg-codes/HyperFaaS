@@ -38,6 +38,7 @@ func main() {
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
 	logFormat := flag.String("log-format", "text", "Log format (json or text) (Env: LOG_FORMAT)")
 	logFilePath := flag.String("log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
+	schedulerType := flag.String("scheduler-type", "naive", "The type of scheduler to use (naive or map)")
 	flag.Var(&workerIDs, "worker-ids", "The IDs of the workers to manage")
 	flag.Parse()
 
@@ -58,7 +59,7 @@ func main() {
 
 	workerState := make(state.WorkerStateMap)
 
-	scheduler := scheduling.NewNaiveScheduler(workerState, ids, logger)
+	scheduler := scheduling.New(*schedulerType, workerState, ids, logger)
 	server := api.NewLeafServer(scheduler)
 
 	listener, err := net.Listen("tcp", *address)

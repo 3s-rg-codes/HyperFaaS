@@ -35,14 +35,14 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    *controller.StateResponse
-		expected []FunctionState
+		expected []Function
 	}{
 		{
 			name: "empty response",
 			input: &controller.StateResponse{
 				Functions: []*controller.FunctionState{},
 			},
-			expected: []FunctionState{},
+			expected: []Function{},
 		},
 		{
 			name: "single function with instances",
@@ -69,23 +69,23 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 					},
 				},
 			},
-			expected: []FunctionState{
+			expected: []Function{
 				{
 					FunctionID: "func1",
-					Running: []InstanceState{
+					Running: []Instance{
 						{
-							InstanceID:        "instance1",
-							IsActive:          true,
-							TimeSinceLastWork: 1 * time.Second,
-							Uptime:            5 * time.Second,
+							InstanceID: "instance1",
+							IsActive:   true,
+							LastWorked: 1 * time.Second,
+							Created:    5 * time.Second,
 						},
 					},
-					Idle: []InstanceState{
+					Idle: []Instance{
 						{
-							InstanceID:        "instance2",
-							IsActive:          false,
-							TimeSinceLastWork: 2 * time.Second,
-							Uptime:            3 * time.Second,
+							InstanceID: "instance2",
+							IsActive:   false,
+							LastWorked: 2 * time.Second,
+							Created:    3 * time.Second,
 						},
 					},
 				},
@@ -143,8 +143,8 @@ func TestScraperGetWorkerState(t *testing.T) {
 	assert.Equal(t, FunctionID("func1"), state[0].FunctionID)
 	assert.Len(t, state[0].Running, 1)
 	assert.Equal(t, InstanceID("instance1"), state[0].Running[0].InstanceID)
-	assert.Equal(t, 1*time.Second, state[0].Running[0].TimeSinceLastWork)
-	assert.Equal(t, 5*time.Second, state[0].Running[0].Uptime)
+	assert.Equal(t, 1*time.Second, state[0].Running[0].LastWorked)
+	assert.Equal(t, 5*time.Second, state[0].Running[0].Created)
 
 	mockClient.AssertExpectations(t)
 }
@@ -198,10 +198,10 @@ func TestScraper_Scrape(t *testing.T) {
 	assert.Len(t, state["worker2"][0].Running, 1)
 	assert.Equal(t, InstanceID("instance1"), state["worker1"][0].Running[0].InstanceID)
 	assert.Equal(t, InstanceID("instance1"), state["worker2"][0].Running[0].InstanceID)
-	assert.Equal(t, 1*time.Second, state["worker1"][0].Running[0].TimeSinceLastWork)
-	assert.Equal(t, 1*time.Second, state["worker2"][0].Running[0].TimeSinceLastWork)
-	assert.Equal(t, 5*time.Second, state["worker1"][0].Running[0].Uptime)
-	assert.Equal(t, 5*time.Second, state["worker2"][0].Running[0].Uptime)
+	assert.Equal(t, 1*time.Second, state["worker1"][0].Running[0].LastWorked)
+	assert.Equal(t, 1*time.Second, state["worker2"][0].Running[0].LastWorked)
+	assert.Equal(t, 5*time.Second, state["worker1"][0].Running[0].Created)
+	assert.Equal(t, 5*time.Second, state["worker2"][0].Running[0].Created)
 
 	mockClient.AssertExpectations(t)
 }

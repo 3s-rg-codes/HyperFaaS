@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
@@ -9,6 +10,7 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // grpc api endpoints that leafLeader will expose
@@ -31,21 +33,25 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	}
 
 	if instanceID == "" {
+		// There is no idle instance available
 		instanceID, err = startInstance(ctx, workerID, state.FunctionID(req.FunctionId))
 		if err != nil {
 			return nil, err
 		}
+		log.Printf("Starting new instance for function %s on worker %s", req.FunctionId, workerID)
+		s.scheduler.UpdateInstanceState(workerID, state.FunctionID(req.FunctionId), instanceID, state.InstanceStateNew)
+	} else {
+		// An Idle instance was found
+		s.scheduler.UpdateInstanceState(workerID, state.FunctionID(req.FunctionId), instanceID, state.InstanceStateRunning)
 	}
-
-	// Update State to reflect that we are sending a call to this worker
-	// Issue: what if the worker dies / container crashes before the call is processed? This update to the state would be erroneous.
-	// We would need some logic that reconciles the state in case of failures.
-	go s.scheduler.UpdateState(ctx, workerID, state.FunctionID(req.FunctionId), instanceID)
 
 	resp, err := callWorker(ctx, workerID, instanceID, req)
 	if err != nil {
 		return nil, err
 	}
+
+	// The instance is no longer running
+	s.scheduler.UpdateInstanceState(workerID, state.FunctionID(req.FunctionId), instanceID, state.InstanceStateIdle)
 
 	return resp, nil
 }
@@ -58,7 +64,7 @@ func NewLeafServer(scheduler scheduling.Scheduler) *LeafServer {
 // https://promisefemi.vercel.app/blog/grpc-client-connection-pooling
 // https://github.com/processout/grpc-go-pool/blob/master/pool.go
 func callWorker(ctx context.Context, workerID state.WorkerID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
-	conn, err := grpc.NewClient(string(workerID))
+	conn, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +85,7 @@ func callWorker(ctx context.Context, workerID state.WorkerID, instanceID state.I
 }
 
 func startInstance(ctx context.Context, workerID state.WorkerID, functionId state.FunctionID) (state.InstanceID, error) {
-	conn, err := grpc.NewClient(string(workerID))
+	conn, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return "", err
 	}
