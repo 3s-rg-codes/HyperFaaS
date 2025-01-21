@@ -52,16 +52,16 @@ start-rebuild:
 
 start:
     @echo "Starting docker service"
-    docker compose up -d
-
-logs:
-    docker compose logs -f
-
-
+    docker compose up
 
 stop:
     @echo "Stopping docker service"
     docker compose down
+
+d:
+    @echo "Starting docker service"
+    docker compose up --build --detach
+
 
 # generates proto, builds binary, builds docker go and runs the workser
 dev: build start

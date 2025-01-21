@@ -32,16 +32,23 @@ func (s *Controller) Start(ctx context.Context, req *controller.StartRequest) (*
 
 	instanceId, err := s.runtime.Start(ctx, req.ImageTag.Tag, req.Config)
 
+	// Truncate the ID to the first 12 characters to match Docker's short ID format
+	shortID := instanceId
+	if len(instanceId) > 12 {
+		shortID = instanceId[:12]
+		s.logger.Debug("Truncating ID", "id", instanceId, "shortID", shortID)
+	}
+
 	if err != nil {
-		s.StatsManager.Enqueue(stats.Event().Container(instanceId).Start().WithStatus("failed"))
+		s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().WithStatus("failed"))
 		return nil, err
 
 	}
-	s.StatsManager.Enqueue(stats.Event().Container(instanceId).Start().WithStatus("success"))
+	s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().WithStatus("success"))
 
-	s.CallerServer.RegisterFunction(instanceId)
+	s.CallerServer.RegisterFunction(shortID)
 
-	return &common.InstanceID{Id: instanceId}, nil
+	return &common.InstanceID{Id: shortID}, nil
 }
 
 // This function passes the call through the channel of the instance ID in the FunctionCalls map
@@ -50,7 +57,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 	// Check if the instance ID is present in the FunctionCalls map
 	if _, ok := s.CallerServer.FunctionCalls.FcMap[req.InstanceId.Id]; !ok {
-		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
+		err := fmt.Errorf("instance ID  does not exist")
 		s.logger.Error("Passing call with payload", "error", err, "instance ID", req.InstanceId.Id)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
