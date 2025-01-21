@@ -2,7 +2,8 @@ package stats
 
 import (
 	"context"
-	helpers "github.com/3s-rg-codes/HyperFaaS/test_helpers"
+	"flag"
+	"github.com/3s-rg-codes/HyperFaaS/helpers"
 	"io"
 	"reflect"
 	"sync"
@@ -24,6 +25,14 @@ type statsTest struct {
 	controllerWorkloads []helpers.ControllerWorkload
 	timeout             time.Duration
 }
+
+var (
+	controllerServerAddress = flag.String("ServerAdress", helpers.SERVER_ADDRESS, "specify controller server adress")
+	CPUPeriod               = flag.Int64("cpuPeriod", 100000, "CPU period")
+	CPUQuota                = flag.Int64("cpuQuota", 50000, "CPU quota")
+	MemoryLimit             = (*flag.Int64("memoryLimit", 250000000, "Memory limit in MB")) * 1024 * 1024
+	environment             = flag.String("environment", helpers.ENVIRONMENT, "specify environment to run")
+)
 
 var workloadImageTags = []string{"hyperfaas-hello:latest", "hyperfaas-echo:latest"}
 
@@ -49,17 +58,17 @@ func doWorkload(t *testing.T, statsTestCase statsTest) *[]*StatusUpdate {
 
 	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
 	if err != nil {
-		t.Fatalf("Failed to build client: %v", err)
+		t.Errorf("Error creating the mock client: %v", err)
 	}
 
 	statusUpdates := []*StatusUpdate{}
 
-	// Wait for all the nodes to be connected to the stream
+	// Wait for all of the nodes to be connected to the stream
 	time.Sleep(4 * time.Second)
 
 	for _, testCase := range statsTestCase.controllerWorkloads {
 
-		testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *helpers.CPUPeriod, Quota: *helpers.CPUQuota}, Memory: helpers.MemoryLimit}})
+		testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *CPUPeriod, Quota: *CPUQuota}, Memory: MemoryLimit}})
 
 		// Depending on the test case, the container may not start
 		if testCase.ExpectedError && err != nil {
@@ -123,9 +132,10 @@ func EqualStatusUpdates(t *testing.T, expected, actual []*StatusUpdate) bool {
 
 // Tests that a node can reconnect to the StatusUpdate stream after disconecting.
 func TestStatusReconnection(t *testing.T) {
+
 	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
 	if err != nil {
-		t.Fatalf("Failed to build client: %v", err)
+		t.Errorf("Error creating the mock client: %v", err)
 	}
 
 	wg := sync.WaitGroup{}
@@ -211,7 +221,7 @@ func ConnectNode(t *testing.T, nodeID string, wg1 *sync.WaitGroup, mutex *sync.M
 
 	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
 	if err != nil {
-		t.Fatalf("Failed to build client: %v", err)
+		t.Errorf("Error creating the mock client: %v", err)
 	}
 
 	defer connection.Close()

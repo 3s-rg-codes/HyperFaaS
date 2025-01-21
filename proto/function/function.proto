@@ -3,10 +3,14 @@ syntax = "proto3";
 option go_package = "github.com/3s-rg-codes/hyperfaas";
 package function;
 
+import "common/common.proto";
+
 message Payload {
     bytes data = 1;
     string id = 2;
-    bool firstExecution = 3;
+    common.Error error = 3;
+    bool firstExecution = 4;
+
 }
 message Call {
     bytes data = 1;

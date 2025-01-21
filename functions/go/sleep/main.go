@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	functionRuntimeInterface "github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
 )
 
 func main() {
@@ -14,7 +14,7 @@ func main() {
 	f.Ready(handler)
 }
 
-func handler(ctx context.Context, in *functionRuntimeInterface.Request) (*functionRuntimeInterface.Response, error) {
+func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functionRuntimeInterface.Response {
 
 	//sleep for 20 seconds
 	time.Sleep(20 * time.Second)
@@ -24,5 +24,5 @@ func handler(ctx context.Context, in *functionRuntimeInterface.Request) (*functi
 		Id:   in.Id,
 	}
 
-	return resp, nil
+	return resp
 }

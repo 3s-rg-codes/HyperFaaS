@@ -82,6 +82,8 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 	go func() {
 		// Pass the call to the channel based on the instance ID
 		s.CallerServer.PassCallToChannel(req.InstanceId.Id, req.Data)
+
+		s.logger.Info("Passed call to channel", "instaceID", req.InstanceId.Id)
 		// stats
 		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().WithStatus("success"))
 
