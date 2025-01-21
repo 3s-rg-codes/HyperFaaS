@@ -13,29 +13,43 @@ type WorkerID string
 type InstanceID string
 type FunctionID string
 
-// WorkerStateMap maps worker IPs to their registered functions
-type WorkerStateMap map[WorkerID][]FunctionState
+type WorkerState int
+type InstanceState int
 
-// FunctionState represents the state of a function and its instances
-type FunctionState struct {
+const (
+	WorkerStateUp WorkerState = iota
+	WorkerStateDown
+)
+
+const (
+	InstanceStateRunning InstanceState = iota
+	InstanceStateIdle
+	InstanceStateNew
+)
+
+// WorkerStateMap maps worker IPs to their registered functions
+type WorkerStateMap map[WorkerID][]Function
+
+// Function represents the state of a function and its instances
+type Function struct {
 	FunctionID FunctionID
-	Running    []InstanceState
-	Idle       []InstanceState
+	Running    []Instance
+	Idle       []Instance
 }
 
-// InstanceState represents the state of a single function instance
-type InstanceState struct {
-	InstanceID        InstanceID
-	IsActive          bool
-	TimeSinceLastWork time.Duration //time since the last request was processed to know if to kill
-	Uptime            time.Duration //time since the instance was started to know if to kill
+// Instance represents the state of a single function instance
+type Instance struct {
+	InstanceID InstanceID
+	IsActive   bool
+	LastWorked time.Time
+	Created    time.Time
 }
 
 type Scraper interface {
 	// Scrape the state of all workers
 	Scrape(ctx context.Context) (WorkerStateMap, error)
 	// A single worker's state
-	GetWorkerState(workerID WorkerID) ([]FunctionState, error)
+	GetWorkerState(workerID WorkerID) ([]Function, error)
 	// Set the worker IDs to scrape
 	SetWorkerIDs(workerIDs []WorkerID)
 }
@@ -87,12 +101,12 @@ func New(workerIDs []WorkerID) Scraper {
 
 	// Initialize state map for each worker
 	for _, workerID := range s.workerIDs {
-		s.state[workerID] = make([]FunctionState, 0)
+		s.state[workerID] = make([]Function, 0)
 	}
 	return s
 }
 
-func (s *scraper) GetWorkerState(workerID WorkerID) ([]FunctionState, error) {
+func (s *scraper) GetWorkerState(workerID WorkerID) ([]Function, error) {
 	if s.workerConnections[workerID] == nil {
 		conn, err := grpc.NewClient(string(workerID))
 		if err != nil {
@@ -117,32 +131,32 @@ func (s *scraper) GetWorkerState(workerID WorkerID) ([]FunctionState, error) {
 
 // convertStateResponseToWorkerState converts a StateResponse to []FunctionState
 // This honestly seems like an antipattern. We convert this to our local type bc one shouldnt copy the proto types.
-func convertStateResponseToWorkerState(state *pb.StateResponse) []FunctionState {
-	workerState := make([]FunctionState, len(state.Functions))
+func convertStateResponseToWorkerState(state *pb.StateResponse) []Function {
+	workerState := make([]Function, len(state.Functions))
 	for i, function := range state.Functions {
 		// Convert running instances
-		runningInstances := make([]InstanceState, len(function.Running))
+		runningInstances := make([]Instance, len(function.Running))
 		for j, instance := range function.Running {
-			runningInstances[j] = InstanceState{
-				InstanceID:        InstanceID(instance.InstanceId),
-				IsActive:          instance.IsActive,
-				TimeSinceLastWork: time.Duration(instance.TimeSinceLastWork) * time.Millisecond,
-				Uptime:            time.Duration(instance.Uptime) * time.Millisecond,
+			runningInstances[j] = Instance{
+				InstanceID: InstanceID(instance.InstanceId),
+				IsActive:   instance.IsActive,
+				LastWorked: time.Unix(int64(instance.TimeSinceLastWork), 0),
+				Created:    time.Unix(int64(instance.Uptime), 0),
 			}
 		}
 
 		// Convert idle instances
-		idleInstances := make([]InstanceState, len(function.Idle))
+		idleInstances := make([]Instance, len(function.Idle))
 		for j, instance := range function.Idle {
-			idleInstances[j] = InstanceState{
-				InstanceID:        InstanceID(instance.InstanceId),
-				IsActive:          instance.IsActive,
-				TimeSinceLastWork: time.Duration(instance.TimeSinceLastWork) * time.Millisecond,
-				Uptime:            time.Duration(instance.Uptime) * time.Millisecond,
+			idleInstances[j] = Instance{
+				InstanceID: InstanceID(instance.InstanceId),
+				IsActive:   instance.IsActive,
+				LastWorked: time.Unix(int64(instance.TimeSinceLastWork), 0),
+				Created:    time.Unix(int64(instance.Uptime), 0),
 			}
 		}
 
-		workerState[i] = FunctionState{
+		workerState[i] = Function{
 			FunctionID: FunctionID(function.FunctionId),
 			Running:    runningInstances,
 			Idle:       idleInstances,
