@@ -41,7 +41,6 @@ import (
 // │   │   │   ├── instance12 → { LastWorked: ?, Created: ? } //Oldest
 // │   │   │   └── instance13 → { LastWorked: ?, Created: ? } //Newest
 // │
-// └── End of Structure
 func CreateTestStateSyncMap() *syncMapScheduler {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewSyncMapScheduler([]state.WorkerID{"worker1", "worker2"}, logger)
@@ -101,6 +100,17 @@ func TestSchedulerMapCreateFunction(t *testing.T) {
 	scheduler.CreateFunction("worker1", "func2")
 	scheduler.CreateFunction("worker2", "func3")
 	scheduler.CreateFunction("worker2", "func1")
+
+	assert.NotNil(t, scheduler.workers.GetFunction("worker1", "func1"))
+	assert.NotNil(t, scheduler.workers.GetFunction("worker1", "func2"))
+	assert.NotNil(t, scheduler.workers.GetFunction("worker2", "func3"))
+	assert.NotNil(t, scheduler.workers.GetFunction("worker2", "func1"))
+
+	// The Idle and Running slices should exist
+	assert.NotNil(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateIdle))
+	assert.NotNil(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateRunning))
+	assert.NotNil(t, scheduler.workers.GetInstances("worker1", "func2", state.InstanceStateIdle))
+	assert.NotNil(t, scheduler.workers.GetInstances("worker1", "func2", state.InstanceStateRunning))
 }
 
 func TestSchedulerMapUpdateInstanceState(t *testing.T) {

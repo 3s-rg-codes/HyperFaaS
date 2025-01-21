@@ -194,9 +194,22 @@ func (w *Workers) DebugPrint() {
 			stateMap := instanceStateMap.(*sync.Map)
 
 			stateMap.Range(func(instanceState, instances interface{}) bool {
-				fmt.Printf("    Instance State: %v\n", instanceState)
+				// Instance State 0 is Running
+				// Instance State 2 is Idle
+				var isS string
+				if instanceState == InstanceStateRunning {
+					isS = "Running"
+				} else if instanceState == InstanceStateIdle {
+					isS = "Idle"
+				} else {
+					isS = "New"
+				}
+				fmt.Printf("    Instance State: %v\n", isS)
 				for _, instance := range instances.([]Instance) {
-					fmt.Printf("      Instance: %+v\n", instance)
+					fmt.Printf("      Instance:\n")
+					fmt.Printf("        ID: %+v\n", instance.InstanceID)
+					fmt.Printf("        Created: %s\n", instance.Created.Format("2006-01-02 15:04:05"))
+					fmt.Printf("        LastWorked: %s\n", instance.LastWorked.Format("2006-01-02 15:04:05"))
 				}
 				return true
 			})
