@@ -2,12 +2,12 @@ package state
 
 import (
 	"context"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log/slog"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -52,18 +52,18 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 						FunctionId: "func1",
 						Running: []*controller.InstanceState{
 							{
-								InstanceId:        "instance1",
-								IsActive:          true,
-								TimeSinceLastWork: 1000, // 1 second in milliseconds
-								Uptime:            5000, // 5 seconds in milliseconds
+								InstanceId: "instance1",
+								IsActive:   true,
+								Lastused:   timestamppb.New(time.Unix(1, 0)),
+								Started:    timestamppb.New(time.Unix(5, 0)),
 							},
 						},
 						Idle: []*controller.InstanceState{
 							{
-								InstanceId:        "instance2",
-								IsActive:          false,
-								TimeSinceLastWork: 2000,
-								Uptime:            3000,
+								InstanceId: "instance2",
+								IsActive:   false,
+								Lastused:   timestamppb.New(time.Unix(2, 0)),
+								Started:    timestamppb.New(time.Unix(3, 0)),
 							},
 						},
 					},
@@ -74,18 +74,18 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 					FunctionID: "func1",
 					Running: []InstanceState{
 						{
-							InstanceID:        "instance1",
-							IsActive:          true,
-							TimeSinceLastWork: 1 * time.Second,
-							Uptime:            5 * time.Second,
+							InstanceID: "instance1",
+							IsActive:   true,
+							LastUsed:   time.Unix(1, 0).UTC(),
+							Started:    time.Unix(5, 0).UTC(),
 						},
 					},
 					Idle: []InstanceState{
 						{
-							InstanceID:        "instance2",
-							IsActive:          false,
-							TimeSinceLastWork: 2 * time.Second,
-							Uptime:            3 * time.Second,
+							InstanceID: "instance2",
+							IsActive:   false,
+							LastUsed:   time.Unix(2, 0).UTC(),
+							Started:    time.Unix(3, 0).UTC(),
 						},
 					},
 				},
@@ -119,10 +119,10 @@ func TestScraperGetWorkerState(t *testing.T) {
 				FunctionId: "func1",
 				Running: []*controller.InstanceState{
 					{
-						InstanceId:        "instance1",
-						IsActive:          true,
-						TimeSinceLastWork: 1000,
-						Uptime:            5000,
+						InstanceId: "instance1",
+						IsActive:   true,
+						Lastused:   timestamppb.New(time.Unix(1, 0)),
+						Started:    timestamppb.New(time.Unix(5, 0)),
 					},
 				},
 			},
@@ -143,8 +143,8 @@ func TestScraperGetWorkerState(t *testing.T) {
 	assert.Equal(t, FunctionID("func1"), state[0].FunctionID)
 	assert.Len(t, state[0].Running, 1)
 	assert.Equal(t, InstanceID("instance1"), state[0].Running[0].InstanceID)
-	assert.Equal(t, 1*time.Second, state[0].Running[0].TimeSinceLastWork)
-	assert.Equal(t, 5*time.Second, state[0].Running[0].Uptime)
+	assert.Equal(t, time.Unix(1, 0).UTC(), state[0].Running[0].LastUsed)
+	assert.Equal(t, time.Unix(5, 0).UTC(), state[0].Running[0].Started)
 
 	mockClient.AssertExpectations(t)
 }
@@ -171,10 +171,10 @@ func TestScraper_Scrape(t *testing.T) {
 				FunctionId: "func1",
 				Running: []*controller.InstanceState{
 					{
-						InstanceId:        "instance1",
-						IsActive:          true,
-						TimeSinceLastWork: 1000,
-						Uptime:            5000,
+						InstanceId: "instance1",
+						IsActive:   true,
+						Lastused:   timestamppb.New(time.Unix(1, 0)),
+						Started:    timestamppb.New(time.Unix(5, 0)),
 					},
 				},
 			},
@@ -198,24 +198,24 @@ func TestScraper_Scrape(t *testing.T) {
 	assert.Len(t, state["worker2"][0].Running, 1)
 	assert.Equal(t, InstanceID("instance1"), state["worker1"][0].Running[0].InstanceID)
 	assert.Equal(t, InstanceID("instance1"), state["worker2"][0].Running[0].InstanceID)
-	assert.Equal(t, 1*time.Second, state["worker1"][0].Running[0].TimeSinceLastWork)
-	assert.Equal(t, 1*time.Second, state["worker2"][0].Running[0].TimeSinceLastWork)
-	assert.Equal(t, 5*time.Second, state["worker1"][0].Running[0].Uptime)
-	assert.Equal(t, 5*time.Second, state["worker2"][0].Running[0].Uptime)
+	assert.Equal(t, time.Unix(1, 0).UTC(), state["worker1"][0].Running[0].LastUsed)
+	assert.Equal(t, time.Unix(1, 0).UTC(), state["worker2"][0].Running[0].LastUsed)
+	assert.Equal(t, time.Unix(5, 0).UTC(), state["worker1"][0].Running[0].Started)
+	assert.Equal(t, time.Unix(5, 0).UTC(), state["worker2"][0].Running[0].Started)
 
 	mockClient.AssertExpectations(t)
 }
 
-func (m *MockWorkerControllerClient) Call(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error) {
+func (m *MockWorkerControllerClient) Call(ctx context.Context, in *controller.CallRequest, opts ...grpc.CallOption) (*controller.CallResponse, error) {
 	return nil, nil
 }
 func (m *MockWorkerControllerClient) Metrics(ctx context.Context, in *controller.MetricsRequest, opts ...grpc.CallOption) (*controller.MetricsUpdate, error) {
 	return nil, nil
 }
-func (m *MockWorkerControllerClient) Start(ctx context.Context, in *controller.StartRequest, opts ...grpc.CallOption) (*common.InstanceID, error) {
+func (m *MockWorkerControllerClient) Start(ctx context.Context, in *controller.StartRequest, opts ...grpc.CallOption) (*controller.InstanceID, error) {
 	return nil, nil
 }
-func (m *MockWorkerControllerClient) Stop(ctx context.Context, in *common.InstanceID, opts ...grpc.CallOption) (*common.InstanceID, error) {
+func (m *MockWorkerControllerClient) Stop(ctx context.Context, in *controller.InstanceID, opts ...grpc.CallOption) (*controller.InstanceID, error) {
 	return nil, nil
 }
 func (m *MockWorkerControllerClient) Status(ctx context.Context, in *controller.StatusRequest, opts ...grpc.CallOption) (controller.Controller_StatusClient, error) {

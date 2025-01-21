@@ -1,9 +1,10 @@
 syntax = "proto3";
+
 option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/controller";
-
 import "common/common.proto";
+import "google/protobuf/timestamp.proto";
 
-package controller;
+package worker;
 
 message ImageTag {
   string tag = 1;
@@ -25,9 +26,27 @@ message CPUConfig {
 
 }
 message StartRequest {
-  string function_id = 1;
-  ImageTag image_tag = 2;
-  Config config = 3;
+  ImageTag image_tag = 1;
+  Config config = 2;
+}
+
+message InstanceID {
+  string id = 1;
+}
+
+message Params {
+  string data = 1;
+}
+
+message CallRequest {
+  InstanceID instance_id = 1;
+  Params params = 2;
+  bytes data = 3;
+}
+
+message CallResponse {
+  bytes data = 1;
+  common.Error error = 2;
 }
 
 message StatusUpdate {
@@ -54,8 +73,8 @@ message InstanceState {
   string instance_id = 1;
   bool is_active = 2;
   // Duration fields stored in milliseconds
-  int64 time_since_last_work = 3;
-  int64 uptime = 4;
+  google.protobuf.Timestamp lastused = 3;
+  google.protobuf.Timestamp started = 4;
 }
 
 message FunctionState {
@@ -74,9 +93,9 @@ message StateRequest {
 }
 
 service Controller {
-  rpc Start (StartRequest) returns (common.InstanceID);
-  rpc Call (common.CallRequest) returns (common.CallResponse);
-  rpc Stop (common.InstanceID) returns (common.InstanceID);
+  rpc Start (StartRequest) returns (InstanceID);
+  rpc Call (CallRequest) returns (CallResponse);
+  rpc Stop (InstanceID) returns (InstanceID);
   rpc Status (StatusRequest) returns (stream StatusUpdate);
   rpc Metrics (MetricsRequest) returns (MetricsUpdate);
   rpc State (StateRequest) returns (StateResponse);

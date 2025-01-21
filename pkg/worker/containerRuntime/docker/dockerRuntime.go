@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -13,9 +12,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
@@ -23,6 +22,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -32,7 +32,6 @@ type DockerRuntime struct {
 	Cli             *client.Client
 	autoRemove      bool
 	outputFolderAbs string
-	logger          *slog.Logger
 }
 
 const (
@@ -46,10 +45,10 @@ var (
 	forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 )
 
-func NewDockerRuntime(autoRemove bool, logger *slog.Logger) *DockerRuntime {
+func NewDockerRuntime(autoRemove bool, cs *caller.CallerServer) *DockerRuntime {
 	cli, err := client.NewClientWithOpts(client.WithHost("unix:///var/run/docker.sock"), client.WithAPIVersionNegotiation())
 	if err != nil {
-		logger.Error("Could not create Docker client", "error", err)
+		log.Error().Msgf("Could not create Docker client: %v", err)
 		return nil
 	}
 
@@ -57,28 +56,28 @@ func NewDockerRuntime(autoRemove bool, logger *slog.Logger) *DockerRuntime {
 	var outputFolderAbs string
 	// Get the current path
 	currentWd, _ := os.Getwd()
-	logger.Debug("Current path", "path", currentWd)
+	log.Info().Msgf("Current path: %s", currentWd)
 	// If the current path ends with /cmd/workerNode, remove it from the path to get the base path of the project
 	if strings.HasSuffix(currentWd, "cmd/workerNode") {
 		outputFolderAbs = currentWd[:len(currentWd)-14] + logsOutputDir
 	} else {
 		outputFolderAbs = currentWd + "/" + logsOutputDir
 	}
-	logger.Debug("Logs directory", "path", outputFolderAbs)
+	log.Info().Msgf("Logs directory: %s", outputFolderAbs)
 
 	// Create the logs directory
 	if _, err := os.Stat(logsOutputDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(logsOutputDir, 0755); err != nil {
-			logger.Error("Could not create logs directory", "error", err)
+			log.Error().Msgf("Could not create logs directory: %v", err)
 			return nil
 		}
 	}
 
-	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger}
+	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs}
 }
 
 // Start a container with the given image tag and configuration.
-func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *controller.Config) (string, error) {
+func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *pb.Config) (string, error) {
 	// Start by checking if the image exists locally already
 	imageListArgs := filters.NewArgs()
 	imageListArgs.Add("reference", imageTag)
@@ -90,26 +89,29 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *cont
 
 	if len(images) == 0 {
 		// Pull the image from docker hub if necessary.
-		d.logger.Info("Pulling image", "image", imageTag)
+		log.Printf("Pulling image %s", imageTag)
 		reader, err := d.Cli.ImagePull(ctx, imageTag, image.PullOptions{})
 
 		if err != nil {
-			d.logger.Error("Could not pull image", "image", imageTag, "error", err)
+			log.Err(err).Msgf("Could not pull image %s", imageTag)
 			return "", status.Errorf(codes.NotFound, err.Error())
 		}
 
 		_, _ = io.Copy(os.Stdout, reader)
 		_ = reader.Close()
 
-		d.logger.Info("Pulled image", "image", imageTag)
+		log.Info().Msgf("Pulled image %s", imageTag)
 	}
 
 	// Create the container
-	d.logger.Debug("Creating container", "image", imageTag)
+	log.Debug().Msgf("Creating container with image tag %s", imageTag)
 	containerName := containerPrefix + imageTag + "-" + uuid.New().String()[:8]
 	// only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed in the container name, just remove all forbidden characters
 	containerName = forbiddenChars.ReplaceAllString(containerName, "")
-
+	if err != nil {
+		log.Err(err).Msgf("Could not get absolute path of logs directory: %v", err)
+		return "", err
+	}
 	resp, err := d.Cli.ContainerCreate(ctx, &container.Config{
 		Image: imageTag,
 		ExposedPorts: nat.PortSet{
@@ -133,10 +135,10 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *cont
 	}, &network.NetworkingConfig{}, nil, containerName)
 
 	if err != nil {
-		d.logger.Error("Could not create container", "image", imageTag, "error", err)
+		log.Err(err).Msgf("Could not create container with image tag %s", imageTag)
 		return "", err
 	}
-	d.logger.Debug("Starting container", "id", resp.ID, "warnings", resp.Warnings)
+	log.Debug().Msgf("Created and now Starting container with ID %s , Warnings: %v", resp.ID, resp.Warnings)
 	if err := d.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return "", err
 	}
@@ -144,19 +146,19 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *cont
 	return resp.ID, nil
 }
 
-func (d *DockerRuntime) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
+func (d *DockerRuntime) Call(ctx context.Context, req *pb.CallRequest) (*pb.CallResponse, error) {
 
 	//TODO implement container monitoring, if container fails, return error message in call
 
-	return &common.CallResponse{}, nil
+	return &pb.CallResponse{}, nil
 
 }
 
-func (d *DockerRuntime) Stop(ctx context.Context, req *common.InstanceID) (*common.InstanceID, error) {
+func (d *DockerRuntime) Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {
 	// Check if the container exists
 	_, err := d.Cli.ContainerInspect(ctx, req.Id)
 	if err != nil {
-		d.logger.Error("Container does not exist", "id", req.Id)
+		log.Error().Msgf("Container %s does not exist", req.Id)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
@@ -165,22 +167,22 @@ func (d *DockerRuntime) Stop(ctx context.Context, req *common.InstanceID) (*comm
 		return nil, err
 	}
 
-	d.logger.Debug("Stopped container", "id", req.Id)
+	log.Debug().Msgf("Stopped container with instance ID %s", req.Id)
 
 	return req, nil
 }
 
 // TODO Status over docker Volume
 
-func (d *DockerRuntime) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
+func (d *DockerRuntime) Status(req *pb.StatusRequest, stream pb.Controller_StatusServer) error {
 
 	return nil
 }
 
 // NotifyCrash notifies the caller if the container crashes. It hangs forever until the container either returns (where it returns nil) or crashes (where it returns an error)
-func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId *common.InstanceID) error {
+func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) error {
 	opt := events.ListOptions{
-		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId.Id}),
+		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId}),
 	}
 	eventsChan, errChan := d.Cli.Events(ctx, opt)
 	for {
@@ -189,7 +191,7 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId *common.Inst
 			if !ok {
 				eventsChan = nil
 			} else {
-				d.logger.Error("Docker event", "instance_id", instanceId.Id, "action", event.Action)
+				log.Error().Msgf("DOCKEREVENT - Event instance ID %v: %s\n", instanceId, event.Action)
 				if event.Action == "die" {
 					return fmt.Errorf("container died")
 				}

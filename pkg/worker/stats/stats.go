@@ -1,8 +1,9 @@
 package stats
 
 import (
-	"log/slog"
 	"sync"
+
+	"github.com/rs/zerolog/log"
 )
 
 type StatusUpdateQueue struct {
@@ -14,14 +15,12 @@ type StatsManager struct {
 	Updates   StatusUpdateQueue
 	listeners map[string]chan StatusUpdate
 	mu        sync.Mutex
-	logger    *slog.Logger
 }
 
-func NewStatsManager(logger *slog.Logger) *StatsManager {
-	return &StatsManager{
+func New() StatsManager {
+	return StatsManager{
 		Updates:   StatusUpdateQueue{Queue: make([]StatusUpdate, 0)},
 		listeners: make(map[string]chan StatusUpdate),
-		logger:    logger,
 	}
 }
 
@@ -45,7 +44,8 @@ func (s *StatsManager) dequeue() *StatusUpdate {
 }
 
 func (s *StatsManager) AddListener(nodeID string, listener chan StatusUpdate) {
-	s.logger.Info("Adding listener", "node_id", nodeID)
+
+	log.Debug().Msgf("Adding listener for node %s", nodeID)
 	s.mu.Lock()
 	s.listeners[nodeID] = listener
 	s.mu.Unlock()
@@ -56,7 +56,7 @@ func (s *StatsManager) RemoveListener(nodeID string) {
 	defer s.mu.Unlock()
 
 	delete(s.listeners, nodeID)
-	s.logger.Info("Removed listener", "node_id", nodeID)
+	log.Debug().Msgf("Removed listener for node %s", nodeID)
 }
 
 func (s *StatsManager) GetListenerByID(nodeID string) chan StatusUpdate {
@@ -76,9 +76,9 @@ func (s *StatsManager) StartStreamingToListeners() {
 		for nodeID, listener := range s.listeners {
 			select {
 			case listener <- *data:
-				s.logger.Debug("Buffered update", "node_id", nodeID)
+				log.Debug().Msgf("Buffered update to node %s", nodeID)
 			default:
-				s.logger.Debug("Listener is full, dropping update", "node_id", nodeID)
+				log.Debug().Msgf("Listener for node %s is full, dropping update", nodeID)
 
 			}
 		}

@@ -4,13 +4,13 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log"
-	"log/slog"
+	"github.com/rs/zerolog/log"
 	"os"
 	"strings"
 	"time"
 
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/function"
+	zerolog "github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -18,12 +18,12 @@ import (
 type handler func(context.Context, *Request) (*Response, error)
 
 type Request struct {
-	Data []byte
+	Data string
 	Id   string
 }
 
 type Response struct {
-	Data []byte
+	Data string
 	Id   string
 }
 
@@ -38,7 +38,7 @@ type Function struct {
 func New(timeout int) *Function {
 	address, ok := os.LookupEnv("CALLER_SERVER_ADDRESS")
 	if !ok {
-		log.Printf("Environment variable CALLER_SERVER_ADDRESS not found")
+		log.Error().Msgf("Environment variable CALLER_SERVER_ADDRESS not found")
 	}
 
 	return &Function{
@@ -54,16 +54,16 @@ func New(timeout int) *Function {
 func (f *Function) Ready(handler handler) {
 
 	//Set up logging file inside the Docker container. Will be mounted to functions/logs
-	logger := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.id))
+	functionLog := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.id))
 
 	connection, err := grpc.NewClient(f.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 
-	logger.Debug("Connected to the worker", "address", f.address)
+	functionLog.Debug().Msgf("Connected to the worker: %v", f.address)
 
 	defer connection.Close()
 
 	if err != nil {
-		logger.Error("failed to connect", "error", err)
+		functionLog.Error().Msgf("failed to connect: %v", err)
 	}
 
 	c := pb.NewFunctionServiceClient(connection)
@@ -71,7 +71,7 @@ func (f *Function) Ready(handler handler) {
 	//Set the id in the response to the id of the container
 	f.response.Id = f.id
 
-	defer logger.Info("Closing connection.")
+	defer functionLog.Info().Msgf("Closing connection.")
 	first := true
 
 	for {
@@ -83,19 +83,19 @@ func (f *Function) Ready(handler handler) {
 		first = false
 
 		if err != nil {
-			logger.Error("failed to call", "error", err)
+			functionLog.Error().Msgf("failed to call: %v", err)
 			return
 		}
-		logger.Debug("Received request", "data", p.Data)
+		functionLog.Debug().Msgf("Received request: %v", p.Data)
 
 		f.request = &Request{p.Data, p.Id}
 
 		f.response, err = handler(ctx, f.request)
 
-		logger.Debug("Function handler called and generated response", "response", f.response.Data)
+		functionLog.Debug().Msgf("Function handler called and generated response: %v", f.response.Data)
 
 		if err != nil {
-			logger.Error("Function failed", "error", err)
+			functionLog.Error().Msgf("Function failed: %v", err)
 			return
 		}
 
@@ -103,17 +103,18 @@ func (f *Function) Ready(handler handler) {
 
 }
 
-func configLog(logFile string) *slog.Logger {
+func configLog(logFile string) *zerolog.Logger {
 	// Open the log file
 	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 
 	if err != nil {
-		console := slog.New(slog.NewTextHandler(os.Stdout, nil))
-		console.Error("Failed to create log file, using stdout", "error", err)
-		return console
+		console := zerolog.New(os.Stdout).With().Timestamp().Logger()
+		console.Error().Msgf("Failed to create log file: %s, using stdout", err.Error())
+		return &console
 	}
 
-	return slog.New(slog.NewTextHandler(file, nil))
+	log := zerolog.New(file).With().Timestamp().Logger()
+	return &log
 }
 
 func getID() string {

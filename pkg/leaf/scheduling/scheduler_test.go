@@ -13,30 +13,31 @@ import (
 
 func CreateTestState() state.WorkerStateMap {
 	// The MRU instance is instance1 for func1 on worker1
+	baseTime := time.Now()
 	return state.WorkerStateMap{
 		"worker1": []state.FunctionState{
 			{FunctionID: "func1", Idle: []state.InstanceState{
 				{InstanceID: "instance1",
-					TimeSinceLastWork: 1 * time.Second,
-					Uptime:            5 * time.Second,
+					LastUsed: baseTime.Add(-1 * time.Second), // Convert duration to time
+					Started:  baseTime.Add(-5 * time.Second),
 				},
 				{InstanceID: "instance2",
-					TimeSinceLastWork: 2 * time.Second,
-					Uptime:            4 * time.Second,
+					LastUsed: baseTime.Add(-2 * time.Second),
+					Started:  baseTime.Add(-4 * time.Second),
 				},
 				{InstanceID: "instance3",
-					TimeSinceLastWork: 3 * time.Second,
-					Uptime:            5 * time.Second,
+					LastUsed: baseTime.Add(-3 * time.Second),
+					Started:  baseTime.Add(-5 * time.Second),
 				},
 			},
 				Running: []state.InstanceState{
 					{InstanceID: "instance4",
-						TimeSinceLastWork: 4 * time.Second,
-						Uptime:            10 * time.Second,
+						LastUsed: baseTime.Add(-4 * time.Second),
+						Started:  baseTime.Add(-10 * time.Second),
 					},
 					{InstanceID: "instance5",
-						TimeSinceLastWork: 5 * time.Second,
-						Uptime:            10 * time.Second,
+						LastUsed: baseTime.Add(-5 * time.Second),
+						Started:  baseTime.Add(-10 * time.Second),
 					},
 				},
 			},
@@ -44,22 +45,22 @@ func CreateTestState() state.WorkerStateMap {
 		"worker2": []state.FunctionState{
 			{FunctionID: "func2", Idle: []state.InstanceState{
 				{InstanceID: "instance6",
-					TimeSinceLastWork: 2 * time.Second,
-					Uptime:            5 * time.Second,
+					LastUsed: baseTime.Add(-2 * time.Second),
+					Started:  baseTime.Add(-5 * time.Second),
 				},
 				{InstanceID: "instance7",
-					TimeSinceLastWork: 2 * time.Second,
-					Uptime:            4 * time.Second,
+					LastUsed: baseTime.Add(-2 * time.Second),
+					Started:  baseTime.Add(-4 * time.Second),
 				},
 			},
 				Running: []state.InstanceState{
 					{InstanceID: "instance8",
-						TimeSinceLastWork: 3 * time.Second,
-						Uptime:            5 * time.Second,
+						LastUsed: baseTime.Add(-3 * time.Second),
+						Started:  baseTime.Add(-5 * time.Second),
 					},
 					{InstanceID: "instance9",
-						TimeSinceLastWork: 4 * time.Second,
-						Uptime:            5 * time.Second,
+						LastUsed: baseTime.Add(-4 * time.Second),
+						Started:  baseTime.Add(-5 * time.Second),
 					},
 				},
 			},

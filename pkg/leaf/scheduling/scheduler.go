@@ -23,9 +23,6 @@ type Scheduler interface {
 	Schedule(ctx context.Context, functionID state.FunctionID) (state.WorkerID, state.InstanceID, error)
 	// TODO refactor this to use StateUpdates from workers. Also not really sure if this should return an error.
 	UpdateState(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) error
-	//TODO divide into:
-	UpdateWorkerState(workerID state.WorkerID, <some kind of enum?>) error
-	UpdateInstanceState(workerID state.WorkerID, instanceID state.InstanceID, functionID state.FunctionID, <some kind of enum?>) error
 }
 
 type naiveScheduler struct {
@@ -144,7 +141,7 @@ func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID
 			}
 
 			sort.Slice(function.Idle, func(i, j int) bool {
-				return function.Idle[i].TimeSinceLastWork < function.Idle[j].TimeSinceLastWork
+				return function.Idle[i].LastUsed.After(function.Idle[j].LastUsed) // Use Before for comparison
 			})
 
 			worker = state.WorkerID(workerID)

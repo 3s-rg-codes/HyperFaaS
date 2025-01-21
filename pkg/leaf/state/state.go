@@ -25,10 +25,10 @@ type FunctionState struct {
 
 // InstanceState represents the state of a single function instance
 type InstanceState struct {
-	InstanceID        InstanceID
-	IsActive          bool
-	TimeSinceLastWork time.Duration //time since the last request was processed to know if to kill
-	Uptime            time.Duration //time since the instance was started to know if to kill
+	InstanceID InstanceID
+	IsActive   bool
+	LastUsed   time.Time //time since the last request was processed to know if to kill
+	Started    time.Time //time since the instance was started to know if to kill
 }
 
 type Scraper interface {
@@ -120,14 +120,14 @@ func (s *scraper) GetWorkerState(workerID WorkerID) ([]FunctionState, error) {
 func convertStateResponseToWorkerState(state *pb.StateResponse) []FunctionState {
 	workerState := make([]FunctionState, len(state.Functions))
 	for i, function := range state.Functions {
-		// Convert running instances
+		// Convert running instancescle
 		runningInstances := make([]InstanceState, len(function.Running))
 		for j, instance := range function.Running {
 			runningInstances[j] = InstanceState{
-				InstanceID:        InstanceID(instance.InstanceId),
-				IsActive:          instance.IsActive,
-				TimeSinceLastWork: time.Duration(instance.TimeSinceLastWork) * time.Millisecond,
-				Uptime:            time.Duration(instance.Uptime) * time.Millisecond,
+				InstanceID: InstanceID(instance.InstanceId),
+				IsActive:   instance.IsActive,
+				LastUsed:   instance.Lastused.AsTime(),
+				Started:    instance.Started.AsTime(),
 			}
 		}
 
@@ -135,10 +135,10 @@ func convertStateResponseToWorkerState(state *pb.StateResponse) []FunctionState 
 		idleInstances := make([]InstanceState, len(function.Idle))
 		for j, instance := range function.Idle {
 			idleInstances[j] = InstanceState{
-				InstanceID:        InstanceID(instance.InstanceId),
-				IsActive:          instance.IsActive,
-				TimeSinceLastWork: time.Duration(instance.TimeSinceLastWork) * time.Millisecond,
-				Uptime:            time.Duration(instance.Uptime) * time.Millisecond,
+				InstanceID: InstanceID(instance.InstanceId),
+				IsActive:   instance.IsActive,
+				LastUsed:   instance.Lastused.AsTime(),
+				Started:    instance.Started.AsTime(),
 			}
 		}
 

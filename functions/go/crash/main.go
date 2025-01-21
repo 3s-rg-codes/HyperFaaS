@@ -18,7 +18,7 @@ func main() {
 func handler(ctx context.Context, in *functionRuntimeInterface.Request) (*functionRuntimeInterface.Response, error) {
 
 	resp := &functionRuntimeInterface.Response{
-		Data: []byte(""),
+		Data: "",
 		Id:   in.Id,
 	}
 

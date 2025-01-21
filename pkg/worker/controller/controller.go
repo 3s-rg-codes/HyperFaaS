@@ -3,15 +3,14 @@ package controller
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	"github.com/rs/zerolog/log"
 	cpu "github.com/shirou/gopsutil/v4/cpu"
 	mem "github.com/shirou/gopsutil/v4/mem"
 	"google.golang.org/grpc"
@@ -20,15 +19,13 @@ import (
 )
 
 type Controller struct {
-	controller.UnimplementedControllerServer
+	pb.UnimplementedControllerServer
 	runtime      cr.ContainerRuntime
-	CallerServer *caller.CallerServer
-	StatsManager *stats.StatsManager
-	logger       *slog.Logger
-	address      string
+	CallerServer caller.CallerServer
+	StatsManager stats.StatsManager
 }
 
-func (s *Controller) Start(ctx context.Context, req *controller.StartRequest) (*common.InstanceID, error) {
+func (s *Controller) Start(ctx context.Context, req *pb.StartRequest) (*pb.InstanceID, error) {
 
 	instanceId, err := s.runtime.Start(ctx, req.ImageTag.Tag, req.Config)
 
@@ -41,24 +38,24 @@ func (s *Controller) Start(ctx context.Context, req *controller.StartRequest) (*
 
 	s.CallerServer.RegisterFunction(instanceId)
 
-	return &common.InstanceID{Id: instanceId}, nil
+	return &pb.InstanceID{Id: instanceId}, nil
 }
 
 // This function passes the call through the channel of the instance ID in the FunctionCalls map
 // runtime.Call is also called to check for errors
-func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
+func (s *Controller) Call(ctx context.Context, req *pb.CallRequest) (*pb.CallResponse, error) {
 
 	// Check if the instance ID is present in the FunctionCalls map
 	if _, ok := s.CallerServer.FunctionCalls.FcMap[req.InstanceId.Id]; !ok {
 		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
-		s.logger.Error("Passing call with payload", "error", err, "instance ID", req.InstanceId.Id)
+		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
 	// Check if the instance ID is present in the FunctionResponses map
 	if _, ok := s.CallerServer.FunctionResponses.FrMap[req.InstanceId.Id]; !ok {
 		err := fmt.Errorf("instance ID %s does not exist", req.InstanceId.Id)
-		s.logger.Error("Passing call with payload", "error", err, "instance ID", req.InstanceId.Id)
+		log.Error().Err(err).Msgf("Error passing call with payload: %v", req.Params.Data)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
@@ -67,14 +64,14 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 	//defer close(containerCrashed)
 
 	go func() {
-		containerCrashed <- s.runtime.NotifyCrash(ctx, req.InstanceId)
+		containerCrashed <- s.runtime.NotifyCrash(ctx, req.InstanceId.Id)
 	}()
 
-	s.logger.Debug("Passing call with payload", "payload", req.Data, "instance ID", req.InstanceId.Id)
+	log.Debug().Msgf("Passing call with payload: %v to channel of instance ID %s", req.Params.Data, req.InstanceId.Id)
 
 	go func() {
 		// Pass the call to the channel based on the instance ID
-		s.CallerServer.PassCallToChannel(req.InstanceId.Id, req.Data)
+		s.CallerServer.PassCallToChannel(req.InstanceId.Id, req.Params.Data)
 		// stats
 		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().WithStatus("success"))
 
@@ -86,15 +83,16 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Response().WithStatus("success"))
 
-		s.logger.Debug("Extracted response", "response", data, "instance ID", req.InstanceId.Id)
-		response := &common.CallResponse{Data: data}
+		log.Debug().Msgf("Extracted response: '%v' from container with instance ID %s", data, req.InstanceId.Id)
+		// TODO: implement []byte for data everywhere.
+		response := &pb.CallResponse{Data: []byte(data)}
 		return response, nil
 
 	case err := <-containerCrashed:
 
 		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Die())
 
-		s.logger.Error("Container crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
+		log.Error().Msgf("Container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
 
 		return nil, fmt.Errorf("container crashed while waiting for response from container with instance ID %s , Error message: %v", req.InstanceId.Id, err)
 
@@ -102,7 +100,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 }
 
-func (s *Controller) Stop(ctx context.Context, req *common.InstanceID) (*common.InstanceID, error) {
+func (s *Controller) Stop(ctx context.Context, req *pb.InstanceID) (*pb.InstanceID, error) {
 
 	//unregister the function from the maps
 	s.CallerServer.UnregisterFunction(req.Id)
@@ -110,7 +108,6 @@ func (s *Controller) Stop(ctx context.Context, req *common.InstanceID) (*common.
 	resp, err := s.runtime.Stop(ctx, req)
 
 	if err != nil {
-		s.logger.Error("Failed to stop container", "instance ID", req.Id, "error", err)
 		s.StatsManager.Enqueue(stats.Event().Container(req.Id).Stop().WithStatus("failed"))
 		return nil, err
 	}
@@ -124,13 +121,13 @@ func (s *Controller) Stop(ctx context.Context, req *common.InstanceID) (*common.
 // Streams the status updates to a client.
 // Using a channel to listen to the stats manager for status updates
 // Status Updates are defined in pkg/stats/statusUpdate.go
-func (s *Controller) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
+func (s *Controller) Status(req *pb.StatusRequest, stream pb.Controller_StatusServer) error {
 
 	//If a node is re-hitting the status endpoint, use the existing channel
 	statsChannel := s.StatsManager.GetListenerByID(req.NodeID)
 
 	if statsChannel != nil {
-		s.logger.Debug("Node is re-hitting the status endpoint", "node_id", req.NodeID)
+		log.Debug().Msgf("Node %s is re-hitting the status endpoint", req.NodeID)
 	} else {
 
 		statsChannel = make(chan stats.StatusUpdate, 10000)
@@ -140,18 +137,18 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 		// Check if the stream is closed
 		if stream.Context().Err() == nil {
 			if err := stream.Send(
-				&controller.StatusUpdate{
+				&pb.StatusUpdate{
 					InstanceId: data.InstanceID,
 					Type:       data.Type,
 					Event:      data.Event,
 					Status:     data.Status,
 				}); err != nil {
-				s.logger.Error("Error streaming data", "error", err, "node_id", req.NodeID)
+				log.Error().Err(err).Msgf("Error streaming data to node %s", req.NodeID)
 				return err
 			}
-			s.logger.Debug("Sent status update", "node_id", req.NodeID)
+			log.Debug().Msgf("Sent status update to node %s", req.NodeID)
 		} else {
-			s.logger.Debug("Stream closed", "node_id", req.NodeID)
+			log.Debug().Msgf("Stream closed for node %s", req.NodeID)
 			// re buffer the data
 			s.StatsManager.Enqueue(&data)
 			return stream.Context().Err()
@@ -161,7 +158,7 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 	return nil
 }
 
-func (s *Controller) Metrics(ctx context.Context, req *controller.MetricsRequest) (*controller.MetricsUpdate, error) {
+func (s *Controller) Metrics(ctx context.Context, req *pb.MetricsRequest) (*pb.MetricsUpdate, error) {
 
 	cpu_percentage_percpu, err1 := cpu.Percent(time.Millisecond*10, true)
 	virtual_mem, err2 := mem.VirtualMemory()
@@ -169,17 +166,17 @@ func (s *Controller) Metrics(ctx context.Context, req *controller.MetricsRequest
 	if err1 != nil || err2 != nil {
 		return nil, err1
 	}
-	return &controller.MetricsUpdate{CpuPercentPercpu: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
+	return &pb.MetricsUpdate{CpuPercentPercpu: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
 }
 
-func NewController(runtime cr.ContainerRuntime, logger *slog.Logger, address string) *Controller {
-	return &Controller{
+func New(runtime cr.ContainerRuntime, cs *caller.CallerServer) Controller {
+
+	return Controller{
 		runtime:      runtime,
-		CallerServer: caller.NewCallerServer(logger),
-		StatsManager: stats.NewStatsManager(logger),
-		logger:       logger,
-		address:      address,
+		CallerServer: *cs,
+		StatsManager: stats.New(),
 	}
+
 }
 
 func (s *Controller) StartServer() {
@@ -201,15 +198,15 @@ func (s *Controller) StartServer() {
 	lis, err := net.Listen("tcp", ":50051")
 
 	if err != nil {
-		s.logger.Error("failed to listen", "error", err)
+		log.Error().Msgf("failed to listen: %v", err)
 	}
 
-	controller.RegisterControllerServer(grpcServer, s)
+	pb.RegisterControllerServer(grpcServer, s)
 
-	s.logger.Debug("Controller Server listening on", "address", lis.Addr())
+	log.Debug().Msgf("Controller Server listening on %v", lis.Addr())
 
 	if err := grpcServer.Serve(lis); err != nil {
-		s.logger.Error("Controller Server failed to serve", "error", err)
+		log.Error().Msgf("Controller Server failed to serve: %v", err)
 	}
 	defer grpcServer.Stop()
 
