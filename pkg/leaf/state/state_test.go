@@ -55,16 +55,16 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 							{
 								InstanceId: "instance1",
 								IsActive:   true,
-								Lastworked: timestamppb.New(time.Unix(1, 0)),
-								Created:    timestamppb.New(time.Unix(5, 0)),
+								Lastworked: timestamppb.New(time.Unix(1, 0).UTC()),
+								Created:    timestamppb.New(time.Unix(5, 0).UTC()),
 							},
 						},
 						Idle: []*controller.InstanceState{
 							{
 								InstanceId: "instance2",
 								IsActive:   false,
-								Lastworked: timestamppb.New(time.Unix(2, 0)),
-								Created:    timestamppb.New(time.Unix(3, 0)),
+								Lastworked: timestamppb.New(time.Unix(2, 0).UTC()),
+								Created:    timestamppb.New(time.Unix(3, 0).UTC()),
 							},
 						},
 					},
@@ -122,8 +122,8 @@ func TestScraperGetWorkerState(t *testing.T) {
 					{
 						InstanceId: "instance1",
 						IsActive:   true,
-						Lastworked: timestamppb.New(time.Unix(1, 0)),
-						Created:    timestamppb.New(time.Unix(5, 0)),
+						Lastworked: timestamppb.New(time.Unix(1, 0).UTC()),
+						Created:    timestamppb.New(time.Unix(5, 0).UTC()),
 					},
 				},
 			},
@@ -174,8 +174,8 @@ func TestScraper_Scrape(t *testing.T) {
 					{
 						InstanceId: "instance1",
 						IsActive:   true,
-						Lastworked: timestamppb.New(time.Unix(1, 0)),
-						Created:    timestamppb.New(time.Unix(5, 0)),
+						Lastworked: timestamppb.New(time.Unix(1, 0).UTC()),
+						Created:    timestamppb.New(time.Unix(5, 0).UTC()),
 					},
 				},
 			},
