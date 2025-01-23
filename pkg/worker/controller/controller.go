@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
@@ -16,6 +19,8 @@ import (
 	mem "github.com/shirou/gopsutil/v4/mem"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 )
 
@@ -191,6 +196,11 @@ func NewController(runtime cr.ContainerRuntime, logger *slog.Logger, address str
 
 func (s *Controller) StartServer() {
 
+	grpcServer := grpc.NewServer()
+	// TODO pass context to sub servers
+	//ctx, cancel := context.WithCancel(context.Background())
+	//defer cancel()
+
 	//Start the caller server
 	go func() {
 		s.CallerServer.Start()
@@ -202,8 +212,18 @@ func (s *Controller) StartServer() {
 		s.StatsManager.StartStreamingToListeners()
 	}()
 
-	//Start the controller server
-	grpcServer := grpc.NewServer()
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+		<-sigCh
+		s.logger.Info("Shutting down gracefully...")
+
+		grpcServer.GracefulStop()
+	}()
+
+	healthcheck := health.NewServer()
+	healthcheck.SetServingStatus("worker", healthpb.HealthCheckResponse_SERVING)
 
 	lis, err := net.Listen("tcp", s.address)
 
@@ -218,6 +238,5 @@ func (s *Controller) StartServer() {
 	if err := grpcServer.Serve(lis); err != nil {
 		s.logger.Error("Controller Server failed to serve", "error", err)
 	}
-	defer grpcServer.Stop()
 
 }
