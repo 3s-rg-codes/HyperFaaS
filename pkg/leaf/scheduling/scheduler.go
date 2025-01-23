@@ -154,7 +154,7 @@ func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID
 			}
 
 			sort.Slice(function.Idle, func(i, j int) bool {
-				return function.Idle[i].LastWorked.Before(function.Idle[j].LastWorked)
+				return function.Idle[i].LastWorked.After(function.Idle[j].LastWorked)
 			})
 
 			worker = state.WorkerID(workerID)
@@ -277,11 +277,11 @@ func (s *syncMapScheduler) UpdateWorkerState(workerID state.WorkerID, newState s
 func (s *syncMapScheduler) UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error {
 	switch newState {
 	case state.InstanceStateRunning:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID, LastWorked: time.Now().UTC()})
 	case state.InstanceStateIdle:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now().UTC()})
 	case state.InstanceStateNew:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateNew, state.Instance{InstanceID: instanceID, LastWorked: time.Now(), Created: time.Now()})
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateNew, state.Instance{InstanceID: instanceID, LastWorked: time.Now().UTC(), Created: time.Now()})
 	}
 	return nil
 }

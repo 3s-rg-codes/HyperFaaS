@@ -2,6 +2,7 @@ syntax = "proto3";
 option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/controller";
 
 import "common/common.proto";
+import "google/protobuf/timestamp.proto";
 
 package controller;
 
@@ -54,8 +55,8 @@ message InstanceState {
   string instance_id = 1;
   bool is_active = 2;
   // Duration fields stored in milliseconds
-  int64 time_since_last_work = 3;
-  int64 uptime = 4;
+  google.protobuf.Timestamp lastworked = 3;
+  google.protobuf.Timestamp created = 4;
 }
 
 message FunctionState {

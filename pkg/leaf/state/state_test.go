@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log/slog"
 	"os"
 	"testing"
@@ -52,18 +53,18 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 						FunctionId: "func1",
 						Running: []*controller.InstanceState{
 							{
-								InstanceId:        "instance1",
-								IsActive:          true,
-								TimeSinceLastWork: 1000, // 1 second in milliseconds
-								Uptime:            5000, // 5 seconds in milliseconds
+								InstanceId: "instance1",
+								IsActive:   true,
+								Lastworked: timestamppb.New(time.Unix(1, 0).UTC()),
+								Created:    timestamppb.New(time.Unix(5, 0).UTC()),
 							},
 						},
 						Idle: []*controller.InstanceState{
 							{
-								InstanceId:        "instance2",
-								IsActive:          false,
-								TimeSinceLastWork: 2000,
-								Uptime:            3000,
+								InstanceId: "instance2",
+								IsActive:   false,
+								Lastworked: timestamppb.New(time.Unix(2, 0).UTC()),
+								Created:    timestamppb.New(time.Unix(3, 0).UTC()),
 							},
 						},
 					},
@@ -76,16 +77,16 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 						{
 							InstanceID: "instance1",
 							IsActive:   true,
-							LastWorked: 1 * time.Second,
-							Created:    5 * time.Second,
+							LastWorked: time.Unix(1, 0).UTC(),
+							Created:    time.Unix(5, 0).UTC(),
 						},
 					},
 					Idle: []Instance{
 						{
 							InstanceID: "instance2",
 							IsActive:   false,
-							LastWorked: 2 * time.Second,
-							Created:    3 * time.Second,
+							LastWorked: time.Unix(2, 0).UTC(),
+							Created:    time.Unix(3, 0).UTC(),
 						},
 					},
 				},
@@ -119,10 +120,10 @@ func TestScraperGetWorkerState(t *testing.T) {
 				FunctionId: "func1",
 				Running: []*controller.InstanceState{
 					{
-						InstanceId:        "instance1",
-						IsActive:          true,
-						TimeSinceLastWork: 1000,
-						Uptime:            5000,
+						InstanceId: "instance1",
+						IsActive:   true,
+						Lastworked: timestamppb.New(time.Unix(1, 0).UTC()),
+						Created:    timestamppb.New(time.Unix(5, 0).UTC()),
 					},
 				},
 			},
@@ -143,8 +144,8 @@ func TestScraperGetWorkerState(t *testing.T) {
 	assert.Equal(t, FunctionID("func1"), state[0].FunctionID)
 	assert.Len(t, state[0].Running, 1)
 	assert.Equal(t, InstanceID("instance1"), state[0].Running[0].InstanceID)
-	assert.Equal(t, 1*time.Second, state[0].Running[0].LastWorked)
-	assert.Equal(t, 5*time.Second, state[0].Running[0].Created)
+	assert.Equal(t, time.Unix(1, 0).UTC(), state[0].Running[0].LastWorked)
+	assert.Equal(t, time.Unix(5, 0).UTC(), state[0].Running[0].Created)
 
 	mockClient.AssertExpectations(t)
 }
@@ -171,10 +172,10 @@ func TestScraper_Scrape(t *testing.T) {
 				FunctionId: "func1",
 				Running: []*controller.InstanceState{
 					{
-						InstanceId:        "instance1",
-						IsActive:          true,
-						TimeSinceLastWork: 1000,
-						Uptime:            5000,
+						InstanceId: "instance1",
+						IsActive:   true,
+						Lastworked: timestamppb.New(time.Unix(1, 0).UTC()),
+						Created:    timestamppb.New(time.Unix(5, 0).UTC()),
 					},
 				},
 			},
@@ -198,10 +199,10 @@ func TestScraper_Scrape(t *testing.T) {
 	assert.Len(t, state["worker2"][0].Running, 1)
 	assert.Equal(t, InstanceID("instance1"), state["worker1"][0].Running[0].InstanceID)
 	assert.Equal(t, InstanceID("instance1"), state["worker2"][0].Running[0].InstanceID)
-	assert.Equal(t, 1*time.Second, state["worker1"][0].Running[0].LastWorked)
-	assert.Equal(t, 1*time.Second, state["worker2"][0].Running[0].LastWorked)
-	assert.Equal(t, 5*time.Second, state["worker1"][0].Running[0].Created)
-	assert.Equal(t, 5*time.Second, state["worker2"][0].Running[0].Created)
+	assert.Equal(t, time.Unix(1, 0).UTC(), state["worker1"][0].Running[0].LastWorked)
+	assert.Equal(t, time.Unix(1, 0).UTC(), state["worker2"][0].Running[0].LastWorked)
+	assert.Equal(t, time.Unix(5, 0).UTC(), state["worker1"][0].Running[0].Created)
+	assert.Equal(t, time.Unix(5, 0).UTC(), state["worker2"][0].Running[0].Created)
 
 	mockClient.AssertExpectations(t)
 }
