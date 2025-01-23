@@ -12,6 +12,7 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
+	"github.com/golang-cz/devslog"
 	"google.golang.org/grpc"
 )
 
@@ -36,7 +37,7 @@ func main() {
 	scrapeInterval := flag.Duration("scrape-interval", 50*time.Millisecond, "The interval at which to scrape the workers")
 	address := flag.String("address", "0.0.0.0:50050", "The address to listen on")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
-	logFormat := flag.String("log-format", "text", "Log format (json or text) (Env: LOG_FORMAT)")
+	logFormat := flag.String("log-format", "text", "Log format (json, text or dev) (Env: LOG_FORMAT)")
 	logFilePath := flag.String("log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
 	schedulerType := flag.String("scheduler-type", "naive", "The type of scheduler to use (naive or map)")
 	flag.Var(&workerIDs, "worker-ids", "The IDs of the workers to manage")
@@ -116,10 +117,21 @@ func setupLogger(logLevel string, logFormat string, logFilePath string) *slog.Lo
 
 	// Create handler based on format
 	var handler slog.Handler
-	if logFormat == "json" {
+	switch logFormat {
+	case "json":
 		handler = slog.NewJSONHandler(output, opts)
-	} else {
+	case "text":
 		handler = slog.NewTextHandler(output, opts)
+	case "dev":
+		// new logger with options
+		devOpts := &devslog.Options{
+			HandlerOptions:    opts,
+			MaxSlicePrintSize: 5,
+			SortKeys:          true,
+			NewLineAfterLog:   true,
+			StringerFormatter: true,
+		}
+		handler = devslog.NewHandler(output, devOpts)
 	}
 
 	// Create and set logger

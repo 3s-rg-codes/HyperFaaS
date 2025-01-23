@@ -261,6 +261,7 @@ func (s *syncMapScheduler) Schedule(ctx context.Context, functionID state.Functi
 		}
 		return workerID, "", nil
 	}
+	s.logger.Debug("Found idle instance", "functionID", functionID, "workerID", workerID, "instanceID", instanceID)
 	return workerID, instanceID, nil
 }
 

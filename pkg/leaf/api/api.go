@@ -49,7 +49,7 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	if err != nil {
 		return nil, err
 	}
-
+	log.Printf("Recieved response from worker %s, instanceID: %s, response: %v", workerID, instanceID, resp)
 	// The instance is no longer running
 	s.scheduler.UpdateInstanceState(workerID, state.FunctionID(req.FunctionId), instanceID, state.InstanceStateIdle)
 
