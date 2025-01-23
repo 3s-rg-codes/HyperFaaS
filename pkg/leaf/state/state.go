@@ -140,8 +140,8 @@ func convertStateResponseToWorkerState(state *pb.StateResponse) []Function {
 			runningInstances[j] = Instance{
 				InstanceID: InstanceID(instance.InstanceId),
 				IsActive:   instance.IsActive,
-				LastWorked: time.Unix(int64(instance.TimeSinceLastWork), 0),
-				Created:    time.Unix(int64(instance.Uptime), 0),
+				LastWorked: instance.Lastworked.AsTime(),
+				Created:    instance.Created.AsTime(),
 			}
 		}
 
@@ -151,8 +151,8 @@ func convertStateResponseToWorkerState(state *pb.StateResponse) []Function {
 			idleInstances[j] = Instance{
 				InstanceID: InstanceID(instance.InstanceId),
 				IsActive:   instance.IsActive,
-				LastWorked: time.Unix(int64(instance.TimeSinceLastWork), 0),
-				Created:    time.Unix(int64(instance.Uptime), 0),
+				LastWorked: instance.Lastworked.AsTime(),
+				Created:    instance.Created.AsTime(),
 			}
 		}
 
