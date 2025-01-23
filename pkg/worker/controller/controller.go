@@ -205,7 +205,7 @@ func (s *Controller) StartServer() {
 	//Start the controller server
 	grpcServer := grpc.NewServer()
 
-	lis, err := net.Listen("tcp", ":50051")
+	lis, err := net.Listen("tcp", s.address)
 
 	if err != nil {
 		s.logger.Error("failed to listen", "error", err)
