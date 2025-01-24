@@ -1,21 +1,17 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/tests/helpers"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"log/slog"
 	"os"
-	"reflect"
 	"sync"
 	"time"
 )
@@ -40,29 +36,16 @@ var (
 	runtime dockerRuntime.DockerRuntime
 )
 
-type ControllerWorkload struct {
-	TestName          string
-	ImageTag          string
-	ExpectedError     bool
-	ReturnError       bool
-	ExpectsResponse   bool
-	ExpectedResponse  []byte
-	ErrorCode         codes.Code
-	ExpectedErrorCode codes.Code
-	CallPayload       []byte
-	InstanceID        string
-}
-
 type StatsTest struct {
 	TestName            string
 	Disconnects         bool
 	Reconnects          bool
 	NodeIDs             []string
-	ControllerWorkloads []ControllerWorkload
+	ControllerWorkloads []helpers.ControllerWorkload
 	Timeout             time.Duration
 }
 
-var controllerWorkloads = []ControllerWorkload{
+var controllerWorkloads = []helpers.ControllerWorkload{
 	{
 		TestName:          "normal execution of hello image",
 		ImageTag:          workloadImageTags[0],
@@ -173,7 +156,7 @@ func testOneNodeListening(client pb.ControllerClient, testController controller.
 			MemoryLimit: MemoryLimit,
 		}
 
-		expectedStats, err := doWorkloadHelper(client, logger, spec, controllerWorkloads[0])
+		expectedStats, err := helpers.DoWorkloadHelper(client, logger, spec, controllerWorkloads[0])
 		if err != nil {
 			logger.Error("Error occurred in Test Case `testOneNodeListening`:", "error", err.Error())
 		}
@@ -197,7 +180,7 @@ func testOneNodeListening(client pb.ControllerClient, testController controller.
 	go func(ch chan []*stats.StatusUpdate) {
 		stopSignal := stopSignals[nodeID]
 
-		actualNodeStats, err := connectNodeHelper(nodeID, logger, &wgNodes, stopSignal, statsTests[1].Timeout)
+		actualNodeStats, err := helpers.ConnectNodeHelper(*controllerServerAddress, nodeID, logger, &wgNodes, stopSignal, statsTests[1].Timeout)
 		if err != nil {
 			logger.Error("Error when connecting node", "error", err)
 		}
@@ -209,7 +192,7 @@ func testOneNodeListening(client pb.ControllerClient, testController controller.
 	wgNodes.Wait()
 
 	receivedStats := <-resultChannel
-	result, err := evaluate(receivedStats, *expected)
+	result, err := helpers.Evaluate(receivedStats, *expected)
 	if err != nil {
 		logger.Error("Error evaluating test results", "err", err)
 	}
@@ -239,7 +222,7 @@ func testMultipleNodesListening(client pb.ControllerClient, testController contr
 			MemoryLimit: MemoryLimit,
 		}
 
-		expectedStats, err := doWorkloadHelper(client, logger, spec, controllerWorkloads[0])
+		expectedStats, err := helpers.DoWorkloadHelper(client, logger, spec, controllerWorkloads[0])
 		if err != nil {
 			logger.Error("Error occurred in Test Case `testOneNodeListening`:", "error", err.Error())
 		}
@@ -266,7 +249,7 @@ func testMultipleNodesListening(client pb.ControllerClient, testController contr
 		go func(ch chan []*stats.StatusUpdate) {
 			stopSignal := stopSignals[nodeID]
 
-			actualNodeStats, err := connectNodeHelper(nodeID, logger, &wgNodes, stopSignal, statsTests[1].Timeout)
+			actualNodeStats, err := helpers.ConnectNodeHelper(*controllerServerAddress, nodeID, logger, &wgNodes, stopSignal, statsTests[1].Timeout)
 			if err != nil {
 				logger.Error("Error when connecting node", "error", err)
 			}
@@ -283,7 +266,7 @@ func testMultipleNodesListening(client pb.ControllerClient, testController contr
 
 	for _, nodeID := range statsTests[1].NodeIDs {
 		receivedStats := <-resultChannels[nodeID]
-		res, err := evaluate(receivedStats, *expected)
+		res, err := helpers.Evaluate(receivedStats, *expected)
 		if err != nil {
 			logger.Error("Error evaluating test results", "err", err)
 		}
@@ -318,7 +301,7 @@ func testDisconnectAndReconnect(client pb.ControllerClient, testController contr
 			MemoryLimit: MemoryLimit,
 		}
 
-		expectedStats, err := doWorkloadHelper(client, logger, spec, controllerWorkloads[0])
+		expectedStats, err := helpers.DoWorkloadHelper(client, logger, spec, controllerWorkloads[0])
 		if err != nil {
 			logger.Error("Error occurred in Test Case `testOneNodeListening`:", "error", err.Error())
 		}
@@ -353,7 +336,7 @@ func testDisconnectAndReconnect(client pb.ControllerClient, testController contr
 	go func(ch chan []*stats.StatusUpdate, nodeID string) {
 		stopSignal := stopSignals[nodeID]
 
-		actualNodeStats, err := connectNodeHelper(nodeID, logger, &wgNodes, stopSignal, statsTests[2].Timeout)
+		actualNodeStats, err := helpers.ConnectNodeHelper(*controllerServerAddress, nodeID, logger, &wgNodes, stopSignal, statsTests[2].Timeout)
 		if err != nil {
 			logger.Error("Error when connecting node", "error", err)
 		}
@@ -368,7 +351,7 @@ func testDisconnectAndReconnect(client pb.ControllerClient, testController contr
 
 	go func(ch chan []*stats.StatusUpdate, nodeID string) {
 		stopSignal := stopSignals[nodeID]
-		actualNodeStats, err := connectNodeHelper(nodeID, logger, &wgNodes, stopSignal, statsTests[2].Timeout)
+		actualNodeStats, err := helpers.ConnectNodeHelper(*controllerServerAddress, nodeID, logger, &wgNodes, stopSignal, statsTests[2].Timeout)
 		if err != nil {
 			logger.Error("Error when reconnecting node", "error", err)
 		}
@@ -379,7 +362,7 @@ func testDisconnectAndReconnect(client pb.ControllerClient, testController contr
 	wgNodes.Wait()
 
 	receivedStats := <-resultChannel
-	result, err := evaluate(receivedStats, *expected)
+	result, err := helpers.Evaluate(receivedStats, *expected)
 	if err != nil {
 		logger.Error("Error evaluating test results", "err", err)
 	}
@@ -392,145 +375,4 @@ func testDisconnectAndReconnect(client pb.ControllerClient, testController contr
 
 	testController.StatsManager.RemoveListener(nodeID)
 
-}
-
-func doWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec helpers.ResourceSpec, testCase ControllerWorkload) (*[]*stats.StatusUpdate, error) {
-
-	cID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: spec.CPUPeriod, Quota: spec.CPUQuota}, Memory: spec.MemoryLimit}})
-	if err != nil {
-		return nil, err
-	}
-
-	logger.Debug("Started container", "container", cID)
-
-	var statusUpdates []*stats.StatusUpdate
-
-	if testCase.ExpectedError {
-		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "start", Status: "error"})
-	} else {
-		// add a success event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "start", Status: "success"})
-	}
-
-	response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: cID, Data: testCase.CallPayload})
-	if err != nil {
-		return nil, err
-	}
-	logger.Debug("Called container", "response", response.Data)
-
-	if testCase.ExpectedError {
-		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "call", Status: "error"})
-	} else {
-		// add a success event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "call", Status: "success"})
-	}
-	//If there was a response, there is a container response event
-	if testCase.ExpectsResponse && response != nil {
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "response", Status: "success"})
-	}
-
-	responseContainerID, err := client.Stop(context.Background(), cID)
-	if err != nil {
-		return nil, err
-	}
-	logger.Debug("Stopped container", "container", responseContainerID)
-
-	if testCase.ExpectedError {
-		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "error"})
-	} else if responseContainerID != nil && responseContainerID.Id == cID.Id {
-		// add a success event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "success"})
-	}
-
-	//UNCOMMENT THIS TO INTENTIONALLY FAIL THE TEST
-	//statusUpdates = append(statusUpdates, &StatusUpdate{InstanceID: responseContainerID.Id, Type: "break", Event: "break", Status: "break"})
-	return &statusUpdates, nil
-}
-
-func connectNodeHelper(nodeID string, logger slog.Logger, wg *sync.WaitGroup, stopSignal chan bool, timeout time.Duration) ([]*stats.StatusUpdate, error) {
-
-	client, conn, err := helpers.BuildMockClientHelper(*controllerServerAddress)
-	if err != nil {
-		logger.Error("Error creating client", "error", err.Error())
-	}
-	logger.Debug("Created listener node as client", "nodeID", nodeID)
-
-	defer func(conn *grpc.ClientConn) {
-		err := conn.Close()
-		if err != nil {
-			logger.Error("Error occurred closing connection", "error", err.Error())
-		}
-	}(conn)
-
-	var receivedStats []*stats.StatusUpdate
-	defer wg.Done()
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	s, err := client.Status(ctx, &pb.StatusRequest{NodeID: nodeID})
-	if err != nil {
-		return nil, err
-	}
-
-	for {
-		select {
-		case <-stopSignal:
-			return receivedStats, fmt.Errorf("stop signal received")
-
-		case <-ctx.Done():
-			return receivedStats, fmt.Errorf("context hit timeout")
-
-		default:
-			stat, err := s.Recv()
-			if status.Code(err) == codes.DeadlineExceeded { //This will happen when the call finishes and we try to reach the node
-				return receivedStats, nil
-			}
-			if err != nil {
-				return receivedStats, fmt.Errorf("error: %v", err)
-			}
-
-			logger.Debug("Received stat", "stat", stat)
-			// Copy the stats to a new struct to avoid copying mutex
-			statCopy := &stats.StatusUpdate{
-				InstanceID: stat.InstanceId,
-				Type:       stat.Type,
-				Event:      stat.Event,
-				Status:     stat.Status,
-			}
-
-			receivedStats = append(receivedStats, statCopy)
-		}
-
-		if ctx.Err() != nil {
-			break
-		}
-	}
-	return receivedStats, nil
-}
-
-func evaluate(actual []*stats.StatusUpdate, expected []*stats.StatusUpdate) (bool, error) {
-
-	if len(expected) != len(actual) {
-		return false, fmt.Errorf("unequal length of expected (%v) and actual (%v) list", len(expected), len(actual))
-	}
-
-	//  count occurrences of each StatusUpdate in the expected array
-	expectedCount := make(map[stats.StatusUpdate]int)
-	for _, e := range expected {
-		expectedCount[*e]++
-	}
-
-	//  count occurrences of each StatusUpdate in the actual array
-	actualCount := make(map[stats.StatusUpdate]int)
-	for _, a := range actual {
-		actualCount[*a]++
-	}
-
-	// compare
-	result := reflect.DeepEqual(expectedCount, actualCount)
-
-	return result, nil
 }

@@ -315,3 +315,74 @@ func TestStartStreamingToListeners_BufferFull(t *testing.T) {
 	}
 
 }
+
+func TestStartStreamingToListeners_Concurrent(t *testing.T) {
+	t.Logf("Dont worry this test takes about 100 seconds")
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	sm := NewStatsManager(logger)
+
+	chListener := make(chan StatusUpdate, 10000) //use same buffer we defined in main
+	resChanExpect := make(chan []StatusUpdate, 1)
+
+	sm.AddListener("1", chListener)
+
+	go sm.StartStreamingToListeners()
+
+	wg := sync.WaitGroup{}
+
+	wg.Add(1)
+	go func(resChan chan []StatusUpdate, wg *sync.WaitGroup) {
+
+		count := 200
+		var arrIn []StatusUpdate
+
+		for i := 0; i <= count; i++ {
+			su := &StatusUpdate{Status: strconv.Itoa(i)}
+			sm.Enqueue(su)
+			arrIn = append(arrIn, *su)
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		resChan <- arrIn
+		wg.Done()
+	}(resChanExpect, &wg)
+
+	resChanActual := make(chan []StatusUpdate, 1)
+
+	wg.Add(1)
+	go func(resChan chan []StatusUpdate, wg *sync.WaitGroup) {
+
+		count := 200
+		var arrOut []StatusUpdate
+
+		for i := 0; i <= count; i++ {
+			data := <-chListener
+			arrOut = append(arrOut, data)
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		resChan <- arrOut
+		wg.Done()
+	}(resChanActual, &wg)
+
+	wg.Wait()
+
+	expected := <-resChanExpect
+	actual := <-resChanActual
+
+	b := true
+
+	if len(expected) == len(actual) {
+		for i := range expected {
+			if expected[i] != actual[i] {
+				b = false
+			}
+		}
+	} else {
+		b = false
+	}
+
+	assert.True(t, b, "Expected and equal are not equal")
+
+}

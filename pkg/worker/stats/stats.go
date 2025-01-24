@@ -45,7 +45,6 @@ func (s *StatsManager) dequeue() *StatusUpdate {
 }
 
 func (s *StatsManager) AddListener(nodeID string, listener chan StatusUpdate) {
-	s.logger.Info("Adding listener", "node_id", nodeID)
 	s.mu.Lock()
 	s.listeners[nodeID] = listener
 	s.mu.Unlock()
