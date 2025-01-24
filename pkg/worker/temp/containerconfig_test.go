@@ -1,12 +1,12 @@
-package stats
+package temp
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"github.com/3s-rg-codes/HyperFaaS/helpers"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
+	"github.com/3s-rg-codes/HyperFaaS/tests/worker"
 	"log/slog"
 	"testing"
 
@@ -14,20 +14,20 @@ import (
 )
 
 var (
-	requestedRuntime = flag.String("specifyRuntime", helpers.RUNTIME, "for now only docker, is also default")
-	autoRemove       = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
+// requestedRuntime = flag.String("specifyRuntime", helpers.RUNTIME, "for now only docker, is also default")
+// autoRemove       = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
 )
 
 // Container CPU and Memory configuration is OS dependent. Currently the CPU and Memory configurations are implemented for our Docker containers,
 // but it is not clear how to verify the configurations. This test starts a container and prints the configurations obtained from ContainerStats.
 func TestContainerConfig(t *testing.T) {
 
-	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	client, connection, err := helpers.BuildMockClient(*worker.controllerServerAddress)
 	if err != nil {
 		t.Errorf("Error creating the mock client: %v", err)
 	}
 
-	testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: helpers.ImageTags[0]}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *CPUPeriod, Quota: *CPUQuota}, Memory: MemoryLimit}})
+	testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: helpers.ImageTags[0]}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: *worker.CPUPeriod, Quota: *worker.CPUQuota}, Memory: worker.MemoryLimit}})
 
 	if err != nil {
 		t.Fatalf("Failed to start container: %v", err)
@@ -36,9 +36,9 @@ func TestContainerConfig(t *testing.T) {
 	//_, _ := runtime.Cli.ContainerInspect(context.Background(), testContainerID.Id)
 	var runtime *dockerRuntime.DockerRuntime
 
-	switch *requestedRuntime {
+	switch *worker.requestedRuntime {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(*autoRemove, slog.Default().With("runtime", "docker")) //did not work otherwise, using container runtime interface
+		runtime = dockerRuntime.NewDockerRuntime(*worker.autoRemove, slog.Default().With("runtime", "docker")) //did not work otherwise, using container runtime interface
 	}
 
 	if runtime == nil {

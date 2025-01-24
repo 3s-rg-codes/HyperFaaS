@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/3s-rg-codes/HyperFaaS/helpers"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"log/slog"
 	"os"
 	"testing"
@@ -96,12 +98,12 @@ func teardown() {
 func TestNormalExecution(t *testing.T) {
 
 	flag.Parse()
-	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	client, connection, err := BuildMockClient(*controllerServerAddress)
 	if err != nil {
 		t.Errorf("Error creating the mock client: %v", err)
 	}
 
-	testCases := []helpers.ControllerWorkload{
+	testCases := []ControllerWorkload{
 		{
 			TestName:          "normal execution of hello image",
 			ImageTag:          imageTags[0],
@@ -177,12 +179,12 @@ func TestNormalExecution(t *testing.T) {
 func TestStopNonExistingContainer(t *testing.T) {
 
 	flag.Parse()
-	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	client, connection, err := BuildMockClient(*controllerServerAddress)
 	if err != nil {
 		t.Errorf("Error creating the mock client: %v", err)
 	}
 
-	testCases := []helpers.ControllerWorkload{
+	testCases := []ControllerWorkload{
 		{
 			TestName:          "stopping non existing container",
 			InstanceID:        "nonExistingContainer",
@@ -217,12 +219,12 @@ func TestStopNonExistingContainer(t *testing.T) {
 func TestCallNonExistingContainer(t *testing.T) {
 
 	flag.Parse()
-	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	client, connection, err := BuildMockClient(*controllerServerAddress)
 	if err != nil {
 		t.Errorf("Error creating the mock client: %v", err)
 	}
 
-	testCases := []helpers.ControllerWorkload{
+	testCases := []ControllerWorkload{
 		{
 			TestName:          "calling non existing container",
 			InstanceID:        "nonExistingContainer",
@@ -255,7 +257,16 @@ func TestCallNonExistingContainer(t *testing.T) {
 
 func TestMetrics(t *testing.T) {
 	flag.Parse()
-	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	client, connection, err := BuildMockClient(*controllerServerAddress)
+	if err != nil {
+		t.Errorf("Error creating the mock client: %v", err)
+	}
+	defer func(connection *grpc.ClientConn) {
+		err := connection.Close()
+		if err != nil {
+
+		}
+	}(connection)
 
 	metrics, err := client.Metrics(context.Background(), &pb.MetricsRequest{NodeID: "a"})
 	grpcStatus, ok := status.FromError(err)
@@ -274,12 +285,19 @@ func TestMetrics(t *testing.T) {
 func TestStartNonLocalImages(t *testing.T) {
 
 	flag.Parse()
-	client, connection, err := helpers.BuildMockClient(*controllerServerAddress)
+	client, connection, err := BuildMockClient(*controllerServerAddress)
 	if err != nil {
 		t.Errorf("Error creating the mock client: %v", err)
 	}
 
-	testCases := []helpers.ControllerWorkload{
+	defer func(connection *grpc.ClientConn) {
+		err := connection.Close()
+		if err != nil {
+
+		}
+	}(connection)
+
+	testCases := []ControllerWorkload{
 		{
 			TestName:          "starting non existing image",
 			ImageTag:          "asjkdasjk678132613278hadjskdasjk2314678432768ajbfakjfakhj",
@@ -339,30 +357,39 @@ func TestStartNonLocalImages(t *testing.T) {
 
 		})
 	}
-
-	t.Cleanup(func() {
-		connection.Close()
-	})
 }
-
-/*
-func helpers.BuildMockClient(t *testing.T) (pb.ControllerClient, error) {
-	var err error
-	connection, err := grpc.NewClient(*controllerServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Errorf("Could not start client for testing purposes: %v.", err)
-		return nil, err
-	}
-	t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
-	testClient := pb.NewControllerClient(connection)
-	defer connection.Close()
-	return testClient, nil
-}
-
-*/
 
 func ContainerExists(instanceID string) bool {
 	// Check if the image is present
 	_, err := runtime.Cli.ContainerInspect(context.Background(), instanceID)
 	return err == nil
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////HELPERS FOR TESTS//////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+type ControllerWorkload struct {
+	TestName          string
+	ImageTag          string
+	ExpectedError     bool
+	ReturnError       bool
+	ExpectsResponse   bool
+	ExpectedResponse  []byte
+	ErrorCode         codes.Code
+	ExpectedErrorCode codes.Code
+	CallPayload       []byte
+	InstanceID        string
+}
+
+func BuildMockClient(controllerServerAddress string) (pb.ControllerClient, *grpc.ClientConn, error) {
+	var err error
+	connection, err := grpc.NewClient(controllerServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, nil, err
+	}
+	//t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
+	testClient := pb.NewControllerClient(connection)
+
+	return testClient, connection, nil
 }

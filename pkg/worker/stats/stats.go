@@ -56,7 +56,6 @@ func (s *StatsManager) RemoveListener(nodeID string) {
 	defer s.mu.Unlock()
 
 	delete(s.listeners, nodeID)
-	s.logger.Info("Removed listener", "node_id", nodeID)
 }
 
 func (s *StatsManager) GetListenerByID(nodeID string) chan StatusUpdate {
@@ -68,6 +67,7 @@ func (s *StatsManager) GetListenerByID(nodeID string) chan StatusUpdate {
 
 // Streams the status updates to all channels in the listeners map.
 func (s *StatsManager) StartStreamingToListeners() {
+	s.logger.Info("Started Streaming to listeners")
 	for {
 		data := s.dequeue()
 		if data == nil {
@@ -76,7 +76,7 @@ func (s *StatsManager) StartStreamingToListeners() {
 		for nodeID, listener := range s.listeners {
 			select {
 			case listener <- *data:
-				s.logger.Debug("Buffered update", "node_id", nodeID)
+				s.logger.Debug("Buffered update", "node_id", nodeID) //TODO: This doesnt work since the channel will just block until there is space again
 			default:
 				s.logger.Debug("Listener is full, dropping update", "node_id", nodeID)
 

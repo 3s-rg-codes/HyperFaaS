@@ -91,12 +91,12 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 	select {
 
-	case data := <-s.CallerServer.FunctionResponses.FrMap[req.InstanceId.Id]:
+	case resp := <-s.CallerServer.FunctionResponses.FrMap[req.InstanceId.Id]:
 
 		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Response().WithStatus("success"))
 
-		s.logger.Debug("Extracted response", "response", data, "instance ID", req.InstanceId.Id)
-		response := &common.CallResponse{Data: data}
+		s.logger.Debug("Extracted response", "response", resp, "instance ID", req.InstanceId.Id)
+		response := &common.CallResponse{Data: resp.Data, Error: &common.Error{Message: resp.Error}}
 		return response, nil
 
 	case err := <-containerCrashed:

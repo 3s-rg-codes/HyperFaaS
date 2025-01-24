@@ -10,8 +10,8 @@ message Payload {
     string id = 2;
     common.Error error = 3;
     bool firstExecution = 4;
-
 }
+
 message Call {
     bytes data = 1;
     string id = 2;
