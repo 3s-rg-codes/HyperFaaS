@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/3s-rg-codes/HyperFaaS/helpers"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"log/slog"
@@ -25,7 +24,10 @@ import (
 )
 
 const (
-	DURATION = 2 * time.Second
+	DURATION       = 2 * time.Second
+	RUNTIME        = "docker"
+	SERVER_ADDRESS = "localhost:50051"
+	ENVIRONMENT    = "local"
 )
 
 var (
@@ -35,13 +37,13 @@ var (
 
 var ( //TODO: implement flags, do we need more?
 	dockerTolerance         = flag.Duration("dockerTolerance", DURATION, "Tolerance for container start and stop in seconds")
-	requestedRuntime        = flag.String("specifyRuntime", helpers.RUNTIME, "for now only docker, is also default")
-	controllerServerAddress = flag.String("ServerAdress", helpers.SERVER_ADDRESS, "specify controller server adress")
+	requestedRuntime        = flag.String("specifyRuntime", RUNTIME, "for now only docker, is also default")
+	controllerServerAddress = flag.String("ServerAdress", SERVER_ADDRESS, "specify controller server adress")
 	autoRemove              = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
 	CPUPeriod               = flag.Int64("cpuPeriod", 100000, "CPU period")
 	CPUQuota                = flag.Int64("cpuQuota", 50000, "CPU quota")
 	MemoryLimit             = (*flag.Int64("memoryLimit", 250000000, "Memory limit in MB")) * 1024 * 1024
-	environment             = flag.String("environment", helpers.ENVIRONMENT, "specify environment to run")
+	environment             = flag.String("environment", ENVIRONMENT, "specify environment to run")
 	//config                  = flag.String("config", "", "specify Config") TODO WIP, not implemented yet(?)
 )
 

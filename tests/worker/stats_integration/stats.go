@@ -9,9 +9,9 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	"github.com/3s-rg-codes/HyperFaaS/tests/helpers"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"log/slog"
 	"os"
@@ -60,12 +60,6 @@ type StatsTest struct {
 	NodeIDs             []string
 	ControllerWorkloads []ControllerWorkload
 	Timeout             time.Duration
-}
-
-type ResourceSpec struct {
-	CPUPeriod   int64
-	CPUQuota    int64
-	MemoryLimit int64
 }
 
 var controllerWorkloads = []ControllerWorkload{
@@ -134,6 +128,7 @@ func main() {
 	logger.Debug("Created runtime")
 
 	testController := controller.NewController(&runtime, logger, *controllerServerAddress)
+
 	logger.Debug("Created controller")
 	//CallerServer
 	go func() {
@@ -141,7 +136,7 @@ func main() {
 	}()
 	logger.Debug("Started controller")
 
-	client, connection, err := buildMockClientHelper(*controllerServerAddress)
+	client, connection, err := helpers.BuildMockClientHelper(*controllerServerAddress)
 	if err != nil {
 		logger.Error("Error occurred when building the client", "error", err)
 	}
@@ -172,7 +167,7 @@ func testOneNodeListening(client pb.ControllerClient, testController controller.
 
 	wgWorkload.Add(1)
 	go func(wg *sync.WaitGroup) {
-		spec := ResourceSpec{
+		spec := helpers.ResourceSpec{
 			CPUPeriod:   *CPUPeriod,
 			CPUQuota:    *CPUQuota,
 			MemoryLimit: MemoryLimit,
@@ -238,7 +233,7 @@ func testMultipleNodesListening(client pb.ControllerClient, testController contr
 	wgWorkload.Add(1)
 	go func(wg1 *sync.WaitGroup) {
 
-		spec := ResourceSpec{
+		spec := helpers.ResourceSpec{
 			CPUPeriod:   *CPUPeriod,
 			CPUQuota:    *CPUQuota,
 			MemoryLimit: MemoryLimit,
@@ -317,7 +312,7 @@ func testDisconnectAndReconnect(client pb.ControllerClient, testController contr
 	wgWorkload.Add(1)
 	go func(wg1 *sync.WaitGroup) {
 
-		spec := ResourceSpec{
+		spec := helpers.ResourceSpec{
 			CPUPeriod:   *CPUPeriod,
 			CPUQuota:    *CPUQuota,
 			MemoryLimit: MemoryLimit,
@@ -399,7 +394,7 @@ func testDisconnectAndReconnect(client pb.ControllerClient, testController contr
 
 }
 
-func doWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec ResourceSpec, testCase ControllerWorkload) (*[]*stats.StatusUpdate, error) {
+func doWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec helpers.ResourceSpec, testCase ControllerWorkload) (*[]*stats.StatusUpdate, error) {
 
 	cID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: spec.CPUPeriod, Quota: spec.CPUQuota}, Memory: spec.MemoryLimit}})
 	if err != nil {
@@ -457,7 +452,7 @@ func doWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 
 func connectNodeHelper(nodeID string, logger slog.Logger, wg *sync.WaitGroup, stopSignal chan bool, timeout time.Duration) ([]*stats.StatusUpdate, error) {
 
-	client, conn, err := buildMockClientHelper(*controllerServerAddress)
+	client, conn, err := helpers.BuildMockClientHelper(*controllerServerAddress)
 	if err != nil {
 		logger.Error("Error creating client", "error", err.Error())
 	}
@@ -538,16 +533,4 @@ func evaluate(actual []*stats.StatusUpdate, expected []*stats.StatusUpdate) (boo
 	result := reflect.DeepEqual(expectedCount, actualCount)
 
 	return result, nil
-}
-
-func buildMockClientHelper(controllerServerAddress string) (pb.ControllerClient, *grpc.ClientConn, error) {
-	var err error
-	connection, err := grpc.NewClient(controllerServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, nil, err
-	}
-	//t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
-	testClient := pb.NewControllerClient(connection)
-
-	return testClient, connection, nil
 }
