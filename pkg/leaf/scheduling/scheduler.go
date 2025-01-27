@@ -301,7 +301,12 @@ type syncMapScheduler2 struct {
 }
 
 func NewSyncMapScheduler2(workerIDs []state.WorkerID, logger *slog.Logger) *syncMapScheduler2 {
-	return &syncMapScheduler2{workers: *state.NewWorkers2(logger), workerIDs: workerIDs, logger: logger}
+	workers := state.NewWorkers2(logger)
+	for _, workerID := range workerIDs {
+		workers.CreateWorker(workerID)
+	}
+	return &syncMapScheduler2{workers: *workers, workerIDs: workerIDs, logger: logger}
+
 }
 
 func (s *syncMapScheduler2) Schedule(ctx context.Context, functionID state.FunctionID) (state.WorkerID, state.InstanceID, error) {
@@ -314,6 +319,7 @@ func (s *syncMapScheduler2) Schedule(ctx context.Context, functionID state.Funct
 		case *state.FunctionNotRegisteredError:
 			s.logger.Info("Function not registered, creating on random worker", "functionID", functionID, "workerID", workerID)
 			s.workers.CreateFunction(workerID, functionID)
+			s.workers.DebugPrint()
 		case *state.NoIdleInstanceError:
 			s.logger.Info("No idle instance found, scheduling to random worker", "functionID", functionID, "workerID", workerID)
 		default:

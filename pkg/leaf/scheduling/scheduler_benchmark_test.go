@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,26 +15,27 @@ import (
 
 var workerNames = make([]state.WorkerID, 10)
 
-//TODO: Implement benchmark tests for the scheduler.
-
-func BenchmarkSyncMapScheduler(b *testing.B) {
+func BenchmarkSyncMapScheduler1(b *testing.B) {
 	//scheduler := CreateTestStateSyncMap()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewSyncMapScheduler([]state.WorkerID{"worker1", "worker2"}, logger)
-	// every 5 seconds create a worker in parallel
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 	go func() {
 		for i := 0; i < 10; i++ {
 			updateWorker(scheduler)
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 		}
+		wg.Done()
 	}()
 
-	// every 6 seconds remove a worker in parallel
+	wg.Add(1)
 	go func() {
 		for i := 0; i < 10; i++ {
 			deleteWorker(scheduler)
-			time.Sleep(600 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 		}
+		wg.Done()
 	}()
 
 	b.ResetTimer()
@@ -60,7 +62,8 @@ func BenchmarkSyncMapScheduler(b *testing.B) {
 		}
 	})
 
-	scheduler.workers.DebugPrint()
+	wg.Wait()
+	//scheduler.workers.DebugPrint()
 }
 
 /*
@@ -77,8 +80,19 @@ func updateWorker(scheduler *syncMapScheduler) {
 	scheduler.UpdateWorkerState(state.WorkerID(randString), state.WorkerStateUp)
 	workerNames = append(workerNames, state.WorkerID(randString))
 }
+func updateWorker2(scheduler *syncMapScheduler2) {
+	randString := strconv.Itoa(rand.Intn(10))
+	scheduler.UpdateWorkerState(state.WorkerID(randString), state.WorkerStateUp)
+	workerNames = append(workerNames, state.WorkerID(randString))
+}
 
 func deleteWorker(scheduler *syncMapScheduler) {
+	randWorker := workerNames[rand.Intn(len(workerNames))]
+	scheduler.UpdateWorkerState(randWorker, state.WorkerStateDown)
+	workerNames = remove(workerNames, randWorker)
+}
+
+func deleteWorker2(scheduler *syncMapScheduler2) {
 	randWorker := workerNames[rand.Intn(len(workerNames))]
 	scheduler.UpdateWorkerState(randWorker, state.WorkerStateDown)
 	workerNames = remove(workerNames, randWorker)
@@ -91,4 +105,56 @@ func remove(slice []state.WorkerID, s state.WorkerID) []state.WorkerID {
 		}
 	}
 	return slice
+}
+
+func BenchmarkSyncMapScheduler2(b *testing.B) {
+	//scheduler := CreateTestStateSyncMap()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	scheduler := NewSyncMapScheduler2([]state.WorkerID{"worker1", "worker2"}, logger)
+	// every 5 seconds create a worker in parallel
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		for i := 0; i < 10; i++ {
+			updateWorker2(scheduler)
+			time.Sleep(100 * time.Millisecond)
+		}
+		wg.Done()
+	}()
+	wg.Add(1)
+	go func() {
+		for i := 0; i < 10; i++ {
+			deleteWorker2(scheduler)
+			time.Sleep(200 * time.Millisecond)
+		}
+		wg.Done()
+	}()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			randFunctionID := strconv.Itoa(rand.Intn(10))
+			workerID, instanceID, err := scheduler.Schedule(context.Background(), state.FunctionID(randFunctionID))
+			if err != nil {
+				b.Error(err)
+			}
+
+			if instanceID == "" {
+				// There is no idle instance available
+				// Here in the API code we call the worker to start a new instance
+				scheduler.UpdateInstanceState(workerID, state.FunctionID(randFunctionID), instanceID, state.InstanceStateNew)
+			} else {
+				// An Idle instance was found
+				scheduler.UpdateInstanceState(workerID, state.FunctionID(randFunctionID), instanceID, state.InstanceStateRunning)
+			}
+			// Here in the API we forward the request to the worker
+			time.Sleep(10 * time.Millisecond)
+			// The instance is no longer running
+			scheduler.UpdateInstanceState(workerID, state.FunctionID(randFunctionID), instanceID, state.InstanceStateIdle)
+		}
+	})
+
+	wg.Wait()
+
+	//scheduler.workers.DebugPrint()
 }
