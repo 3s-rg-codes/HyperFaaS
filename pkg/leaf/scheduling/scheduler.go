@@ -42,6 +42,8 @@ func New(strategy string, workerState state.WorkerStateMap, workerIDs []state.Wo
 		return NewMRUScheduler(workerState, workerIDs, logger)
 	case "map":
 		return NewSyncMapScheduler(workerIDs, logger)
+	case "map2":
+		return NewSyncMapScheduler2(workerIDs, logger)
 	default:
 		return nil
 	}
@@ -289,5 +291,58 @@ func (s *syncMapScheduler) UpdateInstanceState(workerID state.WorkerID, function
 
 func (s *syncMapScheduler) CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error {
 	s.workers.CreateFunction(workerID, functionID)
+	return nil
+}
+
+type syncMapScheduler2 struct {
+	workers   state.Workers2
+	workerIDs []state.WorkerID
+	logger    *slog.Logger
+}
+
+func NewSyncMapScheduler2(workerIDs []state.WorkerID, logger *slog.Logger) *syncMapScheduler2 {
+	return &syncMapScheduler2{workers: *state.NewWorkers2(logger), workerIDs: workerIDs, logger: logger}
+}
+
+func (s *syncMapScheduler2) Schedule(ctx context.Context, functionID state.FunctionID) (state.WorkerID, state.InstanceID, error) {
+	workerID, instanceID, err := s.workers.FindIdleInstance(functionID)
+	if err != nil {
+		// TODO: pick worker with lowest load
+		workerID = s.workerIDs[rand.Intn(len(s.workerIDs))]
+
+		switch e := err.(type) {
+		case *state.FunctionNotRegisteredError:
+			s.logger.Info("Function not registered, creating on random worker", "functionID", functionID, "workerID", workerID)
+			s.workers.CreateFunction(workerID, functionID)
+		case *state.NoIdleInstanceError:
+			s.logger.Info("No idle instance found, scheduling to random worker", "functionID", functionID, "workerID", workerID)
+		default:
+			s.logger.Error("Unexpected error type", "error", e)
+		}
+		return workerID, "", nil
+	}
+	s.logger.Debug("Found idle instance", "functionID", functionID, "workerID", workerID, "instanceID", instanceID)
+	return workerID, instanceID, nil
+}
+
+func (s *syncMapScheduler2) UpdateWorkerState(workerID state.WorkerID, newState state.WorkerState) error {
+	switch newState {
+	case state.WorkerStateUp:
+		s.workers.CreateWorker(workerID)
+	case state.WorkerStateDown:
+		s.workers.DeleteWorker(workerID)
+	}
+	return nil
+}
+
+func (s *syncMapScheduler2) UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error {
+	switch newState {
+	case state.InstanceStateRunning:
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
+	case state.InstanceStateIdle:
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
+	case state.InstanceStateNew:
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateNew, state.Instance{InstanceID: instanceID, LastWorked: time.Now(), Created: time.Now()})
+	}
 	return nil
 }

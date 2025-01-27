@@ -17,8 +17,6 @@ type Workers struct {
 	logger *slog.Logger
 }
 
-// You'll need helper methods to handle the nested structure, for example:
-
 func NewWorkers(logger *slog.Logger) *Workers {
 	return &Workers{logger: logger}
 }
