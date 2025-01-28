@@ -12,7 +12,8 @@ import (
 
 type WorkerConfig struct {
 	General struct {
-		Address string `env:"WORKER_ADDRESS"`
+		Address     string `env:"WORKER_ADDRESS"`
+		Environment string `env:"ENVIRONMENT"`
 	}
 	Runtime struct {
 		Type       string `env:"RUNTIME_TYPE"`
@@ -32,6 +33,7 @@ func parseArgs() (wc WorkerConfig) {
 	flag.StringVar(&(wc.Log.Level), "log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
 	flag.StringVar(&(wc.Log.Format), "log-format", "text", "Log format (json or text) (Env: LOG_FORMAT)")
 	flag.StringVar(&(wc.Log.FilePath), "log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
+	flag.StringVar(&(wc.General.Environment), "environment", "local", "Specify the environment to run in (local, compose)")
 
 	flag.Parse()
 	return
@@ -98,7 +100,7 @@ func main() {
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, logger)
+		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, wc.General.Environment, logger)
 	default:
 		logger.Error("No runtime specified")
 		os.Exit(1)

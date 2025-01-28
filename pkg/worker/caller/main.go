@@ -25,20 +25,31 @@ type FunctionCalls struct {
 }
 
 type FunctionResponses struct {
-	FrMap map[string]chan []byte
+	FrMap map[string]chan *Response
 	mu    sync.RWMutex
+}
+
+type Response struct {
+	Data  []byte
+	Error []byte
 }
 
 func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call, error) {
 	// Pass payload to the functionResponses channel IF it exists
 	if !payload.FirstExecution {
 		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.Id)
-		go s.PushResponseToChannel(payload.Id, payload.Data)
+		go s.PushResponseToChannel(payload.Id, &Response{Data: payload.Data, Error: payload.Error.Message})
 	}
 
 	// Wait for the function to be called
-	s.logger.Debug("Looking at channel for a call", "instance ID", payload.Id)
-	call, ok := <-s.ExtractCallFromChannel(payload.Id)
+	s.logger.Info("Looking at channel for a call", "instance ID", payload.Id)
+	channel := s.ExtractCallFromChannel(payload.Id)
+	if channel == nil {
+		s.logger.Error("Channel is nil", "channel", channel)
+		return nil, status.Error(codes.NotFound, "Channel not found")
+	}
+
+	call, ok := <-channel
 
 	if !ok {
 		s.logger.Error("Channel closed", "instance ID", payload.Id)
@@ -75,7 +86,7 @@ func NewCallerServer(logger *slog.Logger) *CallerServer {
 			FcMap: make(map[string]chan []byte),
 		},
 		FunctionResponses: FunctionResponses{
-			FrMap: make(map[string]chan []byte),
+			FrMap: make(map[string]chan *Response),
 		},
 	}
 }
@@ -84,11 +95,11 @@ func NewCallerServer(logger *slog.Logger) *CallerServer {
 func (s *CallerServer) RegisterFunction(id string) {
 	s.FunctionCalls.mu.Lock()
 	defer s.FunctionCalls.mu.Unlock()
-	s.FunctionCalls.FcMap[id] = make(chan []byte)
+	s.FunctionCalls.FcMap[id] = make(chan []byte, 1)
 
 	s.FunctionResponses.mu.Lock()
 	defer s.FunctionResponses.mu.Unlock()
-	s.FunctionResponses.FrMap[id] = make(chan []byte)
+	s.FunctionResponses.FrMap[id] = make(chan *Response, 1)
 }
 
 func (s *CallerServer) UnregisterFunction(id string) {
@@ -116,6 +127,10 @@ func (s *CallerServer) PassCallToChannel(id string, call []byte) {
 }
 
 func (s *CallerServer) ExtractCallFromChannel(id string) chan []byte {
+	for key := range s.FunctionCalls.FcMap {
+		s.logger.Debug(key)
+	}
+
 	s.FunctionCalls.mu.RLock()
 	ch, ok := s.FunctionCalls.FcMap[id]
 	s.FunctionCalls.mu.RUnlock()
@@ -126,7 +141,7 @@ func (s *CallerServer) ExtractCallFromChannel(id string) chan []byte {
 	return nil
 }
 
-func (s *CallerServer) ExtractResponseFromChannel(id string) chan []byte {
+func (s *CallerServer) ExtractResponseFromChannel(id string) chan *Response {
 	s.FunctionResponses.mu.RLock()
 	ch, ok := s.FunctionResponses.FrMap[id]
 	s.FunctionResponses.mu.RUnlock()
@@ -136,7 +151,7 @@ func (s *CallerServer) ExtractResponseFromChannel(id string) chan []byte {
 	return nil
 }
 
-func (s *CallerServer) PushResponseToChannel(id string, response []byte) {
+func (s *CallerServer) PushResponseToChannel(id string, response *Response) {
 	s.FunctionResponses.mu.RLock()
 	defer s.FunctionResponses.mu.RUnlock()
 	if ch, ok := s.FunctionResponses.FrMap[id]; ok {

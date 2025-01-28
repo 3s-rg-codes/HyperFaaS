@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"log"
 	"log/slog"
 	"os"
@@ -15,7 +16,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type handler func(context.Context, *Request) (*Response, error)
+type handler func(context.Context, *Request) *Response
 
 type Request struct {
 	Data []byte
@@ -23,8 +24,9 @@ type Request struct {
 }
 
 type Response struct {
-	Data []byte
-	Id   string
+	Data  []byte
+	Error []byte
+	Id    string
 }
 
 type Function struct {
@@ -71,6 +73,8 @@ func (f *Function) Ready(handler handler) {
 	//Set the id in the response to the id of the container
 	f.response.Id = f.id
 
+	logger.Info("Container ID is " + f.id)
+
 	defer logger.Info("Closing connection.")
 	first := true
 
@@ -79,7 +83,7 @@ func (f *Function) Ready(handler handler) {
 		defer cancel()
 
 		//We ask for a new request whilst sending the response of the previous one
-		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, Id: f.response.Id, FirstExecution: first})
+		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, Error: &common.Error{Message: f.response.Error}, Id: f.response.Id, FirstExecution: first})
 		first = false
 
 		if err != nil {
@@ -90,7 +94,7 @@ func (f *Function) Ready(handler handler) {
 
 		f.request = &Request{p.Data, p.Id}
 
-		f.response, err = handler(ctx, f.request)
+		f.response = handler(ctx, f.request)
 
 		logger.Debug("Function handler called and generated response", "response", f.response.Data)
 
