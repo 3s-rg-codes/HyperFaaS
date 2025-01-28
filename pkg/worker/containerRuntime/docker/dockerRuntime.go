@@ -44,31 +44,40 @@ const (
 var (
 	// Regex that matches all chars that are not valid in a container names
 	forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
+	environment    string
 )
 
-func NewDockerRuntime(autoRemove bool, logger *slog.Logger) *DockerRuntime {
+func NewDockerRuntime(autoRemove bool, env string, logger *slog.Logger) *DockerRuntime {
 	cli, err := client.NewClientWithOpts(client.WithHost("unix:///var/run/docker.sock"), client.WithAPIVersionNegotiation())
 	if err != nil {
 		logger.Error("Could not create Docker client", "error", err)
 		return nil
 	}
 
+	environment = env
+
 	// Figure out where to put the logs
 	var outputFolderAbs string
 	// Get the current path
 	currentWd, _ := os.Getwd()
-	logger.Debug("Current path", "path", currentWd)
+	logger.Info("Current path", "path", currentWd)
 	// If the current path ends with /cmd/workerNode, remove it from the path to get the base path of the project
-	if strings.HasSuffix(currentWd, "cmd/workerNode") {
-		outputFolderAbs = currentWd[:len(currentWd)-14] + logsOutputDir
+	if strings.HasSuffix(currentWd, "/bin") {
+		outputFolderAbs = currentWd[:len(currentWd)-3] + logsOutputDir
 	} else {
-		outputFolderAbs = currentWd + "/" + logsOutputDir
+		for {
+			if strings.HasSuffix(currentWd, "HyperFaaS/") {
+				outputFolderAbs = currentWd + logsOutputDir
+				break
+			}
+			currentWd = currentWd[:len(currentWd)-1]
+		}
 	}
-	logger.Debug("Logs directory", "path", outputFolderAbs)
+	logger.Info("Logs directory", "path", outputFolderAbs)
 
 	// Create the logs directory
-	if _, err := os.Stat(logsOutputDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(logsOutputDir, 0755); err != nil {
+	if _, err := os.Stat(outputFolderAbs); os.IsNotExist(err) {
+		if err := os.MkdirAll(outputFolderAbs, 0755); err != nil {
 			logger.Error("Could not create logs directory", "error", err)
 			return nil
 		}
@@ -110,18 +119,39 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *cont
 	// only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed in the container name, just remove all forbidden characters
 	containerName = forbiddenChars.ReplaceAllString(containerName, "")
 
+	var networkMode container.NetworkMode
+	var mountType mount.Type
+	var source string
+	var callerAddress string
+
+	switch environment {
+	case "local":
+		networkMode = "bridge"
+		mountType = mount.TypeBind
+		source = d.outputFolderAbs
+		callerAddress = "host.docker.internal"
+	case "compose":
+		networkMode = "hyperfaas-network"
+		mountType = mount.TypeVolume
+		source = "function-logs"
+		callerAddress = "worker"
+	}
+
 	resp, err := d.Cli.ContainerCreate(ctx, &container.Config{
 		Image: imageTag,
 		ExposedPorts: nat.PortSet{
 			"50052/tcp": struct{}{},
 		},
+		Env: []string{
+			"CALLER_SERVER_ADDRESS=" + callerAddress,
+		},
 	}, &container.HostConfig{
 		AutoRemove:  d.autoRemove,
-		NetworkMode: "hyperfaas-network",
+		NetworkMode: networkMode,
 		Mounts: []mount.Mount{
 			{
-				Type:   mount.TypeVolume,
-				Source: "function-logs",
+				Type:   mountType,
+				Source: source,
 				Target: "/logs/",
 			},
 		},

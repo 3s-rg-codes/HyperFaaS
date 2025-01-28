@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	functionRuntimeInterface "github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
 )
 
 func main() {
@@ -13,12 +13,12 @@ func main() {
 	f.Ready(handler)
 }
 
-func handler(ctx context.Context, in *functionRuntimeInterface.Request) (*functionRuntimeInterface.Response, error) {
+func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functionRuntimeInterface.Response {
 
 	resp := &functionRuntimeInterface.Response{
 		Data: []byte("HELLO WORLD!"),
 		Id:   in.Id,
 	}
 
-	return resp, nil
+	return resp
 }
