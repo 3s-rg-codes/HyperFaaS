@@ -34,6 +34,6 @@ volumes:
     name: function-logs
 
 networks:
-  hyperfaas-network:  # Define the custom network name here
-    name: hyperfaas-network  # Specify the custom name for the network
+  hyperfaas-network:
+    name: hyperfaas-network
     driver: bridge

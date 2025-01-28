@@ -5,7 +5,7 @@ option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/common";
 package common;
 
 message Error {
-    string message = 1;
+    bytes message = 1;
 }
 message InstanceID {
     string id = 1;

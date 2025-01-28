@@ -66,7 +66,7 @@ func NewDockerRuntime(autoRemove bool, env string, logger *slog.Logger) *DockerR
 		outputFolderAbs = currentWd[:len(currentWd)-3] + logsOutputDir
 	} else {
 		for {
-			if strings.HasSuffix(currentWd, "HyperFaaS/") {
+			if strings.HasSuffix(currentWd, "HyperFaaS") {
 				outputFolderAbs = currentWd + logsOutputDir
 				break
 			}
