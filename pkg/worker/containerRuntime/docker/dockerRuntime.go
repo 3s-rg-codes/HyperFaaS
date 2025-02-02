@@ -36,7 +36,7 @@ type DockerRuntime struct {
 }
 
 const (
-	logsOutputDir   = "functions/logs/" // Relative to project root
+	logsOutputDir   = "/functions/logs/" // Relative to project root
 	containerPrefix = "hyperfaas-"
 	imagePrefix     = "hyperfaas-"
 )
@@ -60,20 +60,20 @@ func NewDockerRuntime(autoRemove bool, env string, logger *slog.Logger) *DockerR
 	var outputFolderAbs string
 	// Get the current path
 	currentWd, _ := os.Getwd()
-	logger.Info("Current path", "path", currentWd)
+	logger.Debug("Current path", "path", currentWd)
 	// If the current path ends with /cmd/workerNode, remove it from the path to get the base path of the project
 	if strings.HasSuffix(currentWd, "/bin") {
-		outputFolderAbs = currentWd[:len(currentWd)-3] + logsOutputDir
+		outputFolderAbs = currentWd[:len(currentWd)-4] + logsOutputDir
 	} else {
 		for {
-			if strings.HasSuffix(currentWd, "HyperFaaS") {
+			if strings.HasSuffix(currentWd, "HyperFaaS") || len(currentWd) == 0 {
 				outputFolderAbs = currentWd + logsOutputDir
 				break
 			}
 			currentWd = currentWd[:len(currentWd)-1]
 		}
 	}
-	logger.Info("Logs directory", "path", outputFolderAbs)
+	logger.Debug("Logs directory", "path", outputFolderAbs)
 
 	// Create the logs directory
 	if _, err := os.Stat(outputFolderAbs); os.IsNotExist(err) {
@@ -99,7 +99,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *cont
 
 	if len(images) == 0 {
 		// Pull the image from docker hub if necessary.
-		d.logger.Info("Pulling image", "image", imageTag)
+		d.logger.Debug("Pulling image", "image", imageTag)
 		reader, err := d.Cli.ImagePull(ctx, imageTag, image.PullOptions{})
 
 		if err != nil {

@@ -3,6 +3,7 @@ package helpers
 import (
 	"context"
 	"fmt"
+	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
@@ -139,13 +140,14 @@ func ConnectNodeHelper(controllerServerAddress string, nodeID string, logger slo
 		default:
 			stat, err := s.Recv()
 			if status.Code(err) == codes.DeadlineExceeded { //This will happen when the call finishes and we try to reach the node
+				logger.Info("Deadline exceeded", "nodeId", nodeID)
 				return receivedStats, nil
 			}
 			if err != nil {
 				return receivedStats, fmt.Errorf("error: %v", err)
 			}
 
-			logger.Debug("Received stat", "stat", stat)
+			logger.Debug("Received stat", "stat", stat, "nodeID", nodeID)
 			// Copy the stats to a new struct to avoid copying mutex
 			statCopy := &stats.StatusUpdate{
 				InstanceID: stat.InstanceId,
@@ -158,6 +160,7 @@ func ConnectNodeHelper(controllerServerAddress string, nodeID string, logger slo
 		}
 
 		if ctx.Err() != nil {
+			logger.Error("context error", "error", ctx.Err())
 			break
 		}
 	}
@@ -186,4 +189,10 @@ func Evaluate(actual []*stats.StatusUpdate, expected []*stats.StatusUpdate) (boo
 	result := reflect.DeepEqual(expectedCount, actualCount)
 
 	return result, nil
+}
+
+func ContainerExists(instanceID string, runtime dockerRuntime.DockerRuntime) bool {
+	// Check if the image is present
+	_, err := runtime.Cli.ContainerInspect(context.Background(), instanceID)
+	return err == nil
 }

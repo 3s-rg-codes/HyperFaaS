@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log/slog"
 	"os"
+	"time"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
@@ -12,8 +13,9 @@ import (
 
 type WorkerConfig struct {
 	General struct {
-		Address     string `env:"WORKER_ADDRESS"`
-		Environment string `env:"ENVIRONMENT"`
+		Address         string `env:"WORKER_ADDRESS"`
+		Environment     string `env:"ENVIRONMENT"`
+		ListenerTimeout int    `env:"TIMEOUT"`
 	}
 	Runtime struct {
 		Type       string `env:"RUNTIME_TYPE"`
@@ -29,6 +31,7 @@ type WorkerConfig struct {
 func parseArgs() (wc WorkerConfig) {
 	flag.StringVar(&(wc.General.Address), "address", "", "Worker address. (Env: WORKER_ADDRESS)")
 	flag.StringVar(&(wc.Runtime.Type), "runtime", "", "Container runtime type. (Env: RUNTIME_TYPE)")
+	flag.IntVar(&(wc.General.ListenerTimeout), "timeout", 20, "specify timeout before container is removed")
 	flag.BoolVar(&(wc.Runtime.AutoRemove), "auto-remove", false, "Auto remove containers. (Env: RUNTIME_AUTOREMOVE)")
 	flag.StringVar(&(wc.Log.Level), "log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
 	flag.StringVar(&(wc.Log.Format), "log-format", "text", "Log format (json or text) (Env: LOG_FORMAT)")
@@ -106,7 +109,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	c := controller.NewController(runtime, logger, wc.General.Address)
+	c := controller.NewController(runtime, logger, wc.General.Address, time.Duration(wc.General.ListenerTimeout))
 
 	c.StartServer()
 }

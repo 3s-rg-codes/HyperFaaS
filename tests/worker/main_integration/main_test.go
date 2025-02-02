@@ -23,8 +23,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-//I am aware this is not the way we do integration tests now but this works, so I won't change it. FROM NOW ON WE DO IT RIGHT THO
-
 const (
 	DURATION       = 2 * time.Second
 	RUNTIME        = "docker"

@@ -21,16 +21,19 @@ import (
 
 type Controller struct {
 	controller.UnimplementedControllerServer
-	runtime      cr.ContainerRuntime
-	CallerServer *caller.CallerServer
-	StatsManager *stats.StatsManager
-	logger       *slog.Logger
-	address      string
+	runtime                  cr.ContainerRuntime
+	CallerServer             *caller.CallerServer
+	StatsManager             *stats.StatsManager
+	logger                   *slog.Logger
+	address                  string
+	timeOutRemovingListeners time.Duration
 }
 
 func (s *Controller) Start(ctx context.Context, req *controller.StartRequest) (*common.InstanceID, error) {
 
 	instanceId, err := s.runtime.Start(ctx, req.ImageTag.Tag, req.Config)
+
+	s.logger.Debug("Started container", "ID", instanceId)
 
 	// Truncate the ID to the first 12 characters to match Docker's short ID format
 	shortID := instanceId
@@ -42,8 +45,8 @@ func (s *Controller) Start(ctx context.Context, req *controller.StartRequest) (*
 	if err != nil {
 		s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().WithStatus("failed"))
 		return nil, err
-
 	}
+
 	s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().WithStatus("success"))
 
 	s.CallerServer.RegisterFunction(shortID)
@@ -83,7 +86,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 		// Pass the call to the channel based on the instance ID
 		s.CallerServer.PassCallToChannel(req.InstanceId.Id, req.Data)
 
-		s.logger.Info("Passed call to channel", "instaceID", req.InstanceId.Id)
+		s.logger.Debug("Passed call to channel", "instaceID", req.InstanceId.Id)
 		// stats
 		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().WithStatus("success"))
 
@@ -95,7 +98,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Response().WithStatus("success"))
 
-		s.logger.Debug("Extracted response", "response", resp, "instance ID", req.InstanceId.Id)
+		s.logger.Debug("Extracted response", "response", string(resp.Data), "instance ID", req.InstanceId.Id)
 		response := &common.CallResponse{Data: resp.Data, Error: &common.Error{Message: resp.Error}}
 		return response, nil
 
@@ -141,7 +144,6 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 	if statsChannel != nil {
 		s.logger.Debug("Node is re-hitting the status endpoint", "node_id", req.NodeID)
 	} else {
-
 		statsChannel = make(chan stats.StatusUpdate, 10000)
 		s.StatsManager.AddListener(req.NodeID, statsChannel)
 	}
@@ -156,13 +158,15 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 					Status:     data.Status,
 				}); err != nil {
 				s.logger.Error("Error streaming data", "error", err, "node_id", req.NodeID)
+				s.StatsManager.RemoveListener(req.NodeID)
 				return err
 			}
-			s.logger.Debug("Sent status update", "node_id", req.NodeID)
+			s.logger.Debug("Sent status update", "node_id", req.NodeID, "update", data)
 		} else {
 			s.logger.Debug("Stream closed", "node_id", req.NodeID)
+			go s.StatsManager.RemoveListenerAfter(req.NodeID, s.timeOutRemovingListeners)
 			// re buffer the data
-			s.StatsManager.Enqueue(&data)
+			statsChannel <- data
 			return stream.Context().Err()
 		}
 	}
@@ -181,13 +185,14 @@ func (s *Controller) Metrics(ctx context.Context, req *controller.MetricsRequest
 	return &controller.MetricsUpdate{CpuPercentPercpu: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
 }
 
-func NewController(runtime cr.ContainerRuntime, logger *slog.Logger, address string) *Controller {
+func NewController(runtime cr.ContainerRuntime, logger *slog.Logger, address string, timeout time.Duration) *Controller {
 	return &Controller{
-		runtime:      runtime,
-		CallerServer: caller.NewCallerServer(logger),
-		StatsManager: stats.NewStatsManager(logger),
-		logger:       logger,
-		address:      address,
+		runtime:                  runtime,
+		CallerServer:             caller.NewCallerServer(logger),
+		StatsManager:             stats.NewStatsManager(logger),
+		logger:                   logger,
+		address:                  address,
+		timeOutRemovingListeners: timeout,
 	}
 }
 

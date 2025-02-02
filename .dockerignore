@@ -1,7 +1,6 @@
 .dockerignore
 .gitignore
 justfile
-README.md
 .vscode
 .DS_Store
 .ash_history
