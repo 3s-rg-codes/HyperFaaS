@@ -41,8 +41,8 @@ var (
 	autoRemove              = flag.Bool("auto-remove", true, "automatically remove containers")
 	environment             = flag.String("environment", ENVIRONMENT, "choose environment for execution (local, compose")
 	testCases               = flag.String("test-cases", "", "specify the test cases which should be run")
-	dockerTolerance         = flag.Duration("dockerTolerance", DURATION, "Tolerance for container start and stop in seconds")
-	listenerTimeout         = flag.Int("flag-timeout", TIMEOUT, "specify the timeout after listeners are removed")
+	dockerTolerance         = flag.Duration("docker-tolerance", DURATION, "Tolerance for container start and stop in seconds")
+	listenerTimeout         = flag.Int("listener-timeout", TIMEOUT, "specify the timeout after listeners are removed")
 	CPUPeriod               = flag.Int64("cpu-period", 100000, "CPU period")
 	CPUQuota                = flag.Int64("cpu-quota", 50000, "CPU quota")
 	MemoryLimit             = (*flag.Int64("memory-limit", 250000000, "Memory limit in MB")) * 1024 * 1024
