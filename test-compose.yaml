@@ -1,0 +1,17 @@
+include:
+  - compose.yaml
+services:
+  client:
+    build:
+      context: .
+      dockerfile: testClient.Dockerfile
+    networks:
+      - hyperfaas-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: ["./main", "-environment=compose", "-server-address=worker:50051", "${ENTRYPOINT_CMD}"]
+    develop:
+      watch:
+        - action: rebuild
+          path: .
+          target: .

@@ -38,14 +38,13 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 	// Pass payload to the functionResponses channel IF it exists
 	if !payload.FirstExecution {
 		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.Id)
-		go s.PushResponseToChannel(payload.Id, &Response{Data: payload.Data, Error: payload.Error.Message})
+		go s.PushResponseToChannel(payload.Id, &Response{Data: payload.Data}) //TODO
 	}
 
 	// Wait for the function to be called
-	s.logger.Info("Looking at channel for a call", "instance ID", payload.Id)
+	s.logger.Debug("Looking at channel for a call", "instance ID", payload.Id)
 	channel := s.ExtractCallFromChannel(payload.Id)
 	if channel == nil {
-		s.logger.Error("Channel is nil", "channel", channel)
 		return nil, status.Error(codes.NotFound, "Channel not found")
 	}
 
@@ -127,10 +126,6 @@ func (s *CallerServer) PassCallToChannel(id string, call []byte) {
 }
 
 func (s *CallerServer) ExtractCallFromChannel(id string) chan []byte {
-	for key := range s.FunctionCalls.FcMap {
-		s.logger.Debug(key)
-	}
-
 	s.FunctionCalls.mu.RLock()
 	ch, ok := s.FunctionCalls.FcMap[id]
 	s.FunctionCalls.mu.RUnlock()
