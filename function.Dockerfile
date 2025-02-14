@@ -9,7 +9,7 @@ WORKDIR /root/
 COPY go.mod go.sum ./
 RUN go mod download
 # We only need the pkg and proto dirs for building. Honestly we don't even need the whole pkg/ folder, but this is easer to think about and will not break if we rename the functionRuntimeInterface package.
-COPY pkg/ ./pkg/
+COPY . .
 COPY proto/function ./proto/function
 # Copy only the function we want to build over
 COPY functions/go/${FUNCTION_NAME} ./functions/go/${FUNCTION_NAME}
