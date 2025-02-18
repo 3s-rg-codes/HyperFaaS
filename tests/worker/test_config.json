@@ -1,0 +1,95 @@
+{
+  "test_config_defaults":{
+    "server_address": "localhost:50051",
+    "requested_runtime": "docker",
+    "log_level": "info",
+    "auto_remove": true,
+    "environment": "local",
+    "test_cases": "all",
+    "docker_tolerance": 2,
+    "listener_timeout": 20,
+    "cpu_period": 100000,
+    "cpu_quota": 50000,
+    "memory_limit": 250000000
+  },
+
+
+
+  "stats_test_cases": [
+    {
+      "name":  "streaming stats to one connected node",
+      "disconnects":  false,
+      "reconnects": false,
+      "nodeIDs": ["1"],
+      "timeout": 12
+    },
+    {
+      "name":  "streaming stats to three connected nodes",
+      "disconnects":  false,
+      "reconnects": false,
+      "nodeIDs": ["10", "20", "30"],
+      "timeout": 12
+    },
+    {
+      "name":  "one node disconnects and reconnects while streaming stats",
+      "disconnects":  true,
+      "reconnects": true,
+      "nodeIDs": ["16"],
+      "timeout": 12
+    }
+  ],
+
+
+  "controller_workloads": [
+    {
+      "workload_name": "normal execution of hello image",
+      "image_tag": "hyperfaas-hello:latest",
+      "expects_error": false,
+      "expects_response": true,
+      "expected_response": "SEVMTE8gV09STEQh",
+      "expected_error_code": 0,
+      "call_payload": "VEVTVA=="
+    },
+    {
+      "workload_name": "normal execution of echo image",
+      "image_tag": "hyperfaas-echo:latest",
+      "expects_error": false,
+      "expects_response": true,
+      "expected_response": "SGVsbG8gV29ybGQh",
+      "expected_error_code": 0,
+      "call_payload": "SGVsbG8gV29ybGQh"
+    },
+    {
+      "workload_name": "stopping non existing container",
+      "image_tag": "nonExistingContainer",
+      "expects_error": true,
+      "expects_response": false,
+      "expected_error_code": 5,
+      "call_payload": "RVJST1I="
+    },
+    {
+      "workload_name": "calling non existing container",
+      "image_tag": "nonExistingContainer",
+      "expects_error": true,
+      "expects_response": false,
+      "expected_error_code": 5,
+      "call_payload": "RVJST1I="
+    },
+    {
+      "workload_name": "starting non existing image",
+      "image_tag": "dsfhshfbhdnfjkfbneijcbejsnfjiwbfwfi",
+      "expects_error": true,
+      "expects_response": false,
+      "expected_error_code": 5,
+      "call_payload": "RVJST1I="
+    },
+    {
+      "workload_name": "starting non-local image",
+      "image_tag": "luccadibe/hyperfaas-functions:hello",
+      "expects_error": false,
+      "expects_response": false,
+      "expected_error_code": 0,
+      "call_payload": "VEVTVA=="
+    }
+  ]
+}

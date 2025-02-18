@@ -241,3 +241,41 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId *common.Inst
 		}
 	}
 }
+
+func (d *DockerRuntime) RemoveImage(ctx context.Context, imageTag string) error {
+
+	opt := image.ListOptions{
+		Filters: filters.NewArgs(filters.KeyValuePair{Key: "reference", Value: imageTag}),
+	}
+
+	localImages, err := d.Cli.ImageList(ctx, opt)
+
+	if err != nil {
+		d.logger.Error("Could not list local images", "error", err)
+		return fmt.Errorf("could not list local images, error: %v", err)
+	}
+
+	if len(localImages) > 0 {
+		d.logger.Debug("Image already exists locally", "image", imageTag)
+		//erase image
+		_, err := d.Cli.ImageRemove(ctx, localImages[0].ID, image.RemoveOptions{
+			Force: true,
+		})
+		if err != nil {
+			d.logger.Error("Could not remove local image", "error", err)
+			return fmt.Errorf("could not delete local image, error: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (d *DockerRuntime) ContainerExists(ctx context.Context, instanceID string) bool {
+	_, err := d.Cli.ContainerInspect(ctx, instanceID)
+	return err == nil
+}
+
+func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) io.ReadCloser { //TODO: we need to find a return type that is compatible with all container runtimes and makes sense
+	st, _ := d.Cli.ContainerStats(ctx, containerID, false)
+	return st.Body
+}

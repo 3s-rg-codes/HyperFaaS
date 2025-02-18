@@ -1,6 +1,7 @@
 # Tests
 
 ## Params
+The params are automatically set via the JSON config file but can be overridden when setting flags.
 - **server-address**
   - default: "localhost:50051"
 - **requested-runtime**: specify runtime for containers
@@ -28,4 +29,4 @@
 
 ## Test Cases
 
-- names are self-explanatory
+- names are self-explanatory ;)

@@ -49,6 +49,7 @@ func (s *Controller) Start(ctx context.Context, req *controller.StartRequest) (*
 
 	s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().WithStatus("success"))
 
+	s.logger.Debug("Registering Function", "id", shortID)
 	s.CallerServer.RegisterFunction(shortID)
 
 	return &common.InstanceID{Id: shortID}, nil
@@ -100,7 +101,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 		s.logger.Debug("Extracted response", "response", string(resp.Data), "instance ID", req.InstanceId.Id)
 		response := &common.CallResponse{Data: resp.Data, Error: &common.Error{Message: resp.Error}}
-		return response, nil
+		return response, nil //TODO for some reason the bytes are base64 encoded
 
 	case err := <-containerCrashed:
 
@@ -185,10 +186,10 @@ func (s *Controller) Metrics(ctx context.Context, req *controller.MetricsRequest
 	return &controller.MetricsUpdate{CpuPercentPercpu: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
 }
 
-func NewController(runtime cr.ContainerRuntime, logger *slog.Logger, address string, timeout time.Duration) *Controller {
+func NewController(runtime cr.ContainerRuntime, caller *caller.CallerServer, logger *slog.Logger, address string, timeout time.Duration) *Controller {
 	return &Controller{
 		runtime:                  runtime,
-		CallerServer:             caller.NewCallerServer(logger),
+		CallerServer:             caller,
 		StatsManager:             stats.NewStatsManager(logger),
 		logger:                   logger,
 		address:                  address,
