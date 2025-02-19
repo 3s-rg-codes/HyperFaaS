@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/mock"
 	"log/slog"
 	"os"
 	"time"
@@ -100,16 +102,20 @@ func main() {
 
 	var runtime cr.ContainerRuntime
 
+	callerServer := caller.NewCallerServer(logger)
+
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, wc.General.Environment, logger)
+	case "fake":
+		runtime = mock.NewMockRuntime(callerServer, logger)
 	default:
 		logger.Error("No runtime specified")
 		os.Exit(1)
 	}
 
-	c := controller.NewController(runtime, logger, wc.General.Address, time.Duration(wc.General.ListenerTimeout))
+	c := controller.NewController(runtime, callerServer, logger, wc.General.Address, time.Duration(wc.General.ListenerTimeout))
 
 	c.StartServer()
 }

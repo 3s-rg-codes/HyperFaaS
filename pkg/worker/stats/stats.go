@@ -49,6 +49,7 @@ func (s *StatsManager) dequeue() *StatusUpdate {
 func (s *StatsManager) AddListener(nodeID string, listener chan StatusUpdate) {
 	s.mu.Lock()
 	s.listeners[nodeID] = listener
+	s.logger.Info("Added listener with ID", "id", nodeID)
 	s.mu.Unlock()
 }
 
@@ -78,14 +79,18 @@ func (s *StatsManager) RemoveListenerAfter(nodeID string, sec time.Duration) {
 	s.mu.Lock()
 	ch := make(chan bool, 10)
 	s.toBeTerminated[nodeID] = ch
+	s.logger.Info("Node set to be terminated", "id", nodeID)
+	s.mu.Unlock()
 
 	select {
 	case <-ch:
 		break
 	case <-time.After(sec * time.Second):
+
+		s.mu.Lock()
 		delete(s.listeners, nodeID)
+		s.mu.Unlock()
 	}
-	s.mu.Unlock()
 }
 
 // Streams the status updates to all channels in the listeners map.

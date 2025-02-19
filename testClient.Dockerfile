@@ -6,9 +6,12 @@ FROM golang:${GO_VERSION}-alpine
 WORKDIR /root/
 
 COPY . .
-COPY ./tests/worker/integration.go .
+COPY ./tests/worker/* .
+
 
 RUN go mod tidy
 RUN go mod download
 
-RUN GOOS=linux go build -o main integration.go
+
+
+RUN GOOS=linux go build -o main ./tests/worker/

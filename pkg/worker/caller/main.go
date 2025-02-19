@@ -45,6 +45,7 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 	s.logger.Debug("Looking at channel for a call", "instance ID", payload.Id)
 	channel := s.ExtractCallFromChannel(payload.Id)
 	if channel == nil {
+		s.logger.Error("Channel not found for", "id", payload.Id)
 		return nil, status.Error(codes.NotFound, "Channel not found")
 	}
 

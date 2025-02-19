@@ -3,7 +3,6 @@ package helpers
 import (
 	"context"
 	"fmt"
-	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
@@ -24,16 +23,16 @@ type ResourceSpec struct {
 }
 
 type ControllerWorkload struct {
-	TestName          string
-	ImageTag          string
-	ExpectedError     bool
-	ReturnError       bool
-	ExpectsResponse   bool
-	ExpectedResponse  []byte
-	ErrorCode         codes.Code
-	ExpectedErrorCode codes.Code
-	CallPayload       []byte
-	InstanceID        string
+	TestName          string     `json:"workload_name"`
+	ImageTag          string     `json:"image_tag"`
+	ExpectsError      bool       `json:"expects_error"`
+	ReturnError       bool       `json:"return_error"`
+	ExpectsResponse   bool       `json:"expects_response"`
+	ExpectedResponse  []byte     `json:"expected_response"`
+	ErrorCode         codes.Code `json:"error_code"`
+	ExpectedErrorCode codes.Code `json:"expected_error_code"`
+	CallPayload       []byte     `json:"call_payload"`
+	InstanceID        string     `json:"instance_id"`
 }
 
 func BuildMockClientHelper(controllerServerAddress string) (pb.ControllerClient, *grpc.ClientConn, error) {
@@ -59,7 +58,7 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 
 	var statusUpdates []*stats.StatusUpdate
 
-	if testCase.ExpectedError {
+	if testCase.ExpectsError {
 		// add an error event to the stats
 		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "start", Status: "error"})
 	} else {
@@ -73,7 +72,7 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 	}
 	logger.Debug("Called container", "response", response.Data)
 
-	if testCase.ExpectedError {
+	if testCase.ExpectsError {
 		// add an error event to the stats
 		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "call", Status: "error"})
 	} else {
@@ -91,7 +90,7 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 	}
 	logger.Debug("Stopped container", "container", responseContainerID)
 
-	if testCase.ExpectedError {
+	if testCase.ExpectsError {
 		// add an error event to the stats
 		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "error"})
 	} else if responseContainerID != nil && responseContainerID.Id == cID.Id {
@@ -189,10 +188,4 @@ func Evaluate(actual []*stats.StatusUpdate, expected []*stats.StatusUpdate) (boo
 	result := reflect.DeepEqual(expectedCount, actualCount)
 
 	return result, nil
-}
-
-func ContainerExists(instanceID string, runtime dockerRuntime.DockerRuntime) bool {
-	// Check if the image is present
-	_, err := runtime.Cli.ContainerInspect(context.Background(), instanceID)
-	return err == nil
 }
