@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -92,13 +93,16 @@ func main() {
 
 	logger := setupLogger(config.Config.LogLevel)
 
+	config.Config.printConfig(*logger)
+
 	testCasesMax := 9
 	testsMap := make(map[int]bool, 10)
 	testAll := config.Config.Environment == "compose" && config.Config.TestCases == "all"
 
 	if !testAll {
 		for i := 1; i <= testCasesMax; i++ {
-			if strings.Contains(config.Config.TestCases, string(rune(i))) {
+			testCaseStr := strconv.Itoa(i) // Convert number to string
+			if strings.Contains(config.Config.TestCases, testCaseStr) {
 				testsMap[i] = true
 			} else {
 				testsMap[i] = false
@@ -168,9 +172,8 @@ func main() {
 		tErr := testNormalExecution(controllerClient, runtime, *logger, spec, config)
 		test := Test{name: name, err: tErr}
 		testArray = append(testArray, test)
+		time.Sleep(5 * time.Second)
 	}
-
-	time.Sleep(5 * time.Second)
 
 	if testsMap[2] || testAll {
 		name := "stop non existing container"
@@ -178,9 +181,8 @@ func main() {
 		tErr := testStopNonExistingContainer(controllerClient, *logger, config)
 		test := Test{name: name, err: tErr}
 		testArray = append(testArray, test)
+		time.Sleep(5 * time.Second)
 	}
-
-	time.Sleep(5 * time.Second)
 
 	if testsMap[3] || testAll {
 		name := "call non existing container"
@@ -188,9 +190,8 @@ func main() {
 		tErr := testCallNonExistingContainer(controllerClient, *logger, config)
 		test := Test{name: name, err: tErr}
 		testArray = append(testArray, test)
+		time.Sleep(5 * time.Second)
 	}
-
-	time.Sleep(5 * time.Second)
 
 	if testsMap[4] || testAll {
 		name := "test metrics"
@@ -198,9 +199,8 @@ func main() {
 		tErr := testMetrics(controllerClient, *logger)
 		test := Test{name: name, err: tErr}
 		testArray = append(testArray, test)
+		time.Sleep(5 * time.Second)
 	}
-
-	time.Sleep(5 * time.Second)
 
 	if testsMap[5] || testAll {
 		name := "start non local image"
@@ -208,9 +208,8 @@ func main() {
 		tErr := testStartNonLocalImages(controllerClient, runtime, *logger, spec, config)
 		test := Test{name: name, err: tErr}
 		testArray = append(testArray, test)
+		time.Sleep(5 * time.Second)
 	}
-
-	time.Sleep(5 * time.Second)
 
 	if testsMap[6] || testAll {
 		name := "container config"
@@ -218,9 +217,8 @@ func main() {
 		tErr := TestContainerConfig(runtime, controllerClient, *logger, config.Config)
 		test := Test{name: name, err: tErr}
 		testArray = append(testArray, test)
+		time.Sleep(5 * time.Second)
 	}
-
-	time.Sleep(5 * time.Second)
 
 	if testsMap[7] || testAll {
 		name := "one node as listener"
@@ -228,9 +226,8 @@ func main() {
 		tErr := TestOneNodeListening(controllerClient, testController, *logger, spec, config)
 		test := Test{name: name, err: tErr}
 		testArray = append(testArray, test)
+		time.Sleep(5 * time.Second)
 	}
-
-	time.Sleep(5 * time.Second)
 
 	if testsMap[8] || testAll {
 		name := "multiple nodes listening"
@@ -238,9 +235,8 @@ func main() {
 		tErr := TestMultipleNodesListening(controllerClient, testController, *logger, spec, config)
 		test := Test{name: name, err: tErr}
 		testArray = append(testArray, test)
+		time.Sleep(5 * time.Second)
 	}
-
-	time.Sleep(5 * time.Second)
 
 	if testsMap[9] || testAll {
 		name := "disconnect and reconnect listener"
@@ -248,9 +244,8 @@ func main() {
 		tErr := TestDisconnectAndReconnect(controllerClient, testController, *logger, spec, config)
 		test := Test{name: name, err: tErr}
 		testArray = append(testArray, test)
+		time.Sleep(5 * time.Second)
 	}
-
-	time.Sleep(5 * time.Second)
 
 	////////////////////////////////////////////////////////////////////////////////////
 
@@ -519,37 +514,64 @@ func parseJSON() FullConfig {
 }
 
 func (c *TestConfig) UpdateFromFlags(f Flags) {
+
 	if *f.ServerAddress != "" {
 		c.ServerAddress = *f.ServerAddress
 	}
+
 	if *f.RequestedRuntime != "" {
 		c.RequestedRuntime = *f.RequestedRuntime
 	}
+
 	if *f.LogLevel != "" {
 		c.LogLevel = *f.LogLevel
 	}
+
 	if *f.AutoRemove != true {
 		c.AutoRemove = *f.AutoRemove
 	}
+
 	if *f.Environment != "" {
 		c.Environment = *f.Environment
 	}
+
 	if *f.TestCases != "" {
 		c.TestCases = *f.TestCases
 	}
+
 	if *f.DockerTolerance != 0 {
 		c.DockerTolerance = *f.DockerTolerance
 	}
+
 	if *f.ListenerTimeout != 0 {
 		c.ListenerTimeout = *f.ListenerTimeout
 	}
+
 	if *f.CPUPeriod != 0 {
 		c.CPUPeriod = *f.CPUPeriod
 	}
+
 	if *f.CPUQuota != 0 {
 		c.CPUQuota = *f.CPUQuota
 	}
+
 	if *f.MemoryLimit != 0 {
 		c.MemoryLimit = *f.MemoryLimit
 	}
+}
+
+func (c *TestConfig) printConfig(logger slog.Logger) {
+	logger.Info("Test Configuration",
+		"ServerAddress", c.ServerAddress,
+		"RequestedRuntime", c.RequestedRuntime,
+		"LogLevel", c.LogLevel,
+		"AutoRemove", c.AutoRemove,
+		"Environment", c.Environment,
+		"TestCases", c.TestCases,
+		"DockerTolerance", c.DockerTolerance,
+		"ListenerTimeout", c.ListenerTimeout,
+		"CPUPeriod", c.CPUPeriod,
+		"CPUQuota", c.CPUQuota,
+		"MemoryLimit", c.MemoryLimit,
+	)
 }

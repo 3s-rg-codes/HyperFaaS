@@ -143,7 +143,7 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 	statsChannel := s.StatsManager.GetListenerByID(req.NodeID)
 
 	if statsChannel != nil {
-		s.logger.Debug("Node is re-hitting the status endpoint", "node_id", req.NodeID)
+		s.logger.Info("Node is re-hitting the status endpoint", "node_id", req.NodeID)
 	} else {
 		statsChannel = make(chan stats.StatusUpdate, 10000)
 		s.StatsManager.AddListener(req.NodeID, statsChannel)

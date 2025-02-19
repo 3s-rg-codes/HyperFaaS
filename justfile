@@ -90,6 +90,9 @@ test-all-integration: #by default just should run this in the right dir
 test-integration list:
     ENTRYPOINT_CMD="-test_cases={{list}}" docker compose -f test-compose.yaml up
 
+test-integration-build list:
+    ENTRYPOINT_CMD="-test_cases={{list}}" docker compose -f test-compose.yaml up --build
+
 ############################
 # Misc. Stuff
 ############################

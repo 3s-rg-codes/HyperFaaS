@@ -184,81 +184,88 @@ func TestDisconnectAndReconnect(client pb.ControllerClient, testController contr
 
 	testCase := config.Stats[2]
 
-	wgWorkload := sync.WaitGroup{}
-	statsChan := make(chan *[]*stats.StatusUpdate)
-	errorChan := make(chan error, 10)
+	stopSignal := make(chan bool, 1)                      //used to "kill" the listener
+	resultChannel := make(chan []*stats.StatusUpdate, 10) //used to get received events from the listener
+	errorChan := make(chan error, 10)                     //used to get error fom listener in case there is one
 
+	nodeID := config.Stats[2].NodeIDs[0] //This test will only work with ONE node disconnecting and reconnecting
+
+	wgConnect := sync.WaitGroup{}
+
+	wgConnect.Add(1)
+	go func(ch chan bool, wg *sync.WaitGroup) {
+		logger.Info("Node will disconnect", "node", nodeID)
+		time.Sleep(3 * time.Second)
+		ch <- true
+		wg.Done()
+	}(stopSignal, &wgConnect)
+
+	wgConnect.Add(1)
+	go func(results chan []*stats.StatusUpdate, nodeID string, errors chan error, stopSignal chan bool, wg *sync.WaitGroup) {
+
+		actualNodeStats, err := helpers.ConnectNodeHelper(config.Config.ServerAddress, nodeID, logger, wg, stopSignal, time.Duration(testCase.Timeout)*time.Second)
+		if err != nil {
+			logger.Error("Error when connecting node", "error", err)
+		}
+
+		errors <- err
+		results <- actualNodeStats
+	}(resultChannel, nodeID, errorChan, stopSignal, &wgConnect)
+
+	wgConnect.Wait() //We wait for the node to connect and then disconnect again
+
+	wgWorkload := sync.WaitGroup{}
+	statsChan := make(chan *[]*stats.StatusUpdate) //used to get the desired events out of the goroutine, so that we can compare them
+
+	//We execute the workload after the listener was killed
 	wgWorkload.Add(1)
-	go func(wg1 *sync.WaitGroup, errCh chan error) {
+	go func(wg *sync.WaitGroup, errCh chan error) {
 
 		expectedStats, err := helpers.DoWorkloadHelper(client, logger, spec, config.Workloads[0])
 		if err != nil {
 			logger.Error("Error occurred in Test Case `testOneNodeListening`:", "error", err.Error())
 		}
 
-		logger.Debug("Workload is done")
-		wg1.Done()
+		wg.Done()
 		errCh <- err
 		statsChan <- expectedStats
-		logger.Debug("Sent expected stats")
-
+		logger.Debug("Sent expected stats", "stats", expectedStats)
 	}(&wgWorkload, errorChan)
 
-	wgNodes := sync.WaitGroup{}
-
-	stopSignals := make(map[string]chan bool)
-
-	go func() {
-		for _, nodeID := range config.Stats[2].NodeIDs {
-			stopSignals[nodeID] = make(chan bool)
-			logger.Info("Node will disconnect", "node", nodeID)
-			time.Sleep(3 * time.Second)
-			stopSignals[nodeID] <- true
-		}
-	}()
-
-	resultChannel := make(chan []*stats.StatusUpdate, 10)
-
-	nodeID := config.Stats[2].NodeIDs[0]
-
-	wgNodes.Add(1)
-
-	go func(ch chan []*stats.StatusUpdate, nodeID string, errCh chan error) {
-		stopSignal := stopSignals[nodeID]
-
-		actualNodeStats, err := helpers.ConnectNodeHelper(config.Config.ServerAddress, nodeID, logger, &wgNodes, stopSignal, time.Duration(testCase.Timeout)*time.Second)
-		if err != nil {
-			logger.Error("Error when connecting node", "error", err)
-		}
-
-		errCh <- err
-		ch <- actualNodeStats
-	}(resultChannel, nodeID, errorChan)
-
-	wgWorkload.Wait()
 	expected := <-statsChan
-	for len(errorChan) > 0 {
-		e := <-errorChan
-		if e != nil {
-			return e
+loop:
+	for {
+		select {
+		case e := <-errorChan:
+			if e != nil {
+				logger.Error("error occurred", "err", e)
+			}
+		default:
+			break loop
 		}
 	}
-	wgNodes.Add(1)
 
-	go func(ch chan []*stats.StatusUpdate, nodeID string) {
-		stopSignal := stopSignals[nodeID]
-		actualNodeStats, err := helpers.ConnectNodeHelper(config.Config.ServerAddress, nodeID, logger, &wgNodes, stopSignal, time.Duration(testCase.Timeout)*time.Second)
+	wgWorkload.Add(2)
+
+	go func(results chan []*stats.StatusUpdate, errors chan error, nodeID string, wg *sync.WaitGroup) {
+		actualNodeStats, err := helpers.ConnectNodeHelper(config.Config.ServerAddress, nodeID, logger, wg, nil, time.Duration(testCase.Timeout)*time.Second)
 		if err != nil {
 			logger.Error("Error when reconnecting node", "error", err)
 		}
 
-		ch <- actualNodeStats
-	}(resultChannel, nodeID)
+		errors <- err
+		results <- actualNodeStats
+		wg.Done()
+	}(resultChannel, errorChan, nodeID, &wgWorkload)
 
-	wgNodes.Wait()
+	wgWorkload.Wait()
+	close(resultChannel)
 
-	receivedStats := <-resultChannel
-	result, err := helpers.Evaluate(receivedStats, *expected)
+	totalReceived := make([]*stats.StatusUpdate, 0)
+	for received := range resultChannel {
+		totalReceived = append(totalReceived, received...)
+	}
+	result, err := helpers.Evaluate(totalReceived, *expected)
 	if err != nil {
 		logger.Error("Error evaluating test results", "err", err)
 		return err
