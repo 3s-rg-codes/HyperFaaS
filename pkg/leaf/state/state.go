@@ -9,47 +9,21 @@ import (
 	"google.golang.org/grpc"
 )
 
-type WorkerID string
-type InstanceID string
-type FunctionID string
-
-type WorkerState int
-type InstanceState int
-
-const (
-	WorkerStateUp WorkerState = iota
-	WorkerStateDown
-)
-
-const (
-	InstanceStateRunning InstanceState = iota
-	InstanceStateIdle
-	InstanceStateNew
-)
-
 // WorkerStateMap maps worker IPs to their registered functions
-type WorkerStateMap map[WorkerID][]Function
+type WorkerStateMap map[WorkerID][]FunctionOLD
 
-// Function represents the state of a function and its instances
-type Function struct {
+// FunctionOLD represents the state of a function and its instances
+type FunctionOLD struct {
 	FunctionID FunctionID
 	Running    []Instance
 	Idle       []Instance
-}
-
-// Instance represents the state of a single function instance
-type Instance struct {
-	InstanceID InstanceID
-	IsActive   bool
-	LastWorked time.Time
-	Created    time.Time
 }
 
 type Scraper interface {
 	// Scrape the state of all workers
 	Scrape(ctx context.Context) (WorkerStateMap, error)
 	// A single worker's state
-	GetWorkerState(workerID WorkerID) ([]Function, error)
+	GetWorkerState(workerID WorkerID) ([]FunctionOLD, error)
 	// Set the worker IDs to scrape
 	SetWorkerIDs(workerIDs []WorkerID)
 }
@@ -101,12 +75,12 @@ func New(workerIDs []WorkerID) Scraper {
 
 	// Initialize state map for each worker
 	for _, workerID := range s.workerIDs {
-		s.state[workerID] = make([]Function, 0)
+		s.state[workerID] = make([]FunctionOLD, 0)
 	}
 	return s
 }
 
-func (s *scraper) GetWorkerState(workerID WorkerID) ([]Function, error) {
+func (s *scraper) GetWorkerState(workerID WorkerID) ([]FunctionOLD, error) {
 	if s.workerConnections[workerID] == nil {
 		conn, err := grpc.NewClient(string(workerID))
 		if err != nil {
@@ -131,8 +105,8 @@ func (s *scraper) GetWorkerState(workerID WorkerID) ([]Function, error) {
 
 // convertStateResponseToWorkerState converts a StateResponse to []FunctionState
 // This honestly seems like an antipattern. We convert this to our local type bc one shouldnt copy the proto types.
-func convertStateResponseToWorkerState(state *pb.StateResponse) []Function {
-	workerState := make([]Function, len(state.Functions))
+func convertStateResponseToWorkerState(state *pb.StateResponse) []FunctionOLD {
+	workerState := make([]FunctionOLD, len(state.Functions))
 	for i, function := range state.Functions {
 		// Convert running instances
 		runningInstances := make([]Instance, len(function.Running))
@@ -156,7 +130,7 @@ func convertStateResponseToWorkerState(state *pb.StateResponse) []Function {
 			}
 		}
 
-		workerState[i] = Function{
+		workerState[i] = FunctionOLD{
 			FunctionID: FunctionID(function.FunctionId),
 			Running:    runningInstances,
 			Idle:       idleInstances,

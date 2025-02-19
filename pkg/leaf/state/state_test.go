@@ -35,14 +35,14 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    *controller.StateResponse
-		expected []Function
+		expected []FunctionOLD
 	}{
 		{
 			name: "empty response",
 			input: &controller.StateResponse{
 				Functions: []*controller.FunctionState{},
 			},
-			expected: []Function{},
+			expected: []FunctionOLD{},
 		},
 		{
 			name: "single function with instances",
@@ -69,7 +69,7 @@ func TestConvertStateResponseToWorkerState(t *testing.T) {
 					},
 				},
 			},
-			expected: []Function{
+			expected: []FunctionOLD{
 				{
 					FunctionID: "func1",
 					Running: []Instance{

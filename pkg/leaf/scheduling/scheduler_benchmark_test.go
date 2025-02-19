@@ -80,7 +80,7 @@ func updateWorker(scheduler *syncMapScheduler) {
 	scheduler.UpdateWorkerState(state.WorkerID(randString), state.WorkerStateUp)
 	workerNames = append(workerNames, state.WorkerID(randString))
 }
-func updateWorker2(scheduler *syncMapScheduler2) {
+func updateWorker2(scheduler *mruScheduler) {
 	randString := strconv.Itoa(rand.Intn(10))
 	scheduler.UpdateWorkerState(state.WorkerID(randString), state.WorkerStateUp)
 	workerNames = append(workerNames, state.WorkerID(randString))
@@ -92,7 +92,7 @@ func deleteWorker(scheduler *syncMapScheduler) {
 	workerNames = remove(workerNames, randWorker)
 }
 
-func deleteWorker2(scheduler *syncMapScheduler2) {
+func deleteWorker2(scheduler *mruScheduler) {
 	randWorker := workerNames[rand.Intn(len(workerNames))]
 	scheduler.UpdateWorkerState(randWorker, state.WorkerStateDown)
 	workerNames = remove(workerNames, randWorker)
@@ -110,7 +110,7 @@ func remove(slice []state.WorkerID, s state.WorkerID) []state.WorkerID {
 func BenchmarkSyncMapScheduler2(b *testing.B) {
 	//scheduler := CreateTestStateSyncMap()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewSyncMapScheduler2([]state.WorkerID{"worker1", "worker2"}, logger)
+	scheduler := NewMRUScheduler([]state.WorkerID{"worker1", "worker2"}, logger)
 	// every 5 seconds create a worker in parallel
 	wg := sync.WaitGroup{}
 	wg.Add(1)
