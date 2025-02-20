@@ -50,7 +50,7 @@ func CreateTestSyncMapScheduler() *syncMapScheduler {
 
 func CreateTestMRUScheduler() *mruScheduler {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	scheduler := NewMRUScheduler([]state.WorkerID{"worker1", "worker2"}, logger)
+	scheduler := NewMRUScheduler(state.NewWorkers(logger), []state.WorkerID{"worker1", "worker2"}, logger)
 	return AddTestInstances(scheduler).(*mruScheduler)
 }
 
@@ -189,7 +189,8 @@ func TestSyncMapSchedulerSchedule(t *testing.T) {
 }
 
 func TestMRUSchedulerUpdateWorkerState(t *testing.T) {
-	scheduler := NewMRUScheduler([]state.WorkerID{"worker1", "worker2"}, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	scheduler := NewMRUScheduler(state.NewWorkers(logger), []state.WorkerID{"worker1", "worker2"}, logger)
 	scheduler.UpdateWorkerState("worker1", state.WorkerStateUp)
 	scheduler.UpdateWorkerState("worker2", state.WorkerStateUp)
 	worker, err := scheduler.workers.GetWorker("worker1")

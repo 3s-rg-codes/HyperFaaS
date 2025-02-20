@@ -17,7 +17,7 @@ type WorkersSyncMap struct {
 	logger *slog.Logger
 }
 
-func NewWorkers(logger *slog.Logger) *WorkersSyncMap {
+func NewWorkersSyncMap(logger *slog.Logger) *WorkersSyncMap {
 	return &WorkersSyncMap{logger: logger}
 }
 

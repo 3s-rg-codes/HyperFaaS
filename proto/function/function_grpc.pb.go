@@ -4,7 +4,7 @@
 // - protoc             v5.27.0
 // source: function/function.proto
 
-package hyperfaas
+package function
 
 import (
 	context "context"

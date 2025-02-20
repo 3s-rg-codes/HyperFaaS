@@ -35,6 +35,7 @@ message StatusUpdate {
   string type = 2;
   string event = 3;
   string status = 4;
+  string function_id = 5;
 }
 
 message StatusRequest {

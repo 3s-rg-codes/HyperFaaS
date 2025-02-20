@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"strings"
@@ -38,12 +37,13 @@ type Function struct {
 func New(timeout int) *Function {
 	address, ok := os.LookupEnv("CALLER_SERVER_ADDRESS")
 	if !ok {
-		log.Printf("Environment variable CALLER_SERVER_ADDRESS not found")
+		fmt.Printf("Environment variable CALLER_SERVER_ADDRESS not found")
 	}
+	fmt.Printf("CALLER_SERVER_ADDRESS: %s", address)
 
 	return &Function{
 		timeout:  timeout,
-		address:  fmt.Sprint(address, ":50052"),
+		address:  address,
 		request:  &Request{},
 		response: &Response{},
 		id:       getID(),
@@ -52,19 +52,13 @@ func New(timeout int) *Function {
 
 // Ready is called from inside the function instance container. It waits for a request from the caller server.
 func (f *Function) Ready(handler handler) {
-
-	//Set up logging file inside the Docker container. Will be mounted to functions/logs
 	logger := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.id))
 
 	connection, err := grpc.NewClient(f.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-
-	logger.Debug("Connected to the worker", "address", f.address)
-
-	defer connection.Close()
-
 	if err != nil {
 		logger.Error("failed to connect", "error", err)
 	}
+	defer connection.Close()
 
 	c := pb.NewFunctionServiceClient(connection)
 
@@ -76,12 +70,13 @@ func (f *Function) Ready(handler handler) {
 
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(f.timeout)*time.Second)
-		defer cancel()
 
 		//We ask for a new request whilst sending the response of the previous one
 		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, Id: f.response.Id, FirstExecution: first})
-		first = false
 
+		cancel()
+
+		first = false
 		if err != nil {
 			logger.Error("failed to call", "error", err)
 			return

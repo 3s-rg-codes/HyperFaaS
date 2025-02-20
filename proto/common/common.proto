@@ -20,3 +20,5 @@ message CallResponse {
     bytes data = 1;
     Error error = 2;
 }
+
+message Empty {}

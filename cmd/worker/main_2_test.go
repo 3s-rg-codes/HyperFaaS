@@ -32,6 +32,7 @@ var ( //TODO: implement flags, do we need more?
 	requestedRuntime = flag.String("specifyRuntime", RUNTIME, "for now only docker, is also default")
 	//config                  = flag.String("config", "", "specify Config") TODO WIP, not implemented yet(?)
 	controllerServerAddress = flag.String("ServerAdress", SERVER_ADDRESS, "specify controller server adress")
+	containerized           = flag.Bool("containerized", false, "specify if the worker should be containerized")
 	autoRemove              = flag.Bool("autoRemove", true, "specify if containers should be removed after stopping")
 	testController          *controller.Controller
 	runtime                 *dockerRuntime.DockerRuntime //TODO generalize for all, problem: cant access fields of dockerruntime if of type containerruntime
@@ -77,17 +78,17 @@ func setup() {
 		}
 	})
 	fmt.Println()
-
+	callerServerAddress := "localhost:50052"
 	switch *requestedRuntime {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(*autoRemove, slog.Default().With("runtime", "docker")) //did not work otherwise, using container runtime interface
+		runtime = dockerRuntime.NewDockerRuntime(*autoRemove, *containerized, callerServerAddress, slog.Default().With("runtime", "docker"))
 	}
 
 	//Log setup
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	//Controller
-	testController = controller.NewController(runtime, slog.Default(), *controllerServerAddress)
+	testController = controller.NewController(runtime, slog.Default(), *controllerServerAddress, callerServerAddress)
 	//CallerServer
 	go func() {
 		testController.StartServer()

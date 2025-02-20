@@ -6,11 +6,14 @@ import (
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	controllerPB "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 // grpc api endpoints that leafLeader will expose
@@ -47,7 +50,18 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 
 	resp, err := callWorker(ctx, workerID, instanceID, req)
 	if err != nil {
-		return nil, err
+		switch err.(type) {
+		case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
+			s.scheduler.UpdateInstanceState(workerID, state.FunctionID(req.FunctionId), instanceID, state.InstanceStateDown)
+			// TODO: handle this and dont return.
+			return nil, err
+		case *WorkerDownError:
+			s.scheduler.UpdateInstanceState(workerID, state.FunctionID(req.FunctionId), instanceID, state.InstanceStateDown)
+			s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
+			return nil, err
+		default:
+			return nil, err
+		}
 	}
 	log.Printf("Recieved response from worker %s, instanceID: %s, response: %v", workerID, instanceID, resp)
 	// The instance is no longer running
@@ -69,7 +83,7 @@ func callWorker(ctx context.Context, workerID state.WorkerID, instanceID state.I
 		return nil, err
 	}
 	defer conn.Close()
-	client := controller.NewControllerClient(conn)
+	client := controllerPB.NewControllerClient(conn)
 
 	callReq := &common.CallRequest{
 		InstanceId: &common.InstanceID{Id: string(instanceID)},
@@ -78,6 +92,11 @@ func callWorker(ctx context.Context, workerID state.WorkerID, instanceID state.I
 
 	resp, err := client.Call(ctx, callReq)
 	if err != nil {
+		// Check if it's a connection error
+		st, ok := status.FromError(err)
+		if ok && st.Code() == codes.Unavailable {
+			return nil, &WorkerDownError{WorkerID: workerID, err: err}
+		}
 		return nil, err
 	}
 
@@ -90,11 +109,11 @@ func startInstance(ctx context.Context, workerID state.WorkerID, functionId stat
 		return "", err
 	}
 	defer conn.Close()
-	client := controller.NewControllerClient(conn)
+	client := controllerPB.NewControllerClient(conn)
 
 	// Todo : we need to agree on either functionId or imageTag
-	startReq := &controller.StartRequest{
-		ImageTag: &controller.ImageTag{Tag: string(functionId)},
+	startReq := &controllerPB.StartRequest{
+		ImageTag: &controllerPB.ImageTag{Tag: string(functionId)},
 	}
 
 	instanceID, err := client.Start(ctx, startReq)

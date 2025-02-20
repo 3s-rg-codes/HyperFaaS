@@ -12,11 +12,13 @@ import (
 
 type WorkerConfig struct {
 	General struct {
-		Address string `env:"WORKER_ADDRESS"`
+		Address             string `env:"WORKER_ADDRESS"`
+		CallerServerAddress string `env:"CALLER_SERVER_ADDRESS"`
 	}
 	Runtime struct {
-		Type       string `env:"RUNTIME_TYPE"`
-		AutoRemove bool   `env:"RUNTIME_AUTOREMOVE"`
+		Type          string `env:"RUNTIME_TYPE"`
+		AutoRemove    bool   `env:"RUNTIME_AUTOREMOVE"`
+		Containerized bool   `env:"RUNTIME_CONTAINERIZED"`
 	}
 	Log struct {
 		Level    string `env:"LOG_LEVEL"`
@@ -27,11 +29,13 @@ type WorkerConfig struct {
 
 func parseArgs() (wc WorkerConfig) {
 	flag.StringVar(&(wc.General.Address), "address", "", "Worker address. (Env: WORKER_ADDRESS)")
+	flag.StringVar(&(wc.General.CallerServerAddress), "caller-server-address", "", "Caller server address. (Env: CALLER_SERVER_ADDRESS)")
 	flag.StringVar(&(wc.Runtime.Type), "runtime", "", "Container runtime type. (Env: RUNTIME_TYPE)")
 	flag.BoolVar(&(wc.Runtime.AutoRemove), "auto-remove", true, "Auto remove containers. (Env: RUNTIME_AUTOREMOVE)")
 	flag.StringVar(&(wc.Log.Level), "log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
 	flag.StringVar(&(wc.Log.Format), "log-format", "text", "Log format (json or text) (Env: LOG_FORMAT)")
 	flag.StringVar(&(wc.Log.FilePath), "log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
+	flag.BoolVar(&(wc.Runtime.Containerized), "containerized", false, "Use socket to connect to Docker. (Env: RUNTIME_CONTAINERIZED)")
 
 	flag.Parse()
 	return
@@ -98,13 +102,13 @@ func main() {
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, logger)
+		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.CallerServerAddress, logger)
 	default:
 		logger.Error("No runtime specified")
 		os.Exit(1)
 	}
 
-	c := controller.NewController(runtime, logger, wc.General.Address)
+	c := controller.NewController(runtime, logger, wc.General.Address, wc.General.CallerServerAddress)
 
 	c.StartServer()
 }

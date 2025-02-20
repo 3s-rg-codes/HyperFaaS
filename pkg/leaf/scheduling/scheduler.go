@@ -17,17 +17,19 @@ type Scheduler interface {
 	CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error
 }
 
-func New(strategy string, workerState state.WorkerStateMap, workerIDs []state.WorkerID, logger *slog.Logger) Scheduler {
+// New creates a new scheduler based on the strategy
+func New(strategy string, workerState *state.Workers, workerIDs []state.WorkerID, logger *slog.Logger) Scheduler {
 	switch strategy {
 	case "map":
 		return NewSyncMapScheduler(workerIDs, logger)
-	case "typedmap":
-		return NewMRUScheduler(workerIDs, logger)
+	case "mru":
+		return NewMRUScheduler(workerState, workerIDs, logger)
 	default:
 		return nil
 	}
 }
 
+// syncMapScheduler uses a nested sync.Map to store the worker state
 type syncMapScheduler struct {
 	workers   state.WorkersSyncMap
 	workerIDs []state.WorkerID
@@ -36,7 +38,7 @@ type syncMapScheduler struct {
 
 func NewSyncMapScheduler(workerIDs []state.WorkerID, logger *slog.Logger) *syncMapScheduler {
 	//TODO find a way to pass in a starting state...
-	workers := state.NewWorkers(logger)
+	workers := state.NewWorkersSyncMap(logger)
 	for _, workerID := range workerIDs {
 		workers.CreateWorker(workerID)
 	}
@@ -79,11 +81,13 @@ func (s *syncMapScheduler) UpdateWorkerState(workerID state.WorkerID, newState s
 func (s *syncMapScheduler) UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error {
 	switch newState {
 	case state.InstanceStateRunning:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID})
 	case state.InstanceStateIdle:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
 	case state.InstanceStateNew:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateNew, state.Instance{InstanceID: instanceID, LastWorked: time.Now(), Created: time.Now()})
+	case state.InstanceStateDown:
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
 	}
 	return nil
 }
@@ -94,17 +98,19 @@ func (s *syncMapScheduler) CreateFunction(workerID state.WorkerID, functionID st
 }
 
 type mruScheduler struct {
-	workers   state.Workers
-	workerIDs []state.WorkerID
-	logger    *slog.Logger
+	workers    *state.Workers
+	workerIDs  []state.WorkerID
+	reconciler *Reconciler
+	logger     *slog.Logger
 }
 
-func NewMRUScheduler(workerIDs []state.WorkerID, logger *slog.Logger) *mruScheduler {
-	workers := state.NewWorkers2(logger)
+func NewMRUScheduler(workers *state.Workers, workerIDs []state.WorkerID, logger *slog.Logger) *mruScheduler {
 	for _, workerID := range workerIDs {
 		workers.CreateWorker(workerID)
 	}
-	return &mruScheduler{workers: *workers, workerIDs: workerIDs, logger: logger}
+	reconciler := NewReconciler(workerIDs, workers, logger)
+	go reconciler.Run(context.Background())
+	return &mruScheduler{workers: workers, workerIDs: workerIDs, logger: logger, reconciler: reconciler}
 
 }
 
@@ -144,11 +150,13 @@ func (s *mruScheduler) UpdateWorkerState(workerID state.WorkerID, newState state
 func (s *mruScheduler) UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error {
 	switch newState {
 	case state.InstanceStateRunning:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID})
 	case state.InstanceStateIdle:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
 	case state.InstanceStateNew:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateNew, state.Instance{InstanceID: instanceID, LastWorked: time.Now(), Created: time.Now()})
+	case state.InstanceStateDown:
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
 	}
 	return nil
 }

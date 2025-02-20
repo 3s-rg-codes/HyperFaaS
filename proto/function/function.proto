@@ -1,7 +1,9 @@
 syntax = "proto3";
 
-option go_package = "github.com/3s-rg-codes/hyperfaas";
+option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/function";
 package function;
+
+
 
 message Payload {
     bytes data = 1;

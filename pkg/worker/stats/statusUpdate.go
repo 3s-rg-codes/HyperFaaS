@@ -5,6 +5,7 @@ type StatusUpdate struct {
 	Type       string
 	Event      string
 	Status     string
+	FunctionID string
 }
 
 func Event() *StatusUpdate {
@@ -14,6 +15,13 @@ func Event() *StatusUpdate {
 func (su *StatusUpdate) Container(instanceID string) *StatusUpdate {
 	su.InstanceID = instanceID
 	su.Type = "container"
+	return su
+}
+
+// Not forced due to backwards compatibility with controller.go and the Call API
+// TODO: Make functionID required and refactor the Call API to require functionID
+func (su *StatusUpdate) Function(functionID string) *StatusUpdate {
+	su.FunctionID = functionID
 	return su
 }
 
@@ -27,6 +35,11 @@ func (su *StatusUpdate) Die() *StatusUpdate {
 	return su
 }
 
+func (su *StatusUpdate) Timeout() *StatusUpdate {
+	su.Event = "timeout"
+	return su
+}
+
 func (su *StatusUpdate) Start() *StatusUpdate {
 	su.Event = "start"
 	return su
@@ -34,11 +47,6 @@ func (su *StatusUpdate) Start() *StatusUpdate {
 
 func (su *StatusUpdate) Stop() *StatusUpdate {
 	su.Event = "stop"
-	return su
-}
-
-func (su *StatusUpdate) Timeout() *StatusUpdate {
-	su.Event = "timeout"
 	return su
 }
 
