@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -12,7 +13,9 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
+	"github.com/golang-cz/devslog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type workerIDs []string
@@ -25,20 +28,13 @@ func (i *workerIDs) Set(value string) error {
 	*i = append(*i, value)
 	return nil
 }
-
-// start the leader
-
-// handle configuration
-// scrape intervals, batching of requests to the scheduler, etc.
-
 func main() {
 	workerIDs := workerIDs{}
-	scrapeInterval := flag.Duration("scrape-interval", 50*time.Millisecond, "The interval at which to scrape the workers")
 	address := flag.String("address", "0.0.0.0:50050", "The address to listen on")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
-	logFormat := flag.String("log-format", "text", "Log format (json or text) (Env: LOG_FORMAT)")
+	logFormat := flag.String("log-format", "text", "Log format (json, text or dev) (Env: LOG_FORMAT)")
 	logFilePath := flag.String("log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
-	schedulerType := flag.String("scheduler-type", "naive", "The type of scheduler to use (naive or map)")
+	schedulerType := flag.String("scheduler-type", "naive", "The type of scheduler to use (mru or map)")
 	flag.Var(&workerIDs, "worker-ids", "The IDs of the workers to manage")
 	flag.Parse()
 
@@ -48,17 +44,18 @@ func main() {
 
 	logger := setupLogger(*logLevel, *logFormat, *logFilePath)
 
-	scraper := state.NewScraper(*scrapeInterval, logger)
-
-	// For now, we just set these once. In the future, we will have a way to update the worker IPs if needed.
 	var ids []state.WorkerID
 	logger.Debug("Setting worker IDs", "workerIDs", workerIDs, "len", len(workerIDs))
 	for _, id := range workerIDs {
+		err := healthCheckWorker(id)
+		if err != nil {
+			logger.Error("failed to health check worker", "error", err)
+			os.Exit(1)
+		}
 		ids = append(ids, state.WorkerID(id))
 	}
-	scraper.SetWorkerIDs(ids)
 
-	workerState := make(state.WorkerStateMap)
+	workerState := state.NewWorkers(logger)
 
 	scheduler := scheduling.New(*schedulerType, workerState, ids, logger)
 	server := api.NewLeafServer(scheduler)
@@ -116,10 +113,21 @@ func setupLogger(logLevel string, logFormat string, logFilePath string) *slog.Lo
 
 	// Create handler based on format
 	var handler slog.Handler
-	if logFormat == "json" {
+	switch logFormat {
+	case "json":
 		handler = slog.NewJSONHandler(output, opts)
-	} else {
+	case "text":
 		handler = slog.NewTextHandler(output, opts)
+	case "dev":
+		// new logger with options
+		devOpts := &devslog.Options{
+			HandlerOptions:    opts,
+			MaxSlicePrintSize: 5,
+			SortKeys:          true,
+			NewLineAfterLog:   true,
+			StringerFormatter: true,
+		}
+		handler = devslog.NewHandler(output, devOpts)
 	}
 
 	// Create and set logger
@@ -127,4 +135,29 @@ func setupLogger(logLevel string, logFormat string, logFilePath string) *slog.Lo
 	slog.SetDefault(logger)
 
 	return logger
+}
+
+var serviceConfig = `{
+	"loadBalancingPolicy": "round_robin",
+	"healthCheckConfig": {
+		"serviceName": ""
+	}
+}`
+
+func healthCheckWorker(workerID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// This function is deprecated but I'm not sure how to replace it
+	//https://github.com/grpc/grpc-go/blob/master/Documentation/anti-patterns.md
+	conn, err := grpc.DialContext(ctx, workerID,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(), // This makes the dial synchronous
+	)
+	if err != nil {
+		return fmt.Errorf("failed to connect to worker %s: %w", workerID, err)
+	}
+	defer conn.Close()
+
+	return nil
 }

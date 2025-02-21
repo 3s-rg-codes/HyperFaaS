@@ -6,34 +6,32 @@ import (
 	"sync"
 )
 
-// Workers uses sync.Map for concurrent access safety
+// WorkersSyncMap uses sync.Map for concurrent access safety
 // The structure is equivalent to:
 // map[WorkerID]map[FunctionID]map[InstanceState][]Instance
 // but implemented as nested sync.Maps
 // The tradeoff is the type safety...
-type Workers struct {
+type WorkersSyncMap struct {
 	// Primary map: WorkerID -> nested map
 	data   sync.Map
 	logger *slog.Logger
 }
 
-// You'll need helper methods to handle the nested structure, for example:
-
-func NewWorkers(logger *slog.Logger) *Workers {
-	return &Workers{logger: logger}
+func NewWorkersSyncMap(logger *slog.Logger) *WorkersSyncMap {
+	return &WorkersSyncMap{logger: logger}
 }
 
 // GetOrCreateWorker creates a worker's function map
-func (w *Workers) CreateWorker(workerID WorkerID) *sync.Map {
+func (w *WorkersSyncMap) CreateWorker(workerID WorkerID) *sync.Map {
 	w.data.Store(workerID, &sync.Map{})
 	return w.GetWorker(workerID)
 }
 
-func (w *Workers) DeleteWorker(workerID WorkerID) {
+func (w *WorkersSyncMap) DeleteWorker(workerID WorkerID) {
 	w.data.Delete(workerID)
 }
 
-func (w *Workers) GetWorker(workerID WorkerID) *sync.Map {
+func (w *WorkersSyncMap) GetWorker(workerID WorkerID) *sync.Map {
 	functionMap, ok := w.data.Load(workerID)
 	if !ok {
 		return nil
@@ -41,7 +39,7 @@ func (w *Workers) GetWorker(workerID WorkerID) *sync.Map {
 	return functionMap.(*sync.Map)
 }
 
-func (w *Workers) GetFunction(workerID WorkerID, functionID FunctionID) *sync.Map {
+func (w *WorkersSyncMap) GetFunction(workerID WorkerID, functionID FunctionID) *sync.Map {
 	functionMap := w.GetWorker(workerID)
 	if functionMap == nil {
 		w.logger.Error("Function map not found", "workerID", workerID, "functionID", functionID)
@@ -54,7 +52,7 @@ func (w *Workers) GetFunction(workerID WorkerID, functionID FunctionID) *sync.Ma
 	}
 	return function.(*sync.Map)
 }
-func (w *Workers) CreateFunction(workerID WorkerID, functionID FunctionID) {
+func (w *WorkersSyncMap) CreateFunction(workerID WorkerID, functionID FunctionID) {
 	w.GetWorker(workerID).Store(functionID, &sync.Map{})
 
 	//create the running and idle maps.
@@ -63,7 +61,7 @@ func (w *Workers) CreateFunction(workerID WorkerID, functionID FunctionID) {
 	instanceStateMap.Store(InstanceStateIdle, []Instance{})
 }
 
-func (w *Workers) GetInstances(workerID WorkerID, functionID FunctionID, instanceState InstanceState) []Instance {
+func (w *WorkersSyncMap) GetInstances(workerID WorkerID, functionID FunctionID, instanceState InstanceState) []Instance {
 	instanceStateMap := w.GetFunction(workerID, functionID)
 	if instanceStateMap == nil {
 		return nil
@@ -75,7 +73,7 @@ func (w *Workers) GetInstances(workerID WorkerID, functionID FunctionID, instanc
 	return instanceStateSlice.([]Instance)
 }
 
-func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instance Instance) {
+func (w *WorkersSyncMap) UpdateInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instance Instance) {
 	instanceStateMap := w.GetFunction(workerID, functionID)
 	if instanceStateMap == nil {
 		w.logger.Error("Instance state map not found", "workerID", workerID, "functionID", functionID)
@@ -116,7 +114,7 @@ func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, insta
 	}
 }
 
-func (w *Workers) DeleteInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instanceID InstanceID) {
+func (w *WorkersSyncMap) DeleteInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instanceID InstanceID) {
 	instanceStateMap := w.GetFunction(workerID, functionID)
 	if instanceStateMap == nil {
 		return
@@ -139,7 +137,7 @@ func (w *Workers) DeleteInstance(workerID WorkerID, functionID FunctionID, insta
 // Traverses the State Map to find an available function instance.
 // If one is found, it returns the workerID, instanceID and moves the instance to the running state.
 // Returns empty strings and an error if none is found.
-func (w *Workers) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID, error) {
+func (w *WorkersSyncMap) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID, error) {
 	var idleWorkerID WorkerID
 	var idleInstanceID InstanceID
 	found := false
@@ -184,7 +182,7 @@ func (w *Workers) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID,
 	return "", "", &NoIdleInstanceError{FunctionID: functionID}
 }
 
-func (w *Workers) DebugPrint() {
+func (w *WorkersSyncMap) DebugPrint() {
 	w.data.Range(func(workerID, functionMap interface{}) bool {
 		fmt.Printf("Worker ID: %v\n", workerID)
 		funcMap := functionMap.(*sync.Map)

@@ -12,9 +12,9 @@ The params are automatically set via the JSON config file but can be overridden 
 - **auto-remove**: specify if containers should automatically be removed after they terminate
   - currently: true, false 
   - if this is set to false, the normla execution tests will fail, since the container will still be there after stopping it
-- **environment**
-  - currently: compose, local
-  - specify the environment for the tests to be run
+- **containerized**
+  - currently: true, false
+  - specify if the tests should be run in a containerized environment
 - **test-cases**
   - specify all cases to be run
   - currently: all OR 123 OR 2571 OR ...

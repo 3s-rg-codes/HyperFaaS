@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"github.com/google/uuid"
-	"io"
-	"log/slog"
 )
 
 type MockRuntime struct {
@@ -49,7 +50,7 @@ func (m *MockRuntime) Start(ctx context.Context, imageTag string, config *contro
 		id:  instanceID,
 	}
 	m.Running[imageTag] = append(m.Running[imageTag], instance)
-	payload := &pb.Payload{FirstExecution: true, Id: instanceID}
+	payload := &pb.Payload{FirstExecution: true, InstanceId: instanceID}
 	switch imageTag {
 	case "hello":
 		go fakeHelloFunction(payload, controlContext, m.callerRef, m.logger)
@@ -118,7 +119,7 @@ func fakeEchoFunction(payload *pb.Payload, ctx context.Context, callerRef *calle
 
 			payload = &pb.Payload{
 				Data:           data,
-				Id:             payload.Id,
+				InstanceId:     payload.InstanceId,
 				Error:          nil,
 				FirstExecution: false,
 			}
@@ -129,7 +130,7 @@ func fakeEchoFunction(payload *pb.Payload, ctx context.Context, callerRef *calle
 
 func fakeHelloFunction(payload *pb.Payload, ctx context.Context, callerRef *caller.CallerServer, logger *slog.Logger) {
 
-	logger.Debug("Using ID", "id", payload.Id)
+	logger.Debug("Using ID", "id", payload.InstanceId)
 	for {
 		select {
 		case <-ctx.Done():
@@ -146,7 +147,7 @@ func fakeHelloFunction(payload *pb.Payload, ctx context.Context, callerRef *call
 
 			payload = &pb.Payload{
 				Data:           []byte("Hello World"),
-				Id:             payload.Id,
+				InstanceId:     payload.InstanceId,
 				Error:          nil,
 				FirstExecution: false,
 			}

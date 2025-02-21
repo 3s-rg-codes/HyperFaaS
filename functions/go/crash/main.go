@@ -19,7 +19,7 @@ func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functio
 
 	resp := &functionRuntimeInterface.Response{
 		Data:  []byte(""),
-		Error: []byte("Container crashed"),
+		Error: "Container crashed",
 		Id:    in.Id,
 	}
 

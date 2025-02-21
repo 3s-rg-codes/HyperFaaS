@@ -4,13 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	"log"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -25,74 +24,74 @@ type Request struct {
 
 type Response struct {
 	Data  []byte
-	Error []byte
+	Error string
 	Id    string
 }
 
 type Function struct {
-	timeout  int
-	address  string
-	request  *Request
-	response *Response
-	id       string
+	timeout    int
+	address    string
+	request    *Request
+	response   *Response
+	instanceId string
+	functionId string
 }
 
 func New(timeout int) *Function {
 	address, ok := os.LookupEnv("CALLER_SERVER_ADDRESS")
 	if !ok {
-		log.Printf("Environment variable CALLER_SERVER_ADDRESS not found")
+		fmt.Printf("Environment variable CALLER_SERVER_ADDRESS not found")
 	}
+	functionId, ok := os.LookupEnv("FUNCTION_ID")
+	if !ok {
+		fmt.Printf("Environment variable FUNCTION_ID not found")
+	}
+	fmt.Printf("CALLER_SERVER_ADDRESS: %s", address)
 
 	return &Function{
-		timeout:  timeout,
-		address:  fmt.Sprint(address, ":50052"),
-		request:  &Request{},
-		response: &Response{},
-		id:       getID(),
+		timeout:    timeout,
+		address:    address,
+		request:    &Request{},
+		response:   &Response{},
+		instanceId: getID(),
+		functionId: functionId,
 	}
 }
 
 // Ready is called from inside the function instance container. It waits for a request from the caller server.
 func (f *Function) Ready(handler handler) {
-
-	//Set up logging file inside the Docker container. Will be mounted to functions/logs
-	logger := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.id))
+	logger := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.instanceId))
 
 	connection, err := grpc.NewClient(f.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-
-	logger.Debug("Connected to the worker", "address", f.address)
-
-	defer connection.Close()
-
 	if err != nil {
 		logger.Error("failed to connect", "error", err)
 	}
+	defer connection.Close()
 
 	c := pb.NewFunctionServiceClient(connection)
 
 	//Set the id in the response to the id of the container
-	f.response.Id = f.id
-
-	logger.Info("Container ID is " + f.id)
+	f.response.Id = f.instanceId
 
 	defer logger.Info("Closing connection.")
 	first := true
 
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(f.timeout)*time.Second)
-		defer cancel()
 
 		//We ask for a new request whilst sending the response of the previous one
-		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, Error: &common.Error{Message: f.response.Error}, Id: f.response.Id, FirstExecution: first})
-		first = false
+		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, InstanceId: f.response.Id, FunctionId: f.functionId, FirstExecution: first, Error: &common.Error{Message: f.response.Error}})
 
+		cancel()
+
+		first = false
 		if err != nil {
 			logger.Error("failed to call", "error", err)
 			return
 		}
 		logger.Debug("Received request", "data", p.Data)
 
-		f.request = &Request{p.Data, p.Id}
+		f.request = &Request{p.Data, p.InstanceId}
 
 		f.response = handler(ctx, f.request)
 

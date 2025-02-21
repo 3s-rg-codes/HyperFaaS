@@ -18,4 +18,4 @@ COPY --from=builder /root/leaf ./leaf
 #Leaf is exposed on this port
 EXPOSE 50052
 
-CMD ["./leaf", "--address=0.0.0.0:50050", "--log-level=debug", "--log-format=text", "--worker-ids=worker:50051", "--scheduler-type=map"]
+CMD ["./leaf", "--address=0.0.0.0:50050", "--log-level=debug", "--log-format=dev", "--worker-ids=worker:50051", "--scheduler-type=mru"]

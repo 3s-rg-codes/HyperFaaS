@@ -2,11 +2,13 @@ package main
 
 import (
 	"flag"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/mock"
 	"log/slog"
 	"os"
 	"time"
+
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/mock"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
@@ -15,13 +17,14 @@ import (
 
 type WorkerConfig struct {
 	General struct {
-		Address         string `env:"WORKER_ADDRESS"`
-		Environment     string `env:"ENVIRONMENT"`
-		ListenerTimeout int    `env:"TIMEOUT"`
+		Address             string `env:"WORKER_ADDRESS"`
+		CallerServerAddress string `env:"CALLER_SERVER_ADDRESS"`
+		ListenerTimeout     int    `env:"LISTENER_TIMEOUT"`
 	}
 	Runtime struct {
-		Type       string `env:"RUNTIME_TYPE"`
-		AutoRemove bool   `env:"RUNTIME_AUTOREMOVE"`
+		Type          string `env:"RUNTIME_TYPE"`
+		AutoRemove    bool   `env:"RUNTIME_AUTOREMOVE"`
+		Containerized bool   `env:"RUNTIME_CONTAINERIZED"`
 	}
 	Log struct {
 		Level    string `env:"LOG_LEVEL"`
@@ -32,13 +35,14 @@ type WorkerConfig struct {
 
 func parseArgs() (wc WorkerConfig) {
 	flag.StringVar(&(wc.General.Address), "address", "", "Worker address. (Env: WORKER_ADDRESS)")
+	flag.StringVar(&(wc.General.CallerServerAddress), "caller-server-address", "", "Caller server address. (Env: CALLER_SERVER_ADDRESS)")
 	flag.StringVar(&(wc.Runtime.Type), "runtime", "", "Container runtime type. (Env: RUNTIME_TYPE)")
-	flag.IntVar(&(wc.General.ListenerTimeout), "timeout", 20, "specify timeout before container is removed")
+	flag.IntVar(&(wc.General.ListenerTimeout), "timeout", 20, "Timeout in seconds before leafnode listeners are removed from status stream updates. (Env: LISTENER_TIMEOUT)")
 	flag.BoolVar(&(wc.Runtime.AutoRemove), "auto-remove", false, "Auto remove containers. (Env: RUNTIME_AUTOREMOVE)")
 	flag.StringVar(&(wc.Log.Level), "log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
 	flag.StringVar(&(wc.Log.Format), "log-format", "text", "Log format (json or text) (Env: LOG_FORMAT)")
 	flag.StringVar(&(wc.Log.FilePath), "log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
-	flag.StringVar(&(wc.General.Environment), "environment", "local", "Specify the environment to run in (local, compose)")
+	flag.BoolVar(&(wc.Runtime.Containerized), "containerized", false, "Use socket to connect to Docker. (Env: RUNTIME_CONTAINERIZED)")
 
 	flag.Parse()
 	return
@@ -102,12 +106,14 @@ func main() {
 
 	var runtime cr.ContainerRuntime
 
-	callerServer := caller.NewCallerServer(logger)
+	statsManager := stats.NewStatsManager(logger, time.Duration(wc.General.ListenerTimeout)*time.Second)
+
+	callerServer := caller.NewCallerServer(wc.General.CallerServerAddress, logger, statsManager)
 
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.AutoRemove, wc.General.Environment, logger)
+		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.CallerServerAddress, logger)
 	case "fake":
 		runtime = mock.NewMockRuntime(callerServer, logger)
 	default:
@@ -115,7 +121,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	c := controller.NewController(runtime, callerServer, logger, wc.General.Address, time.Duration(wc.General.ListenerTimeout))
+	c := controller.NewController(runtime, callerServer, statsManager, logger, wc.General.Address)
 
 	c.StartServer()
 }
