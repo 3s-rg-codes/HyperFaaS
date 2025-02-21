@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/tests/helpers"
-	"log/slog"
-	"sync"
-	"time"
 )
 
 func TestOneNodeListening(client pb.ControllerClient, testController controller.Controller, logger slog.Logger, spec helpers.ResourceSpec, config FullConfig) error {
@@ -80,7 +81,7 @@ func TestOneNodeListening(client pb.ControllerClient, testController controller.
 		return fmt.Errorf("expected and actual stats are not equal")
 	}
 
-	if config.Config.Environment == "local" {
+	if config.Config.Containerized == false {
 		testController.StatsManager.RemoveListener(nodeID)
 	}
 
@@ -164,7 +165,7 @@ func TestMultipleNodesListening(client pb.ControllerClient, testController contr
 			result = false
 		}
 
-		if config.Config.Environment == "local" {
+		if config.Config.Containerized == false {
 			testController.StatsManager.RemoveListener(nodeID)
 		}
 	}
@@ -278,7 +279,7 @@ loop:
 		return fmt.Errorf("expected and actual stats are not equal")
 	}
 
-	if config.Config.Environment == "local" {
+	if config.Config.Containerized == false {
 		testController.StatsManager.RemoveListener(nodeID)
 	}
 	return nil

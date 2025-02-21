@@ -2,7 +2,6 @@ syntax = "proto3";
 option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/controller";
 
 import "common/common.proto";
-import "google/protobuf/timestamp.proto";
 
 package controller;
 
@@ -31,11 +30,30 @@ message StartRequest {
   Config config = 3;
 }
 
+enum Type {
+  TYPE_CONTAINER = 0;
+}
+
+enum Event {
+  EVENT_RESPONSE = 0;
+  EVENT_DOWN = 1;
+  EVENT_TIMEOUT = 2;
+  EVENT_START = 3;
+  EVENT_STOP = 4;
+  EVENT_CALL = 5;
+}
+
+enum Status {
+  STATUS_SUCCESS = 0;
+  STATUS_FAILED = 1;
+}
+
 message StatusUpdate {
   string instance_id = 1;
-  string type = 2;
-  string event = 3;
-  string status = 4;
+  Type type = 2;
+  Event event = 3;
+  Status status = 4;
+  string function_id = 5;
 }
 
 message StatusRequest {
@@ -55,8 +73,8 @@ message InstanceState {
   string instance_id = 1;
   bool is_active = 2;
   // Duration fields stored in milliseconds
-  google.protobuf.Timestamp lastworked = 3;
-  google.protobuf.Timestamp created = 4;
+  int64 time_since_last_work = 3;
+  int64 uptime = 4;
 }
 
 message FunctionState {

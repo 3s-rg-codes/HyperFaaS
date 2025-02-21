@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -14,56 +15,70 @@ import (
 
 type CallerServer struct {
 	pb.UnimplementedFunctionServiceServer
-	FunctionCalls     FunctionCalls
-	FunctionResponses FunctionResponses
+	Address           string
+	FunctionCalls     InstanceCalls
+	FunctionResponses InstanceResponses
+	StatsManager      *stats.StatsManager
 	logger            *slog.Logger
 }
 
-type FunctionCalls struct {
+type InstanceCalls struct {
 	FcMap map[string]chan []byte
 	mu    sync.RWMutex
 }
 
-type FunctionResponses struct {
-	FrMap map[string]chan *Response
+type InstanceResponses struct {
+	FrMap map[string]chan []byte
 	mu    sync.RWMutex
 }
 
-type Response struct {
-	Data  []byte
-	Error []byte
+func NewCallerServer(address string, logger *slog.Logger, statsManager *stats.StatsManager) *CallerServer {
+	return &CallerServer{
+		Address:      address,
+		logger:       logger,
+		StatsManager: statsManager,
+		FunctionCalls: InstanceCalls{
+			FcMap: make(map[string]chan []byte),
+		},
+		FunctionResponses: InstanceResponses{
+			FrMap: make(map[string]chan []byte),
+		},
+	}
 }
 
 func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call, error) {
 	// Pass payload to the functionResponses channel IF it exists
 	if !payload.FirstExecution {
-		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.Id)
-		go s.PushResponseToChannel(payload.Id, &Response{Data: payload.Data}) //TODO
+		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.InstanceId)
+		go s.QueueInstanceResponse(payload.InstanceId, payload.Data)
+	}
+
+	callChan := s.GetInstanceCall(payload.InstanceId)
+	if callChan == nil {
+		s.logger.Error("Channel not found", "instance ID", payload.InstanceId)
+		return nil, status.Error(codes.NotFound, "Function channel not found")
 	}
 
 	// Wait for the function to be called
-	s.logger.Debug("Looking at channel for a call", "instance ID", payload.Id)
-	channel := s.ExtractCallFromChannel(payload.Id)
-	if channel == nil {
-		s.logger.Error("Channel not found for", "id", payload.Id)
-		return nil, status.Error(codes.NotFound, "Channel not found")
+	s.logger.Debug("Looking at channel for a call", "instance ID", payload.InstanceId)
+	select {
+	case call, ok := <-callChan:
+		if !ok {
+			s.logger.Error("Channel closed", "instance ID", payload.InstanceId)
+			return nil, status.Error(codes.Unavailable, "Function channel was closed")
+		}
+		s.logger.Debug("Received call", "call", call)
+		return &pb.Call{Data: call, InstanceId: payload.InstanceId}, nil
+	case <-ctx.Done():
+		s.logger.Info("Context cancelled while waiting for call", "function ID", payload.FunctionId, "instance ID", payload.InstanceId)
+		s.StatsManager.Enqueue(stats.Event().Function(payload.FunctionId).Container(payload.InstanceId).Timeout())
+		s.UnregisterFunctionInstance(payload.InstanceId)
+		return nil, nil
 	}
-
-	call, ok := <-channel
-
-	if !ok {
-		s.logger.Error("Channel closed", "instance ID", payload.Id)
-		return nil, status.Error(codes.Internal, "Channel closed")
-	}
-
-	s.logger.Debug("Received call", "call", call)
-
-	// Send the call to the function instance
-	return &pb.Call{Data: call, Id: payload.Id}, nil
 }
 
 func (s *CallerServer) Start() {
-	lis, err := net.Listen("tcp", ":50052")
+	lis, err := net.Listen("tcp", s.Address)
 	if err != nil {
 		s.logger.Error("Failed to listen", "error", err)
 		return
@@ -79,30 +94,19 @@ func (s *CallerServer) Start() {
 	defer grpcServer.Stop()
 }
 
-func NewCallerServer(logger *slog.Logger) *CallerServer {
-	return &CallerServer{
-		logger: logger,
-		FunctionCalls: FunctionCalls{
-			FcMap: make(map[string]chan []byte),
-		},
-		FunctionResponses: FunctionResponses{
-			FrMap: make(map[string]chan *Response),
-		},
-	}
-}
-
-// RegisterFunction adds message channels for the given function ID
-func (s *CallerServer) RegisterFunction(id string) {
+// RegisterFunctionInstance adds message channels for the given function ID
+func (s *CallerServer) RegisterFunctionInstance(id string) {
 	s.FunctionCalls.mu.Lock()
-	defer s.FunctionCalls.mu.Unlock()
-	s.FunctionCalls.FcMap[id] = make(chan []byte, 1)
+	s.FunctionCalls.FcMap[id] = make(chan []byte)
+	s.FunctionCalls.mu.Unlock()
 
 	s.FunctionResponses.mu.Lock()
-	defer s.FunctionResponses.mu.Unlock()
-	s.FunctionResponses.FrMap[id] = make(chan *Response, 1)
+	s.FunctionResponses.FrMap[id] = make(chan []byte)
+	s.FunctionResponses.mu.Unlock()
 }
 
-func (s *CallerServer) UnregisterFunction(id string) {
+// UnregisterFunctionInstance closes and removes message channels for the given function ID
+func (s *CallerServer) UnregisterFunctionInstance(id string) {
 	s.FunctionCalls.mu.Lock()
 	if _, ok := s.FunctionCalls.FcMap[id]; ok {
 		close(s.FunctionCalls.FcMap[id])
@@ -118,7 +122,7 @@ func (s *CallerServer) UnregisterFunction(id string) {
 	s.FunctionResponses.mu.Unlock()
 }
 
-func (s *CallerServer) PassCallToChannel(id string, call []byte) {
+func (s *CallerServer) QueueInstanceCall(id string, call []byte) {
 	s.FunctionCalls.mu.RLock()
 	defer s.FunctionCalls.mu.RUnlock()
 	if ch, ok := s.FunctionCalls.FcMap[id]; ok {
@@ -126,7 +130,7 @@ func (s *CallerServer) PassCallToChannel(id string, call []byte) {
 	}
 }
 
-func (s *CallerServer) ExtractCallFromChannel(id string) chan []byte {
+func (s *CallerServer) GetInstanceCall(id string) chan []byte {
 	s.FunctionCalls.mu.RLock()
 	ch, ok := s.FunctionCalls.FcMap[id]
 	s.FunctionCalls.mu.RUnlock()
@@ -137,7 +141,7 @@ func (s *CallerServer) ExtractCallFromChannel(id string) chan []byte {
 	return nil
 }
 
-func (s *CallerServer) ExtractResponseFromChannel(id string) chan *Response {
+func (s *CallerServer) GetInstanceResponse(id string) chan []byte {
 	s.FunctionResponses.mu.RLock()
 	ch, ok := s.FunctionResponses.FrMap[id]
 	s.FunctionResponses.mu.RUnlock()
@@ -147,7 +151,7 @@ func (s *CallerServer) ExtractResponseFromChannel(id string) chan *Response {
 	return nil
 }
 
-func (s *CallerServer) PushResponseToChannel(id string, response *Response) {
+func (s *CallerServer) QueueInstanceResponse(id string, response []byte) {
 	s.FunctionResponses.mu.RLock()
 	defer s.FunctionResponses.mu.RUnlock()
 	if ch, ok := s.FunctionResponses.FrMap[id]; ok {

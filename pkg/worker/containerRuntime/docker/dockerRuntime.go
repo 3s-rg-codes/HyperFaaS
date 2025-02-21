@@ -29,10 +29,12 @@ import (
 
 type DockerRuntime struct {
 	cr.ContainerRuntime
-	Cli             *client.Client
-	autoRemove      bool
-	outputFolderAbs string
-	logger          *slog.Logger
+	Cli                 *client.Client
+	autoRemove          bool
+	containerized       bool
+	callerServerAddress string
+	outputFolderAbs     string
+	logger              *slog.Logger
 }
 
 const (
@@ -44,17 +46,20 @@ const (
 var (
 	// Regex that matches all chars that are not valid in a container names
 	forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
-	environment    string
 )
 
-func NewDockerRuntime(autoRemove bool, env string, logger *slog.Logger) *DockerRuntime {
-	cli, err := client.NewClientWithOpts(client.WithHost("unix:///var/run/docker.sock"), client.WithAPIVersionNegotiation())
+func NewDockerRuntime(containerized bool, autoRemove bool, callerServerAddress string, logger *slog.Logger) *DockerRuntime {
+	var clientOpt client.Opt
+	if containerized {
+		clientOpt = client.WithHost("unix:///var/run/docker.sock")
+	} else {
+		clientOpt = client.FromEnv
+	}
+	cli, err := client.NewClientWithOpts(clientOpt, client.WithAPIVersionNegotiation())
 	if err != nil {
 		logger.Error("Could not create Docker client", "error", err)
 		return nil
 	}
-
-	environment = env
 
 	// Figure out where to put the logs
 	var outputFolderAbs string
@@ -83,7 +88,7 @@ func NewDockerRuntime(autoRemove bool, env string, logger *slog.Logger) *DockerR
 		}
 	}
 
-	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger}
+	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized, callerServerAddress: callerServerAddress}
 }
 
 // Start a container with the given image tag and configuration.
@@ -119,48 +124,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *cont
 	// only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed in the container name, just remove all forbidden characters
 	containerName = forbiddenChars.ReplaceAllString(containerName, "")
 
-	var networkMode container.NetworkMode
-	var mountType mount.Type
-	var source string
-	var callerAddress string
-
-	switch environment {
-	case "local":
-		networkMode = "bridge"
-		mountType = mount.TypeBind
-		source = d.outputFolderAbs
-		callerAddress = "host.docker.internal"
-	case "compose":
-		networkMode = "hyperfaas-network"
-		mountType = mount.TypeVolume
-		source = "function-logs"
-		callerAddress = "worker"
-	}
-
-	resp, err := d.Cli.ContainerCreate(ctx, &container.Config{
-		Image: imageTag,
-		ExposedPorts: nat.PortSet{
-			"50052/tcp": struct{}{},
-		},
-		Env: []string{
-			"CALLER_SERVER_ADDRESS=" + callerAddress,
-		},
-	}, &container.HostConfig{
-		AutoRemove:  d.autoRemove,
-		NetworkMode: networkMode,
-		Mounts: []mount.Mount{
-			{
-				Type:   mountType,
-				Source: source,
-				Target: "/logs/",
-			},
-		},
-		Resources: container.Resources{
-			//Memory:    int64(config.Memory),
-			//CPUPeriod: int64(config.Cpu.Period),
-			//CPUQuota:  int64(config.Cpu.Quota),
-		},
-	}, &network.NetworkingConfig{}, nil, containerName)
+	resp, err := d.Cli.ContainerCreate(ctx, d.createContainerConfig(imageTag), d.createHostConfig(), &network.NetworkingConfig{}, nil, containerName)
 
 	if err != nil {
 		d.logger.Error("Could not create container", "image", imageTag, "error", err)
@@ -213,30 +177,17 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId *common.Inst
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId.Id}),
 	}
 	eventsChan, errChan := d.Cli.Events(ctx, opt)
+
 	for {
 		select {
-		case event, ok := <-eventsChan:
-			if !ok {
-				eventsChan = nil
-			} else {
-				d.logger.Error("Docker event", "instance_id", instanceId.Id, "action", event.Action)
-				if event.Action == "die" {
-					return fmt.Errorf("container died")
-				}
+		case event := <-eventsChan:
+			if event.Action == "die" {
+				return fmt.Errorf("container died")
 			}
-		//When a function call is successful, Docker events  retruns an annoying error that we can ignore.
-		//WARNING: Maybe there can be other errors that we should not ignore.
-		//TODO: Find a better way to handle this
-		case _, ok := <-errChan:
-			if !ok {
-				errChan = nil
-			}
+		case <-errChan:
+			// Ignore Docker event errors as they're usually not critical
+			continue
 		case <-ctx.Done():
-			return nil
-		}
-
-		// return if both channels are closed
-		if eventsChan == nil && errChan == nil {
 			return nil
 		}
 	}
@@ -278,4 +229,59 @@ func (d *DockerRuntime) ContainerExists(ctx context.Context, instanceID string) 
 func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) io.ReadCloser { //TODO: we need to find a return type that is compatible with all container runtimes and makes sense
 	st, _ := d.Cli.ContainerStats(ctx, containerID, false)
 	return st.Body
+}
+
+func (d *DockerRuntime) createContainerConfig(imageTag string) *container.Config {
+	return &container.Config{
+		Image: imageTag,
+		ExposedPorts: nat.PortSet{
+			"50052/tcp": struct{}{},
+		},
+		Env: []string{
+			fmt.Sprintf("CALLER_SERVER_ADDRESS=%s", d.getCallerServerAddress()),
+			fmt.Sprintf("FUNCTION_ID=%s", imageTag),
+		},
+	}
+}
+
+func (d *DockerRuntime) createHostConfig() *container.HostConfig {
+	var networkMode string
+	if d.containerized {
+		networkMode = "hyperfaas-network"
+	} else {
+		networkMode = "host"
+	}
+	return &container.HostConfig{
+		AutoRemove:  d.autoRemove,
+		NetworkMode: container.NetworkMode(networkMode),
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeVolume,
+				Source: "function-logs",
+				Target: "/logs/",
+			},
+		},
+		Resources: container.Resources{
+			//TODO UNCOMMENT
+			//Memory:    int64(config.Memory),
+			//CPUPeriod: int64(config.Cpu.Period),
+			//CPUQuota:  int64(config.Cpu.Quota),
+		},
+	}
+}
+
+func (d *DockerRuntime) getCallerServerAddress() string {
+	// Containerized mode uses docker network dns to resolve the caller server address, hence we need to replace the localhost/127.0.0.1/0.0.0.0 with worker
+	if d.containerized {
+		address := d.callerServerAddress
+		address = strings.Replace(address, "localhost", "worker", 1)
+		address = strings.Replace(address, "127.0.0.1", "worker", 1)
+		address = strings.Replace(address, "0.0.0.0", "worker", 1)
+		return address
+	}
+	// Replace localhost/127.0.0.1 with host.docker.internal for non-containerized mode
+	address := d.callerServerAddress
+	address = strings.Replace(address, "localhost", "host.docker.internal", 1)
+	address = strings.Replace(address, "127.0.0.1", "host.docker.internal", 1)
+	return address
 }

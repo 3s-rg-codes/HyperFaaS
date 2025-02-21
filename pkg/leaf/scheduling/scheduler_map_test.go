@@ -5,12 +5,13 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
 	"github.com/stretchr/testify/assert"
 )
 
-// CreateTestStateSyncMap initializes a test worker state
+// CreateTestSyncMapScheduler initializes a test worker state
 // The state is structured as follows:
 //
 // WorkerStateMap (sync.Map):
@@ -19,8 +20,8 @@ import (
 // │   ├── func1 (key)
 // │   │   ├── Idle (key)
 // │   │   │   ├── instance1 → { LastWorked: ?, Created: ? } //Oldest
-// │   │   │   ├── instance2 → { LastWorked: ?, Created: ? } //2nd oldest
-// │   │   │   └── instance3 → { LastWorked: ?, Created: ? } //Newest
+// │   │   │   ├── instance2 → { LastWorked: ?, Created: ? } //2nd  most recently used
+// │   │   │   └── instance3 → { LastWorked: ?, Created: ? } //Newest - Most recently used
 // │   │   ├── Running (key)
 // │   │   │   ├── instance4 → { LastWorked: ?, Created: ? } // Oldest
 // │   │   │   └── instance5 → { LastWorked: ?, Created: ? } // Newest
@@ -41,9 +42,19 @@ import (
 // │   │   │   ├── instance12 → { LastWorked: ?, Created: ? } //Oldest
 // │   │   │   └── instance13 → { LastWorked: ?, Created: ? } //Newest
 // │
-func CreateTestStateSyncMap() *syncMapScheduler {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+func CreateTestSyncMapScheduler() *syncMapScheduler {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	scheduler := NewSyncMapScheduler([]state.WorkerID{"worker1", "worker2"}, logger)
+	return AddTestInstances(scheduler).(*syncMapScheduler)
+}
+
+func CreateTestMRUScheduler() *mruScheduler {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	scheduler := NewMRUScheduler(state.NewWorkers(logger), []state.WorkerID{"worker1", "worker2"}, logger)
+	return AddTestInstances(scheduler).(*mruScheduler)
+}
+
+func AddTestInstances(scheduler Scheduler) Scheduler {
 	scheduler.UpdateWorkerState("worker1", state.WorkerStateUp)
 	scheduler.UpdateWorkerState("worker2", state.WorkerStateUp)
 	scheduler.CreateFunction("worker1", "func1")
@@ -69,19 +80,25 @@ func CreateTestStateSyncMap() *syncMapScheduler {
 
 	// Set some instances to idle for worker1
 	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateIdle)
+	time.Sleep(10 * time.Millisecond)
 	scheduler.UpdateInstanceState("worker1", "func1", "instance2", state.InstanceStateIdle)
+	time.Sleep(10 * time.Millisecond)
 	scheduler.UpdateInstanceState("worker1", "func1", "instance3", state.InstanceStateIdle)
+	time.Sleep(10 * time.Millisecond)
 	scheduler.UpdateInstanceState("worker1", "func2", "instance6", state.InstanceStateIdle)
+	time.Sleep(10 * time.Millisecond)
 	scheduler.UpdateInstanceState("worker1", "func2", "instance7", state.InstanceStateIdle)
+	time.Sleep(10 * time.Millisecond)
 
 	// Set some instances to idle for worker2
 	scheduler.UpdateInstanceState("worker2", "func3", "instance10", state.InstanceStateIdle)
+	time.Sleep(10 * time.Millisecond)
 	scheduler.UpdateInstanceState("worker2", "func3", "instance11", state.InstanceStateIdle)
+	time.Sleep(10 * time.Millisecond)
 
 	return scheduler
 }
-
-func TestSchedulerMapUpdateWorkerState(t *testing.T) {
+func TestSyncMapSchedulerUpdateWorkerState(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewSyncMapScheduler([]state.WorkerID{"worker1", "worker2"}, logger)
 	scheduler.UpdateWorkerState("worker1", state.WorkerStateUp)
@@ -91,7 +108,7 @@ func TestSchedulerMapUpdateWorkerState(t *testing.T) {
 	assert.NotNil(t, scheduler.workers.GetWorker("worker2"))
 }
 
-func TestSchedulerMapCreateFunction(t *testing.T) {
+func TestSyncMapSchedulerCreateFunction(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewSyncMapScheduler([]state.WorkerID{"worker1", "worker2"}, logger)
 	scheduler.UpdateWorkerState("worker1", state.WorkerStateUp)
@@ -113,54 +130,31 @@ func TestSchedulerMapCreateFunction(t *testing.T) {
 	assert.NotNil(t, scheduler.workers.GetInstances("worker1", "func2", state.InstanceStateRunning))
 }
 
-func TestSchedulerMapUpdateInstanceState(t *testing.T) {
-	// Create a test state - its unused for this test but the constructor requires it
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewSyncMapScheduler([]state.WorkerID{"worker1", "worker2"}, logger)
-	// Register our test scenario:
-	// worker1 has func1 and func2
-	// worker2 has func3 and func1
-	// func1 has instance1 and instance2
-	// func2 has instance3
-	scheduler.UpdateWorkerState("worker1", state.WorkerStateUp)
-	scheduler.UpdateWorkerState("worker2", state.WorkerStateUp)
-	scheduler.CreateFunction("worker1", "func1")
-	scheduler.CreateFunction("worker1", "func2")
-
-	scheduler.CreateFunction("worker2", "func3")
-	scheduler.CreateFunction("worker2", "func1")
-
-	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker1", "func1", "instance2", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker1", "func2", "instance3", state.InstanceStateNew)
-
-	scheduler.UpdateInstanceState("worker2", "func1", "instance1", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker2", "func1", "instance2", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker2", "func3", "instance3", state.InstanceStateNew)
-	scheduler.workers.DebugPrint()
-	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateRunning), 2)
-	assert.Len(t, scheduler.workers.GetInstances("worker2", "func1", state.InstanceStateRunning), 2)
-	assert.Len(t, scheduler.workers.GetInstances("worker2", "func3", state.InstanceStateRunning), 1)
-
-	// Now turn them to idle
-	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateIdle)
-	// Should be 1 running and 1 idle
-	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateRunning), 1)
-	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateIdle), 1)
-	// Now everything should be idle
-	scheduler.UpdateInstanceState("worker1", "func1", "instance2", state.InstanceStateIdle)
-	scheduler.UpdateInstanceState("worker1", "func2", "instance3", state.InstanceStateIdle)
-	scheduler.UpdateInstanceState("worker2", "func1", "instance1", state.InstanceStateIdle)
-	scheduler.UpdateInstanceState("worker2", "func1", "instance3", state.InstanceStateIdle)
-	scheduler.UpdateInstanceState("worker2", "func3", "instance2", state.InstanceStateIdle)
-
+func TestSyncMapSchedulerUpdateInstanceState(t *testing.T) {
+	scheduler := CreateTestSyncMapScheduler()
+	//------------Worker 1------------
+	// Turn instance 1 to Running
+	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateRunning)
+	// Should be 3 running and 2 idle
+	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateRunning), 3)
 	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateIdle), 2)
-	assert.Len(t, scheduler.workers.GetInstances("worker1", "func2", state.InstanceStateIdle), 1)
-	assert.Len(t, scheduler.workers.GetInstances("worker2", "func1", state.InstanceStateIdle), 2)
+	// Turn instance 2 and 3 to Running
+	scheduler.UpdateInstanceState("worker1", "func1", "instance2", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker1", "func1", "instance3", state.InstanceStateRunning)
+	// Should be 5 running and 0 idle
+	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateRunning), 5)
+	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateIdle), 0)
+
+	//------------Worker 2------------
+	// Turn instance 10 to Running
+	scheduler.UpdateInstanceState("worker2", "func3", "instance10", state.InstanceStateRunning)
+	// Should be 3 running and 1 idle
+	assert.Len(t, scheduler.workers.GetInstances("worker2", "func3", state.InstanceStateRunning), 3)
 	assert.Len(t, scheduler.workers.GetInstances("worker2", "func3", state.InstanceStateIdle), 1)
+
 }
 
-func TestSchedulerMapDeleteInstance(t *testing.T) {
+func TestSyncMapSchedulerDeleteInstance(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewSyncMapScheduler([]state.WorkerID{"worker1", "worker2"}, logger)
 
@@ -182,8 +176,8 @@ func TestSchedulerMapDeleteInstance(t *testing.T) {
 	assert.Equal(t, state.InstanceID("instance2"), instances[0].InstanceID)
 }
 
-func TestSchedulerMapSchedule(t *testing.T) {
-	scheduler := CreateTestStateSyncMap()
+func TestSyncMapSchedulerSchedule(t *testing.T) {
+	scheduler := CreateTestSyncMapScheduler()
 	workerID, instanceID, err := scheduler.Schedule(context.Background(), "func1") // either func1, func2, or func3 should be scheduled
 	assert.NoError(t, err)
 	assert.Equal(t, state.WorkerID("worker1"), workerID)
@@ -192,4 +186,70 @@ func TestSchedulerMapSchedule(t *testing.T) {
 	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateRunning), 3)
 	// now just 2 should be idle
 	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateIdle), 2)
+}
+
+func TestMRUSchedulerUpdateWorkerState(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	scheduler := NewMRUScheduler(state.NewWorkers(logger), []state.WorkerID{"worker1", "worker2"}, logger)
+	scheduler.UpdateWorkerState("worker1", state.WorkerStateUp)
+	scheduler.UpdateWorkerState("worker2", state.WorkerStateUp)
+	worker, err := scheduler.workers.GetWorker("worker1")
+	assert.NoError(t, err)
+	assert.NotNil(t, worker)
+	worker, err = scheduler.workers.GetWorker("worker2")
+	assert.NoError(t, err)
+	assert.NotNil(t, worker)
+}
+
+func TestMRUSchedulerUpdateInstanceState(t *testing.T) {
+	scheduler := CreateTestMRUScheduler()
+	//------------Worker 1------------
+	// Turn instance 1 to Running
+	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateRunning)
+	// Should be 3 running and 2 idle
+	worker, err := scheduler.workers.GetWorker("worker1")
+	assert.NoError(t, err)
+	idleInstances := worker.Functions["func1"].Instances[state.InstanceStateIdle]
+	runningInstances := worker.Functions["func1"].Instances[state.InstanceStateRunning]
+	assert.Len(t, idleInstances, 2)
+	assert.Len(t, runningInstances, 3)
+
+	//------------Worker 2------------
+	// Turn instance 10 to Running
+	scheduler.UpdateInstanceState("worker2", "func3", "instance10", state.InstanceStateRunning)
+	// Should be 3 running and 1 idle
+	worker, err = scheduler.workers.GetWorker("worker2")
+	assert.NoError(t, err)
+	idleInstances = worker.Functions["func3"].Instances[state.InstanceStateIdle]
+	runningInstances = worker.Functions["func3"].Instances[state.InstanceStateRunning]
+	assert.Len(t, idleInstances, 1)
+	assert.Len(t, runningInstances, 3)
+
+}
+
+func TestMRUSchedulerSchedule(t *testing.T) {
+	scheduler := CreateTestMRUScheduler()
+
+	//------------Worker 1------------
+	// There are 3 idle instances for func1
+	workerID, instanceID, err := scheduler.Schedule(context.Background(), "func1")
+	assert.NoError(t, err)
+	assert.Equal(t, state.WorkerID("worker1"), workerID)
+	assert.Equal(t, state.InstanceID("instance3"), instanceID)
+
+	workerID, instanceID, err = scheduler.Schedule(context.Background(), "func1")
+	assert.NoError(t, err)
+	assert.Equal(t, state.WorkerID("worker1"), workerID)
+	assert.Equal(t, state.InstanceID("instance2"), instanceID)
+
+	workerID, instanceID, err = scheduler.Schedule(context.Background(), "func1")
+	assert.NoError(t, err)
+	assert.Equal(t, state.WorkerID("worker1"), workerID)
+	assert.Equal(t, state.InstanceID("instance1"), instanceID)
+
+	//Should return an empty instanceID because there are no idle instances left
+	_, instanceID, err = scheduler.Schedule(context.Background(), "func1")
+	assert.NoError(t, err)
+	assert.Equal(t, state.InstanceID(""), instanceID)
+
 }

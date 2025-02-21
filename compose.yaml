@@ -15,7 +15,7 @@ services:
         - action: rebuild
           path: .
           target: .
-  leader:
+  leaf:
     build:
       context: .
       dockerfile: leaf.Dockerfile

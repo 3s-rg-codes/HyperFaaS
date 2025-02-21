@@ -1,7 +1,6 @@
 package stats
 
 import (
-	"github.com/stretchr/testify/assert"
 	"log/slog"
 	"math/rand"
 	"os"
@@ -10,11 +9,21 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func TestEnqueue(t *testing.T) {
+const (
+	listenerTimeout = 10 * time.Second
+)
+
+func createTestStatsManager() *StatsManager {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	return NewStatsManager(logger, listenerTimeout)
+}
+
+func TestEnqueue(t *testing.T) {
+	sm := createTestStatsManager()
 
 	sm.Enqueue(&StatusUpdate{})
 	length := len(sm.Updates.Queue)
@@ -22,8 +31,7 @@ func TestEnqueue(t *testing.T) {
 }
 
 func TestEnqueue_Multiple(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	count := 10000
 	wg := sync.WaitGroup{}
@@ -43,8 +51,7 @@ func TestEnqueue_Multiple(t *testing.T) {
 }
 
 func TestDequeue(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	suIn := &StatusUpdate{}
 
@@ -58,8 +65,7 @@ func TestDequeue(t *testing.T) {
 }
 
 func TestDequeue_Multiple(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	var arrIn []*StatusUpdate
 	count := 101 //CAREFUL: Only works for uneven numbers
@@ -67,9 +73,9 @@ func TestDequeue_Multiple(t *testing.T) {
 	for i := 1; i <= count; i++ {
 		var su *StatusUpdate
 		if i%2 == 0 {
-			su = &StatusUpdate{Status: "hi"}
+			su = &StatusUpdate{Status: StatusSuccess}
 		} else {
-			su = &StatusUpdate{Status: "Hello"}
+			su = &StatusUpdate{Status: StatusFailed}
 		}
 		arrIn = append(arrIn, su)
 		sm.Enqueue(su)
@@ -95,8 +101,7 @@ func TestDequeue_Multiple(t *testing.T) {
 }
 
 func TestAddListener(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	nodeID := "1"
 	listeningChan := make(chan StatusUpdate)
@@ -111,8 +116,7 @@ func TestAddListener(t *testing.T) {
 }
 
 func TestAddListeners_Multiple(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	count := 200
 	wg := sync.WaitGroup{}
@@ -144,8 +148,7 @@ func TestAddListeners_Multiple(t *testing.T) {
 }
 
 func TestRemoveListener(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	nodeID := "1"
 	listeningChan := make(chan StatusUpdate)
@@ -164,8 +167,7 @@ func TestRemoveListener(t *testing.T) {
 }
 
 func TestRemoveListener_Multiple(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	var arrID []string
 	count := 200
@@ -200,8 +202,7 @@ func TestRemoveListener_Multiple(t *testing.T) {
 }
 
 func TestGetListenerByID_Multiple(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	count := 200
 
@@ -224,15 +225,14 @@ func TestGetListenerByID_Multiple(t *testing.T) {
 }
 
 func TestStartStreamingToListeners(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	chListener := make(chan StatusUpdate, 10)
 	count := 5 //FOR THIS CASE: count < cap(ch)
 	var arrIn []StatusUpdate
 
 	for i := 0; i <= count; i++ {
-		su := &StatusUpdate{Status: strconv.Itoa(i)}
+		su := &StatusUpdate{Status: StatusSuccess}
 		sm.Enqueue(su)
 		arrIn = append(arrIn, *su)
 	}
@@ -261,15 +261,14 @@ func TestStartStreamingToListeners(t *testing.T) {
 }
 
 func TestStartStreamingToListeners_BufferFull(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	chListener := make(chan StatusUpdate, 10)
 	count := 20
 	var arrIn []StatusUpdate
 
 	for i := 0; i <= count; i++ {
-		su := &StatusUpdate{Status: strconv.Itoa(i)}
+		su := &StatusUpdate{Status: StatusSuccess}
 		sm.Enqueue(su)
 		arrIn = append(arrIn, *su)
 	}
@@ -319,8 +318,7 @@ func TestStartStreamingToListeners_BufferFull(t *testing.T) {
 func TestStartStreamingToListeners_Concurrent(t *testing.T) {
 	t.Logf("Dont worry this test takes about 100 seconds")
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sm := NewStatsManager(logger)
+	sm := createTestStatsManager()
 
 	chListener := make(chan StatusUpdate, 10000) //use same buffer we defined in main
 	resChanExpect := make(chan []StatusUpdate, 1)
@@ -338,7 +336,7 @@ func TestStartStreamingToListeners_Concurrent(t *testing.T) {
 		var arrIn []StatusUpdate
 
 		for i := 0; i <= count; i++ {
-			su := &StatusUpdate{Status: strconv.Itoa(i)}
+			su := &StatusUpdate{Status: StatusSuccess}
 			sm.Enqueue(su)
 			arrIn = append(arrIn, *su)
 			time.Sleep(500 * time.Millisecond)

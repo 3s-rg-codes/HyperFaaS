@@ -5,22 +5,24 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log/slog"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/mock"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/tests/helpers"
 	"github.com/docker/docker/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
-	"log/slog"
-	"os"
-	"strconv"
-	"strings"
-	"time"
 )
 
 type Flags struct {
@@ -28,7 +30,7 @@ type Flags struct {
 	RequestedRuntime *string
 	LogLevel         *string
 	AutoRemove       *bool
-	Environment      *string
+	Containerized    *bool
 	TestCases        *string
 	DockerTolerance  *int
 	ListenerTimeout  *int
@@ -44,17 +46,18 @@ type FullConfig struct {
 }
 
 type TestConfig struct {
-	ServerAddress    string `json:"server_address"`
-	RequestedRuntime string `json:"requested_runtime"`
-	LogLevel         string `json:"log_level"`
-	AutoRemove       bool   `json:"auto_remove"`
-	Environment      string `json:"environment"`
-	TestCases        string `json:"test_cases"`
-	DockerTolerance  int    `json:"docker_tolerance"`
-	ListenerTimeout  int    `json:"listener_timeout"`
-	CPUPeriod        int    `json:"cpu_period"`
-	CPUQuota         int    `json:"cpu_quota"`
-	MemoryLimit      int    `json:"memory_limit"`
+	ServerAddress       string `json:"server_address"`
+	CallerServerAddress string `json:"caller_server_address"`
+	RequestedRuntime    string `json:"requested_runtime"`
+	LogLevel            string `json:"log_level"`
+	AutoRemove          bool   `json:"auto_remove"`
+	Containerized       bool   `json:"containerized"`
+	TestCases           string `json:"test_cases"`
+	DockerTolerance     int    `json:"docker_tolerance"`
+	ListenerTimeout     int    `json:"listener_timeout"`
+	CPUPeriod           int    `json:"cpu_period"`
+	CPUQuota            int    `json:"cpu_quota"`
+	MemoryLimit         int    `json:"memory_limit"`
 }
 
 type StatsTest struct {
@@ -76,7 +79,7 @@ func main() {
 		RequestedRuntime: flag.String("requested_runtime", "", "Requested runtime"),
 		LogLevel:         flag.String("log_level", "", "Log level"),
 		AutoRemove:       flag.Bool("auto_remove", true, "Auto remove"),
-		Environment:      flag.String("environment", "", "Environment"),
+		Containerized:    flag.Bool("containerized", false, "Containerized"),
 		TestCases:        flag.String("test_cases", "", "test cases to run"),
 		DockerTolerance:  flag.Int("docker_tolerance", 0, "Docker tolerance"),
 		ListenerTimeout:  flag.Int("listener_timeout", 0, "Listener timeout"),
@@ -97,7 +100,7 @@ func main() {
 
 	testCasesMax := 9
 	testsMap := make(map[int]bool, 10)
-	testAll := config.Config.Environment == "compose" && config.Config.TestCases == "all"
+	testAll := config.Config.Containerized && config.Config.TestCases == "all"
 
 	if !testAll {
 		for i := 1; i <= testCasesMax; i++ {
@@ -114,21 +117,23 @@ func main() {
 	var runtime containerRuntime.ContainerRuntime
 	var err error
 
-	callerServer := caller.NewCallerServer(logger)
+	statsManager := stats.NewStatsManager(logger, time.Duration(config.Config.ListenerTimeout)*time.Second)
+
+	callerServer := caller.NewCallerServer(config.Config.CallerServerAddress, logger, statsManager)
 
 	switch config.Config.RequestedRuntime {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(config.Config.AutoRemove, config.Config.Environment, logger)
+		runtime = dockerRuntime.NewDockerRuntime(config.Config.Containerized, config.Config.AutoRemove, config.Config.CallerServerAddress, logger)
 	case "fake":
 		runtime = mock.NewMockRuntime(callerServer, logger)
 		testsMap[6] = false
 		logger.Info("Mock runtime and container config test not compatible: Removing...")
 	}
 
-	switch config.Config.Environment {
-	case "local":
-		testController = setupLocalEnv(runtime, callerServer, logger, config.Config)
-	case "compose":
+	switch config.Config.Containerized {
+	case false:
+		testController = setupLocalEnv(runtime, callerServer, statsManager, logger, config.Config)
+	case true:
 		runtime, err = setUpComposeEnv(logger, config.Config)
 		if err != nil {
 			logger.Error("Error occurred when building the controllerClient", "error", err)
@@ -436,9 +441,9 @@ func testStartNonLocalImages(client pb.ControllerClient, runtime containerRuntim
 	return nil
 }
 
-func setupLocalEnv(runtime containerRuntime.ContainerRuntime, callerServer *caller.CallerServer, logger *slog.Logger, config TestConfig) controller.Controller {
+func setupLocalEnv(runtime containerRuntime.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, config TestConfig) controller.Controller {
 
-	testController := *controller.NewController(runtime, callerServer, logger, config.ServerAddress, time.Duration(config.ListenerTimeout)*time.Second)
+	testController := *controller.NewController(runtime, callerServer, statsManager, logger, config.ServerAddress)
 
 	logger.Debug("Created controller")
 	//CallerServer
@@ -458,7 +463,7 @@ func setUpComposeEnv(logger *slog.Logger, config TestConfig) (containerRuntime.C
 		logger.Error("Could not create Docker client", "error", err)
 		return nil, err
 	}
-	runtime := dockerRuntime.NewDockerRuntime(config.AutoRemove, "", logger)
+	runtime := dockerRuntime.NewDockerRuntime(config.Containerized, config.AutoRemove, config.CallerServerAddress, logger)
 	runtime.Cli = dockerCli
 	return runtime, nil
 
@@ -531,8 +536,8 @@ func (c *TestConfig) UpdateFromFlags(f Flags) {
 		c.AutoRemove = *f.AutoRemove
 	}
 
-	if *f.Environment != "" {
-		c.Environment = *f.Environment
+	if *f.Containerized != true {
+		c.Containerized = *f.Containerized
 	}
 
 	if *f.TestCases != "" {
@@ -566,7 +571,8 @@ func (c *TestConfig) printConfig(logger slog.Logger) {
 		"RequestedRuntime", c.RequestedRuntime,
 		"LogLevel", c.LogLevel,
 		"AutoRemove", c.AutoRemove,
-		"Environment", c.Environment,
+		"Containerized", c.Containerized,
+		"CallerServerAddress", c.CallerServerAddress,
 		"TestCases", c.TestCases,
 		"DockerTolerance", c.DockerTolerance,
 		"ListenerTimeout", c.ListenerTimeout,

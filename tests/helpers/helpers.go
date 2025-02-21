@@ -3,6 +3,11 @@ package helpers
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"reflect"
+	"sync"
+	"time"
+
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
@@ -10,10 +15,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"log/slog"
-	"reflect"
-	"sync"
-	"time"
 )
 
 type ResourceSpec struct {
@@ -60,10 +61,10 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 
 	if testCase.ExpectsError {
 		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "start", Status: "error"})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusFailed})
 	} else {
 		// add a success event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "start", Status: "success"})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusSuccess})
 	}
 
 	response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: cID, Data: testCase.CallPayload})
@@ -74,14 +75,14 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 
 	if testCase.ExpectsError {
 		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "call", Status: "error"})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventCall, Status: stats.StatusFailed})
 	} else {
 		// add a success event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "call", Status: "success"})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventCall, Status: stats.StatusSuccess})
 	}
 	//If there was a response, there is a container response event
 	if testCase.ExpectsResponse && response != nil {
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: "container", Event: "response", Status: "success"})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventResponse, Status: stats.StatusSuccess})
 	}
 
 	responseContainerID, err := client.Stop(context.Background(), cID)
@@ -92,10 +93,10 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 
 	if testCase.ExpectsError {
 		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "error"})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: stats.TypeContainer, Event: stats.EventStop, Status: stats.StatusFailed})
 	} else if responseContainerID != nil && responseContainerID.Id == cID.Id {
 		// add a success event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: "container", Event: "stop", Status: "success"})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: stats.TypeContainer, Event: stats.EventStop, Status: stats.StatusSuccess})
 	}
 
 	//UNCOMMENT THIS TO INTENTIONALLY FAIL THE TEST
@@ -150,9 +151,9 @@ func ConnectNodeHelper(controllerServerAddress string, nodeID string, logger slo
 			// Copy the stats to a new struct to avoid copying mutex
 			statCopy := &stats.StatusUpdate{
 				InstanceID: stat.InstanceId,
-				Type:       stat.Type,
-				Event:      stat.Event,
-				Status:     stat.Status,
+				Type:       stats.UpdateType(stat.Type),
+				Event:      stats.UpdateEvent(stat.Event),
+				Status:     stats.UpdateStatus(stat.Status),
 			}
 
 			receivedStats = append(receivedStats, statCopy)

@@ -12,19 +12,21 @@ type StatusUpdateQueue struct {
 }
 
 type StatsManager struct {
-	Updates        StatusUpdateQueue
-	listeners      map[string]chan StatusUpdate
-	toBeTerminated map[string]chan bool
-	mu             sync.Mutex
-	logger         *slog.Logger
+	Updates         StatusUpdateQueue
+	listeners       map[string]chan StatusUpdate
+	toBeTerminated  map[string]chan bool
+	mu              sync.Mutex
+	logger          *slog.Logger
+	listenerTimeout time.Duration
 }
 
-func NewStatsManager(logger *slog.Logger) *StatsManager {
+func NewStatsManager(logger *slog.Logger, listenerTimeout time.Duration) *StatsManager {
 	return &StatsManager{
-		Updates:        StatusUpdateQueue{Queue: make([]StatusUpdate, 0)},
-		listeners:      make(map[string]chan StatusUpdate),
-		toBeTerminated: make(map[string]chan bool),
-		logger:         logger,
+		Updates:         StatusUpdateQueue{Queue: make([]StatusUpdate, 0)},
+		listeners:       make(map[string]chan StatusUpdate),
+		toBeTerminated:  make(map[string]chan bool),
+		logger:          logger,
+		listenerTimeout: listenerTimeout,
 	}
 }
 
@@ -75,7 +77,7 @@ func (s *StatsManager) GetListenerByID(nodeID string) chan StatusUpdate {
 	return updateChan
 }
 
-func (s *StatsManager) RemoveListenerAfter(nodeID string, sec time.Duration) {
+func (s *StatsManager) RemoveListenerAfterTimeout(nodeID string) {
 	s.mu.Lock()
 	ch := make(chan bool, 10)
 	s.toBeTerminated[nodeID] = ch
@@ -85,7 +87,7 @@ func (s *StatsManager) RemoveListenerAfter(nodeID string, sec time.Duration) {
 	select {
 	case <-ch:
 		break
-	case <-time.After(sec * time.Second):
+	case <-time.After(s.listenerTimeout * time.Second):
 
 		s.mu.Lock()
 		delete(s.listeners, nodeID)
