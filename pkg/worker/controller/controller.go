@@ -44,11 +44,11 @@ func (s *Controller) Start(ctx context.Context, req *controller.StartRequest) (*
 	}
 
 	if err != nil {
-		s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().WithStatus("failed"))
+		s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().Failed())
 		return nil, err
 
 	}
-	s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().WithStatus("success"))
+	s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().Success())
 
 	s.CallerServer.RegisterFunctionInstance(shortID)
 
@@ -91,7 +91,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 		// Pass the call to the channel based on the instance ID
 		s.CallerServer.QueueInstanceCall(req.InstanceId.Id, req.Data)
 		// stats
-		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().WithStatus("success"))
+		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().Success())
 
 	}()
 
@@ -99,14 +99,14 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 	case data := <-s.CallerServer.FunctionResponses.FrMap[req.InstanceId.Id]:
 		cancelCrash()
-		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Response().WithStatus("success"))
+		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Response().Success())
 		s.logger.Debug("Extracted response", "response", data, "instance ID", req.InstanceId.Id)
 		response := &common.CallResponse{Data: data}
 		return response, nil
 
 	case err := <-crashChan:
 
-		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Die())
+		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Down())
 
 		s.logger.Error("Container crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
 
@@ -125,11 +125,11 @@ func (s *Controller) Stop(ctx context.Context, req *common.InstanceID) (*common.
 
 	if err != nil {
 		s.logger.Error("Failed to stop container", "instance ID", req.Id, "error", err)
-		s.StatsManager.Enqueue(stats.Event().Container(req.Id).Stop().WithStatus("failed"))
+		s.StatsManager.Enqueue(stats.Event().Container(req.Id).Stop().Failed())
 		return nil, err
 	}
 
-	s.StatsManager.Enqueue(stats.Event().Container(req.Id).Stop().WithStatus("success"))
+	s.StatsManager.Enqueue(stats.Event().Container(req.Id).Stop().Success())
 
 	return resp, nil
 
@@ -156,9 +156,10 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 			if err := stream.Send(
 				&controller.StatusUpdate{
 					InstanceId: data.InstanceID,
-					Type:       data.Type,
-					Event:      data.Event,
-					Status:     data.Status,
+					FunctionId: data.FunctionID,
+					Type:       controller.Type(data.Type),
+					Event:      controller.Event(data.Event),
+					Status:     controller.Status(data.Status),
 				}); err != nil {
 				s.logger.Error("Error streaming data", "error", err, "node_id", req.NodeID)
 				return err

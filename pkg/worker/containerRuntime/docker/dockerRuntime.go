@@ -195,6 +195,7 @@ func (d *DockerRuntime) createContainerConfig(imageTag string) *container.Config
 		},
 		Env: []string{
 			fmt.Sprintf("CALLER_SERVER_ADDRESS=%s", d.getCallerServerAddress()),
+			fmt.Sprintf("FUNCTION_ID=%s", imageTag),
 		},
 	}
 }
@@ -226,6 +227,7 @@ func (d *DockerRuntime) createHostConfig() *container.HostConfig {
 }
 
 func (d *DockerRuntime) getCallerServerAddress() string {
+	// Containerized mode uses docker network dns to resolve the caller server address, hence we need to replace the localhost/127.0.0.1/0.0.0.0 with worker
 	if d.containerized {
 		address := d.callerServerAddress
 		address = strings.Replace(address, "localhost", "worker", 1)

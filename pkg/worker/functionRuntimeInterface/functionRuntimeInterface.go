@@ -27,11 +27,12 @@ type Response struct {
 }
 
 type Function struct {
-	timeout  int
-	address  string
-	request  *Request
-	response *Response
-	id       string
+	timeout    int
+	address    string
+	request    *Request
+	response   *Response
+	instanceId string
+	functionId string
 }
 
 func New(timeout int) *Function {
@@ -39,20 +40,25 @@ func New(timeout int) *Function {
 	if !ok {
 		fmt.Printf("Environment variable CALLER_SERVER_ADDRESS not found")
 	}
+	functionId, ok := os.LookupEnv("FUNCTION_ID")
+	if !ok {
+		fmt.Printf("Environment variable FUNCTION_ID not found")
+	}
 	fmt.Printf("CALLER_SERVER_ADDRESS: %s", address)
 
 	return &Function{
-		timeout:  timeout,
-		address:  address,
-		request:  &Request{},
-		response: &Response{},
-		id:       getID(),
+		timeout:    timeout,
+		address:    address,
+		request:    &Request{},
+		response:   &Response{},
+		instanceId: getID(),
+		functionId: functionId,
 	}
 }
 
 // Ready is called from inside the function instance container. It waits for a request from the caller server.
 func (f *Function) Ready(handler handler) {
-	logger := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.id))
+	logger := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.instanceId))
 
 	connection, err := grpc.NewClient(f.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -63,7 +69,7 @@ func (f *Function) Ready(handler handler) {
 	c := pb.NewFunctionServiceClient(connection)
 
 	//Set the id in the response to the id of the container
-	f.response.Id = f.id
+	f.response.Id = f.instanceId
 
 	defer logger.Info("Closing connection.")
 	first := true
@@ -72,7 +78,7 @@ func (f *Function) Ready(handler handler) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(f.timeout)*time.Second)
 
 		//We ask for a new request whilst sending the response of the previous one
-		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, Id: f.response.Id, FirstExecution: first})
+		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, InstanceId: f.response.Id, FunctionId: f.functionId, FirstExecution: first})
 
 		cancel()
 
@@ -83,7 +89,7 @@ func (f *Function) Ready(handler handler) {
 		}
 		logger.Debug("Received request", "data", p.Data)
 
-		f.request = &Request{p.Data, p.Id}
+		f.request = &Request{p.Data, p.InstanceId}
 
 		f.response, err = handler(ctx, f.request)
 

@@ -12,15 +12,14 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// The reconciler is responsible for reconciling the state of the workers and instances.
-// It reads the StatusUpdate stream from the workers and updates the state of the scheduler if necessary.
-// The most common case is that instances time out when waiting for more calls.
-//
-
 const (
+	// If multiple leaf nodes listen to the same worker, each needs a different leafNodeID
 	leafNodeID = "todo"
 )
 
+// The reconciler is responsible for reconciling the state of the workers and instances.
+// It reads the StatusUpdate stream from the workers and updates the state of the scheduler if necessary.
+// The most common case is that instances time out when waiting for more calls.
 type Reconciler struct {
 	workerIDs []state.WorkerID
 	workers   *state.Workers
@@ -86,10 +85,12 @@ func (r *Reconciler) ListenToWorkerStatusUpdates(ctx context.Context, workerID s
 			r.logger.Debug("Received status update", "update", update)
 
 			switch update.Type {
-			case "container":
+			case controllerpb.Type_TYPE_CONTAINER:
 				switch update.Event {
-				case "timeout":
+				case controllerpb.Event_EVENT_TIMEOUT:
 					r.handleContainerTimeout(workerID, state.FunctionID(update.FunctionId), state.InstanceID(update.InstanceId))
+				case controllerpb.Event_EVENT_DOWN:
+					r.handleContainerDown(workerID, state.FunctionID(update.FunctionId), state.InstanceID(update.InstanceId))
 				default:
 					r.logger.Warn("Received status update of unknown event", "event", update.Event)
 				}
@@ -103,8 +104,17 @@ func (r *Reconciler) ListenToWorkerStatusUpdates(ctx context.Context, workerID s
 func (r *Reconciler) handleContainerTimeout(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) {
 	r.logger.Debug("Container timed out", "instanceID", instanceID)
 
-	err := r.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
+	err := r.workers.UpdateInstance(workerID, functionID, state.InstanceStateTimeout, state.Instance{InstanceID: instanceID})
 	if err != nil {
 		r.logger.Error("Failed to reconcile container timeout", "error", err)
+	}
+}
+
+func (r *Reconciler) handleContainerDown(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) {
+	r.logger.Debug("Container down", "instanceID", instanceID)
+
+	err := r.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
+	if err != nil {
+		r.logger.Error("Failed to reconcile container down", "error", err)
 	}
 }

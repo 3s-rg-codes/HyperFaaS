@@ -48,7 +48,7 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 		s.scheduler.UpdateInstanceState(workerID, state.FunctionID(req.FunctionId), instanceID, state.InstanceStateRunning)
 	}
 
-	resp, err := callWorker(ctx, workerID, instanceID, req)
+	resp, err := callWorker(ctx, workerID, state.FunctionID(req.FunctionId), instanceID, req)
 	if err != nil {
 		switch err.(type) {
 		case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
@@ -77,7 +77,7 @@ func NewLeafServer(scheduler scheduling.Scheduler) *LeafServer {
 // TODO: refactor this to use a pool of connections.
 // https://promisefemi.vercel.app/blog/grpc-client-connection-pooling
 // https://github.com/processout/grpc-go-pool/blob/master/pool.go
-func callWorker(ctx context.Context, workerID state.WorkerID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
+func callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
 	conn, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
@@ -87,6 +87,7 @@ func callWorker(ctx context.Context, workerID state.WorkerID, instanceID state.I
 
 	callReq := &common.CallRequest{
 		InstanceId: &common.InstanceID{Id: string(instanceID)},
+		FunctionId: &common.FunctionID{Id: string(functionID)},
 		Data:       req.Data,
 	}
 

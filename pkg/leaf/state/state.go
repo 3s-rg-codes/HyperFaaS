@@ -23,7 +23,10 @@ const (
 	InstanceStateRunning InstanceState = iota
 	InstanceStateIdle
 	InstanceStateNew
+	// Only used for instances that were running and crashed / their worker is down
 	InstanceStateDown
+	// Only used for instances that were idle and timed out waiting
+	InstanceStateTimeout
 )
 
 type Function struct {
@@ -164,6 +167,16 @@ func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, insta
 		}
 	case InstanceStateRunning:
 		if err := function.moveInstance(InstanceStateIdle, InstanceStateRunning, instance); err != nil {
+			return err
+		}
+	case InstanceStateTimeout:
+		// erase from idle
+		if err := w.DeleteInstance(workerID, functionID, InstanceStateIdle, instance.InstanceID); err != nil {
+			return err
+		}
+	case InstanceStateDown:
+		// erase from running
+		if err := w.DeleteInstance(workerID, functionID, InstanceStateRunning, instance.InstanceID); err != nil {
 			return err
 		}
 	default:

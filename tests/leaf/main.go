@@ -28,12 +28,12 @@ func main() {
 		Data:       []byte(""),
 	}
 
-	resp, err := leafClient.ScheduleCall(context.Background(), req)
+	_, err = leafClient.ScheduleCall(context.Background(), req)
 	if err != nil {
 		log.Fatalf("Failed to schedule call: %v", err)
 	}
 
-	fmt.Printf("Response data: %s\n", string(resp.Data))
+	fmt.Printf("Successfully got response\n")
 
 	// Create leaf client
 	client, conn := createClient()
@@ -68,9 +68,9 @@ func testTwoCallsToSameFunction(client pb.LeafClient) {
 		Data:       []byte(""),
 	}
 
-	resp, err := client.ScheduleCall(context.Background(), startReq)
+	_, err := client.ScheduleCall(context.Background(), startReq)
 	if err != nil {
-		log.Fatalf("Failed to schedule first call: %v", err)
+		log.Fatalf("Failed to schedule call: %v", err)
 	}
 
 	/* req := &pb.ScheduleCallRequest{
@@ -83,5 +83,5 @@ func testTwoCallsToSameFunction(client pb.LeafClient) {
 		log.Fatalf("Failed to schedule second call: %v", err)
 	} */
 
-	fmt.Printf("Response data: %s\n", string(resp.Data))
+	fmt.Printf("Successfully got response\n")
 }

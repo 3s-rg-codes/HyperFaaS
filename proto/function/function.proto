@@ -7,12 +7,14 @@ package function;
 
 message Payload {
     bytes data = 1;
-    string id = 2;
+    string instanceId = 2;
     bool firstExecution = 3;
+    string functionId = 4;
 }
 message Call {
     bytes data = 1;
-    string id = 2;
+    string instanceId = 2;
+    string functionId = 3;
 }
 
 service FunctionService {

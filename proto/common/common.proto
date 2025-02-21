@@ -11,14 +11,17 @@ message InstanceID {
     string id = 1;
 }
 
+message FunctionID {
+    string id = 1;
+}
+
 message CallRequest {
     InstanceID instance_id = 1;
     bytes data = 2;
+    FunctionID function_id = 3;
 }
   
 message CallResponse {
     bytes data = 1;
     Error error = 2;
 }
-
-message Empty {}
