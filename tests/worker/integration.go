@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/golang-cz/devslog"
 	"log/slog"
 	"os"
 	"strconv"
@@ -74,53 +75,20 @@ type Test struct {
 }
 
 func main() {
-	flags := Flags{
-		ServerAddress:    flag.String("server_address", "", "Server address"),
-		RequestedRuntime: flag.String("requested_runtime", "", "Requested runtime"),
-		LogLevel:         flag.String("log_level", "", "Log level"),
-		AutoRemove:       flag.Bool("auto_remove", true, "Auto remove"),
-		Containerized:    flag.Bool("containerized", false, "Containerized"),
-		TestCases:        flag.String("test_cases", "", "test cases to run"),
-		DockerTolerance:  flag.Int("docker_tolerance", 0, "Docker tolerance"),
-		ListenerTimeout:  flag.Int("listener_timeout", 0, "Listener timeout"),
-		CPUPeriod:        flag.Int("cpu_period", 0, "CPU period"),
-		CPUQuota:         flag.Int("cpu_quota", 0, "CPU quota"),
-		MemoryLimit:      flag.Int("memory_limit", 0, "Memory limit"),
-	}
 
-	flag.Parse()
+	//Everything related to parsing the flags
+	config, logger, testsMap, testAll := configuration()
 
-	config := parseJSON()
+	//Dependency Injection :O
+	statsManager := stats.NewStatsManager(logger, time.Duration(config.Config.ListenerTimeout)*time.Second)
 
-	config.Config.UpdateFromFlags(flags)
-
-	logger := setupLogger(config.Config.LogLevel)
-
-	config.Config.printConfig(*logger)
-
-	testCasesMax := 9
-	testsMap := make(map[int]bool, 10)
-	testAll := config.Config.Containerized && config.Config.TestCases == "all"
-
-	if !testAll {
-		for i := 1; i <= testCasesMax; i++ {
-			testCaseStr := strconv.Itoa(i) // Convert number to string
-			if strings.Contains(config.Config.TestCases, testCaseStr) {
-				testsMap[i] = true
-			} else {
-				testsMap[i] = false
-			}
-		}
-	}
+	callerServer := caller.NewCallerServer(config.Config.CallerServerAddress, logger, statsManager)
 
 	var testController controller.Controller
 	var runtime containerRuntime.ContainerRuntime
 	var err error
 
-	statsManager := stats.NewStatsManager(logger, time.Duration(config.Config.ListenerTimeout)*time.Second)
-
-	callerServer := caller.NewCallerServer(config.Config.CallerServerAddress, logger, statsManager)
-
+	//Determining the runtime according to `requested_runtime` or a flag
 	switch config.Config.RequestedRuntime {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime(config.Config.Containerized, config.Config.AutoRemove, config.Config.CallerServerAddress, logger)
@@ -130,6 +98,7 @@ func main() {
 		logger.Info("Mock runtime and container config test not compatible: Removing...")
 	}
 
+	//Determining the environment according to `containerized` or a flag
 	switch config.Config.Containerized {
 	case false:
 		testController = setupLocalEnv(runtime, callerServer, statsManager, logger, config.Config)
@@ -141,8 +110,12 @@ func main() {
 		}
 	}
 
-	time.Sleep(3 * time.Second) //wait for the other components to start
+	//wait for the other components to start
+	time.Sleep(3 * time.Second)
 
+	//building the controller client which will be executing the test cases
+	//running in a docker container if containerized
+	//else running locally
 	controllerClient, connection, err := helpers.BuildMockClientHelper(config.Config.ServerAddress)
 	if err != nil {
 		logger.Error("Error occurred when building the controllerClient", "error", err)
@@ -481,6 +454,51 @@ type ContainerStats struct {
 	} `json:"cpu_stats"`
 }
 
+func configuration() (FullConfig, *slog.Logger, map[int]bool, bool) {
+	flags := Flags{
+		ServerAddress:    flag.String("server_address", "", "Server address"),
+		RequestedRuntime: flag.String("requested_runtime", "", "Requested runtime"),
+		LogLevel:         flag.String("log_level", "", "Log level"),
+		AutoRemove:       flag.Bool("auto_remove", true, "Auto remove"),
+		Containerized:    flag.Bool("containerized", false, "Containerized"),
+		TestCases:        flag.String("test_cases", "", "test cases to run"),
+		DockerTolerance:  flag.Int("docker_tolerance", 0, "Docker tolerance"),
+		ListenerTimeout:  flag.Int("listener_timeout", 0, "Listener timeout"),
+		CPUPeriod:        flag.Int("cpu_period", 0, "CPU period"),
+		CPUQuota:         flag.Int("cpu_quota", 0, "CPU quota"),
+		MemoryLimit:      flag.Int("memory_limit", 0, "Memory limit"),
+	}
+
+	flag.Parse()
+
+	config := parseJSON()
+
+	config.Config.UpdateFromFlags(flags)
+
+	logger := setupLogger(config.Config.LogLevel)
+
+	config.Config.printConfig(*logger)
+
+	//Configuring the tests cases that should be run
+	testCasesMax := 9
+	testsMap := make(map[int]bool, 10)
+	testAll := config.Config.Containerized && config.Config.TestCases == "all"
+
+	//If all test cases should be run we don't need the test map, if not the case that should be run
+	//are set as `true` in the map
+	if !testAll {
+		for i := 1; i <= testCasesMax; i++ {
+			testCaseStr := strconv.Itoa(i) // Convert number to string
+			if strings.Contains(config.Config.TestCases, testCaseStr) {
+				testsMap[i] = true
+			} else {
+				testsMap[i] = false
+			}
+		}
+	}
+	return config, logger, testsMap, testAll
+}
+
 func setupLogger(logLevel string) *slog.Logger {
 	var level slog.Level
 	switch logLevel {
@@ -496,10 +514,22 @@ func setupLogger(logLevel string) *slog.Logger {
 		level = slog.LevelInfo
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout,
-		&slog.HandlerOptions{
-			Level:     level,
-			AddSource: true}))
+	opts := &slog.HandlerOptions{
+		Level:     level,
+		AddSource: true,
+	}
+
+	devOpts := &devslog.Options{
+		HandlerOptions:    opts,
+		MaxSlicePrintSize: 5,
+		SortKeys:          true,
+		NewLineAfterLog:   true,
+		StringerFormatter: true,
+	}
+	handler := devslog.NewHandler(os.Stdout, devOpts)
+
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
 
 	return logger
 }
