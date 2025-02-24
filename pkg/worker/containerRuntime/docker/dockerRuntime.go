@@ -49,6 +49,7 @@ var (
 )
 
 func NewDockerRuntime(containerized bool, autoRemove bool, callerServerAddress string, logger *slog.Logger) *DockerRuntime {
+	logger.Info("LOL " + callerServerAddress)
 	var clientOpt client.Opt
 	if containerized {
 		clientOpt = client.WithHost("unix:///var/run/docker.sock")
@@ -130,6 +131,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *cont
 		d.logger.Error("Could not create container", "image", imageTag, "error", err)
 		return "", err
 	}
+
 	d.logger.Debug("Starting container", "id", resp.ID, "warnings", resp.Warnings)
 	if err := d.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return "", err
@@ -273,6 +275,7 @@ func (d *DockerRuntime) createHostConfig() *container.HostConfig {
 func (d *DockerRuntime) getCallerServerAddress() string {
 	// Containerized mode uses docker network dns to resolve the caller server address, hence we need to replace the localhost/127.0.0.1/0.0.0.0 with worker
 	if d.containerized {
+		d.logger.Info("CallerServerAddress is ", "address", d.callerServerAddress)
 		address := d.callerServerAddress
 		address = strings.Replace(address, "localhost", "worker", 1)
 		address = strings.Replace(address, "127.0.0.1", "worker", 1)

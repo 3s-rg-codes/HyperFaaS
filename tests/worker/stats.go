@@ -133,7 +133,7 @@ func TestMultipleNodesListening(client pb.ControllerClient, testController contr
 			}
 			errCh <- err
 			ch <- actualNodeStats
-			logger.Info("Sent stats to channel and now leaving goroutine", "nodeId", nodeID)
+			logger.Debug("Sent stats to channel and now leaving goroutine", "nodeId", nodeID)
 		}(ch, nodeID, errorChan)
 	}
 
@@ -220,20 +220,21 @@ func TestDisconnectAndReconnect(client pb.ControllerClient, testController contr
 
 	//We execute the workload after the listener was killed
 	wgWorkload.Add(1)
-	go func(wg *sync.WaitGroup, errCh chan error) {
+	go func(wg *sync.WaitGroup, errCh chan error, statsChan chan *[]*stats.StatusUpdate) {
 
 		expectedStats, err := helpers.DoWorkloadHelper(client, logger, spec, config.Workloads[0])
 		if err != nil {
-			logger.Error("Error occurred in Test Case `testOneNodeListening`:", "error", err.Error())
+			logger.Error("Error occurred in Test Case `disconnectAndReconnect`:", "error", err.Error())
 		}
 
 		wg.Done()
 		errCh <- err
 		statsChan <- expectedStats
 		logger.Debug("Sent expected stats", "stats", expectedStats)
-	}(&wgWorkload, errorChan)
+	}(&wgWorkload, errorChan, statsChan)
 
 	expected := <-statsChan
+
 loop:
 	for {
 		select {

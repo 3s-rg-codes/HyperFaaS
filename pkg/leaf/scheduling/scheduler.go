@@ -45,7 +45,7 @@ func NewSyncMapScheduler(workerIDs []state.WorkerID, logger *slog.Logger) *syncM
 	return &syncMapScheduler{workers: *workers, workerIDs: workerIDs, logger: logger}
 }
 
-// Finds an idle instance in a worker for a function.
+// Schedule finds an idle instance in a worker for a function.
 // If one is found, state is updated to running internally.
 func (s *syncMapScheduler) Schedule(ctx context.Context, functionID state.FunctionID) (state.WorkerID, state.InstanceID, error) {
 	workerID, instanceID, err := s.workers.FindIdleInstance(functionID)

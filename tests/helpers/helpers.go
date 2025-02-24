@@ -67,7 +67,7 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusSuccess})
 	}
 
-	response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: cID, Data: testCase.CallPayload})
+	response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: cID, Data: testCase.CallPayload, FunctionId: &common.FunctionID{Id: testCase.ImageTag}})
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func ConnectNodeHelper(controllerServerAddress string, nodeID string, logger slo
 
 		default:
 			stat, err := s.Recv()
-			if status.Code(err) == codes.DeadlineExceeded { //This will happen when the call finishes and we try to reach the node
+			if status.Code(err) == codes.DeadlineExceeded { //This will happen when the call finishes, and we try to reach the node
 				logger.Info("Deadline exceeded", "nodeId", nodeID)
 				return receivedStats, nil
 			}

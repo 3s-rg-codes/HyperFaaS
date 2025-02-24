@@ -21,7 +21,6 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/tests/helpers"
-	"github.com/docker/docker/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 )
@@ -99,16 +98,11 @@ func main() {
 	}
 
 	//Determining the environment according to `containerized` or a flag
-	switch config.Config.Containerized {
-	case false:
+
+	if !config.Config.Containerized {
 		testController = setupLocalEnv(runtime, callerServer, statsManager, logger, config.Config)
-	case true:
-		runtime, err = setUpComposeEnv(logger, config.Config)
-		if err != nil {
-			logger.Error("Error occurred when building the controllerClient", "error", err)
-			return
-		}
 	}
+	//For containerized running we don't need anything else set up
 
 	//wait for the other components to start
 	time.Sleep(3 * time.Second)
@@ -270,7 +264,7 @@ func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.Co
 		}
 		logger.Info("GRPC response code for start is as expected", "expected", tCase.ExpectedErrorCode, "actual", grpcStatus.Code())
 
-		response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: testContainerID, Data: tCase.CallPayload})
+		response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: testContainerID, Data: tCase.CallPayload, FunctionId: &common.FunctionID{Id: tCase.ImageTag}})
 
 		grpcStatus, ok = status.FromError(err)
 
@@ -342,7 +336,7 @@ func testCallNonExistingContainer(client pb.ControllerClient, logger slog.Logger
 
 	tCase := config.Workloads[4]
 
-	_, err := client.Call(context.Background(), &common.CallRequest{InstanceId: &common.InstanceID{Id: tCase.InstanceID}, Data: []byte("")})
+	_, err := client.Call(context.Background(), &common.CallRequest{InstanceId: &common.InstanceID{Id: tCase.InstanceID}, Data: []byte(""), FunctionId: &common.FunctionID{Id: tCase.ImageTag}})
 
 	grpcStatus, ok := status.FromError(err)
 
@@ -426,19 +420,6 @@ func setupLocalEnv(runtime containerRuntime.ContainerRuntime, callerServer *call
 	logger.Debug("Started controller")
 
 	return testController
-
-}
-
-func setUpComposeEnv(logger *slog.Logger, config TestConfig) (containerRuntime.ContainerRuntime, error) {
-
-	dockerCli, err := client.NewClientWithOpts(client.WithHost("unix:///var/run/docker.sock"), client.WithAPIVersionNegotiation())
-	if err != nil {
-		logger.Error("Could not create Docker client", "error", err)
-		return nil, err
-	}
-	runtime := dockerRuntime.NewDockerRuntime(config.Containerized, config.AutoRemove, config.CallerServerAddress, logger)
-	runtime.Cli = dockerCli
-	return runtime, nil
 
 }
 

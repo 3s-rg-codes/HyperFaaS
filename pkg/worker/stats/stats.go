@@ -24,7 +24,7 @@ func NewStatsManager(logger *slog.Logger, listenerTimeout time.Duration) *StatsM
 	return &StatsManager{
 		Updates:         StatusUpdateQueue{Queue: make([]StatusUpdate, 0)},
 		listeners:       make(map[string]chan StatusUpdate),
-		toBeTerminated:  make(map[string]chan bool),
+		toBeTerminated:  make(map[string]chan bool, 5),
 		logger:          logger,
 		listenerTimeout: listenerTimeout,
 	}
@@ -65,7 +65,6 @@ func (s *StatsManager) RemoveListener(nodeID string) {
 func (s *StatsManager) GetListenerByID(nodeID string) chan StatusUpdate {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	_, ok1 := s.toBeTerminated[nodeID]
 	updateChan, ok2 := s.listeners[nodeID]
 	if ok1 && ok2 {

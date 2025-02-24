@@ -46,7 +46,6 @@ func (s *Controller) Start(ctx context.Context, req *controller.StartRequest) (*
 	if err != nil {
 		s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().Failed())
 		return nil, err
-
 	}
 	s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().Success())
 
@@ -55,7 +54,7 @@ func (s *Controller) Start(ctx context.Context, req *controller.StartRequest) (*
 	return &common.InstanceID{Id: shortID}, nil
 }
 
-// This function passes the call through the channel of the instance ID in the FunctionCalls map
+// Call passes the call through the channel of the instance ID in the FunctionCalls map
 // runtime.Call is also called to check for errors
 func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 
@@ -146,7 +145,6 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 	if statsChannel != nil {
 		s.logger.Debug("Node is re-hitting the status endpoint", "node_id", req.NodeID)
 	} else {
-
 		statsChannel = make(chan stats.StatusUpdate, 10000)
 		s.StatsManager.AddListener(req.NodeID, statsChannel)
 	}
@@ -164,11 +162,12 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 				s.logger.Error("Error streaming data", "error", err, "node_id", req.NodeID)
 				return err
 			}
-			s.logger.Debug("Sent status update", "node_id", req.NodeID)
+			s.logger.Debug("Sent status update", "node_id", req.NodeID, "event", data.Event, "status", data.Status)
 		} else {
 			s.logger.Debug("Stream closed", "node_id", req.NodeID)
 			// re buffer the data
-			s.StatsManager.Enqueue(&data)
+			statsChannel <- data
+			s.StatsManager.RemoveListenerAfterTimeout(req.NodeID)
 			return stream.Context().Err()
 		}
 	}
