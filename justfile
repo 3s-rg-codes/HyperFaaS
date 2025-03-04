@@ -87,17 +87,22 @@ test-all:
 test name:
     go test -run {{name}} ./...
 
-test-all-integration-build:
+#Containerized integration tests via docker compose
+build-integration-containerized-all:
     ENTRYPOINT_CMD="-test_cases=all" docker compose -f test-compose.yaml up --build
 
-test-all-integration: #by default just should run this in the right dir
+build-integration-containerized list:
+    ENTRYPOINT_CMD="-test_cases={{list}}" docker compose -f test-compose.yaml up --build
+
+test-integration-containerized-all:
     ENTRYPOINT_CMD="-test_cases=all" docker compose -f test-compose.yaml up
 
-test-integration list:
+test-integration-containerized list:
     ENTRYPOINT_CMD="-test_cases={{list}}" docker compose -f test-compose.yaml up
 
-test-integration-build list:
-    ENTRYPOINT_CMD="-test_cases={{list}}" docker compose -f test-compose.yaml up --build
+#Local integration tests
+test-integration-local-all runtime loglevel:
+    cd ./tests/worker && go run . {{runtime}} {{loglevel}}
 
 ############################
 # Misc. Stuff
@@ -107,3 +112,7 @@ clean:
     rm -rf functions/logs/*
     docker ps -a | grep hyperfaas- | awk '{print $1}' | xargs docker rm -f
     docker images | grep hyperfaas- | awk '{print $3}' | xargs docker rmi -f
+
+#Kills the locally running integration test in case it cant shutdown gracefully
+kill:
+    pid=$(ps aux | grep '[e]xe/worker' | awk '{print $2}') && kill -9 $pid

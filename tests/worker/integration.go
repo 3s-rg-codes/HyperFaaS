@@ -8,6 +8,7 @@ import (
 	"github.com/golang-cz/devslog"
 	"log/slog"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -75,8 +76,8 @@ type Test struct {
 
 func main() {
 
-	//Everything related to parsing the flags
-	config, logger, testsMap, testAll := configuration()
+	//Everything related to parsing the flags adn setting up logging
+	config, logger, testsMap := configuration()
 
 	//Dependency Injection :O
 	statsManager := stats.NewStatsManager(logger, time.Duration(config.Config.ListenerTimeout)*time.Second)
@@ -100,6 +101,7 @@ func main() {
 	//Determining the environment according to `containerized` or a flag
 
 	if !config.Config.Containerized {
+		logger.Info("Setting up local environment")
 		testController = setupLocalEnv(runtime, callerServer, statsManager, logger, config.Config)
 	}
 	//For containerized running we don't need anything else set up
@@ -131,6 +133,7 @@ func main() {
 		MemoryLimit: int64(config.Config.MemoryLimit * 1024 * 1024),
 	}
 
+	logger.Info(reflect.TypeOf(runtime).String())
 	//////////////////////////////// Test Cases //////////////////////////////////////
 	//TODO: we ideally want this to work without timeouts too
 
@@ -138,7 +141,7 @@ func main() {
 
 	time.Sleep(5 * time.Second)
 
-	if testsMap[1] || testAll {
+	if testsMap[1] {
 		name := "normal execution"
 		logger.Info("Starting test", "test", name)
 		tErr := testNormalExecution(controllerClient, runtime, *logger, spec, config)
@@ -147,7 +150,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
-	if testsMap[2] || testAll {
+	if testsMap[2] {
 		name := "stop non existing container"
 		logger.Info("Starting test", "test", name)
 		tErr := testStopNonExistingContainer(controllerClient, *logger, config)
@@ -156,7 +159,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
-	if testsMap[3] || testAll {
+	if testsMap[3] {
 		name := "call non existing container"
 		logger.Info("Starting test", "test", name)
 		tErr := testCallNonExistingContainer(controllerClient, *logger, config)
@@ -165,7 +168,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
-	if testsMap[4] || testAll {
+	if testsMap[4] {
 		name := "test metrics"
 		logger.Info("Starting test", "test", name)
 		tErr := testMetrics(controllerClient, *logger)
@@ -174,7 +177,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
-	if testsMap[5] || testAll {
+	if testsMap[5] {
 		name := "start non local image"
 		logger.Info("Starting test", "test", name)
 		tErr := testStartNonLocalImages(controllerClient, runtime, *logger, spec, config)
@@ -183,7 +186,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
-	if testsMap[6] || testAll {
+	if testsMap[6] {
 		name := "container config"
 		logger.Info("Starting test", "test", name)
 		tErr := TestContainerConfig(runtime, controllerClient, *logger, config.Config)
@@ -192,7 +195,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
-	if testsMap[7] || testAll {
+	if testsMap[7] {
 		name := "one node as listener"
 		logger.Info("Starting test", "test", name)
 		tErr := TestOneNodeListening(controllerClient, testController, *logger, spec, config)
@@ -201,7 +204,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
-	if testsMap[8] || testAll {
+	if testsMap[8] {
 		name := "multiple nodes listening"
 		logger.Info("Starting test", "test", name)
 		tErr := TestMultipleNodesListening(controllerClient, testController, *logger, spec, config)
@@ -210,7 +213,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
-	if testsMap[9] || testAll {
+	if testsMap[9] {
 		name := "disconnect and reconnect listener"
 		logger.Info("Starting test", "test", name)
 		tErr := TestDisconnectAndReconnect(controllerClient, testController, *logger, spec, config)
@@ -292,13 +295,14 @@ func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.Co
 			logger.Error("Stop failed", "code", grpcStatus.Code())
 			return fmt.Errorf("stopping container failed %v", grpcStatus.Code())
 		}
+
 		//TOLERANCE
 		logger.Debug("Sleeping", "time", config.Config.DockerTolerance)
 		tolerance := time.Duration(config.Config.DockerTolerance)
 		time.Sleep(tolerance * time.Second)
 		logger.Debug("Sleeping done")
 
-		if responseContainerID.Id != testContainerID.Id || runtime.ContainerExists(context.Background(), responseContainerID.Id) {
+		if responseContainerID.Id != testContainerID.Id || !runtime.ContainerExists(context.Background(), responseContainerID.Id) {
 			logger.Error("Container was not successfully deleted", "ID", testContainerID)
 			return fmt.Errorf("container was not successfully deleted, code: %v", grpcStatus.Code())
 		}
@@ -375,8 +379,7 @@ func testStartNonLocalImages(client pb.ControllerClient, runtime containerRuntim
 
 	for i := 4; i < 6; i++ {
 		tCase := config.Workloads[i]
-		logger.Info("Scenario", "expectedError", tCase.ExpectsError)
-
+		logger.Info(tCase.TestName)
 		//Check if the image already exists locally
 		err := runtime.RemoveImage(context.Background(), tCase.TestName)
 		if err != nil {
@@ -435,7 +438,7 @@ type ContainerStats struct {
 	} `json:"cpu_stats"`
 }
 
-func configuration() (FullConfig, *slog.Logger, map[int]bool, bool) {
+func configuration() (FullConfig, *slog.Logger, map[int]bool) {
 	flags := Flags{
 		ServerAddress:    flag.String("server_address", "", "Server address"),
 		RequestedRuntime: flag.String("requested_runtime", "", "Requested runtime"),
@@ -463,11 +466,12 @@ func configuration() (FullConfig, *slog.Logger, map[int]bool, bool) {
 	//Configuring the tests cases that should be run
 	testCasesMax := 9
 	testsMap := make(map[int]bool, 10)
-	testAll := config.Config.Containerized && config.Config.TestCases == "all"
 
-	//If all test cases should be run we don't need the test map, if not the case that should be run
-	//are set as `true` in the map
-	if !testAll {
+	if config.Config.TestCases == "all" {
+		for i := 1; i <= testCasesMax; i++ {
+			testsMap[i] = true
+		}
+	} else {
 		for i := 1; i <= testCasesMax; i++ {
 			testCaseStr := strconv.Itoa(i) // Convert number to string
 			if strings.Contains(config.Config.TestCases, testCaseStr) {
@@ -477,7 +481,8 @@ func configuration() (FullConfig, *slog.Logger, map[int]bool, bool) {
 			}
 		}
 	}
-	return config, logger, testsMap, testAll
+	//If all test cases should be run we don't need the test map, if not, the cases that should be run are set as `true` in the map
+	return config, logger, testsMap
 }
 
 func setupLogger(logLevel string) *slog.Logger {
@@ -516,9 +521,11 @@ func setupLogger(logLevel string) *slog.Logger {
 }
 
 func parseJSON() FullConfig {
+
 	data, err := os.ReadFile("test_config.json")
 	if err != nil {
-		panic(err)
+		wd, _ := os.Getwd()
+		panic(wd)
 	}
 
 	var config FullConfig
@@ -543,7 +550,7 @@ func (c *TestConfig) UpdateFromFlags(f Flags) {
 		c.LogLevel = *f.LogLevel
 	}
 
-	if *f.AutoRemove != true {
+	if *f.AutoRemove == true {
 		c.AutoRemove = *f.AutoRemove
 	}
 

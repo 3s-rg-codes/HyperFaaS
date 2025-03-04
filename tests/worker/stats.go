@@ -22,7 +22,9 @@ func TestOneNodeListening(client pb.ControllerClient, testController controller.
 
 	wgWorkload.Add(1)
 	go func(wg *sync.WaitGroup, errCh chan error) {
-
+		if config.Config.RequestedRuntime == "fake" { //when not running with fake runtime this happens too fast and the node cant connect in time so we need a timeout
+			time.Sleep(5 * time.Second)
+		}
 		expectedStats, err := helpers.DoWorkloadHelper(client, logger, spec, config.Workloads[0])
 		if err != nil {
 			logger.Error("Error occurred in Test Case `testOneNodeListening`:", "error", err.Error())
@@ -99,6 +101,9 @@ func TestMultipleNodesListening(client pb.ControllerClient, testController contr
 
 	wgWorkload.Add(1)
 	go func(wg1 *sync.WaitGroup, errCh chan error) {
+		if config.Config.RequestedRuntime == "fake" { //when not running with fake runtime this happens too fast and the node cant connect in time so we need a timeout
+			time.Sleep(5 * time.Second)
+		}
 
 		expectedStats, err := helpers.DoWorkloadHelper(client, logger, spec, config.Workloads[0])
 		if err != nil {

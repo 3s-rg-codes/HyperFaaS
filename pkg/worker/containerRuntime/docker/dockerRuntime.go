@@ -49,7 +49,6 @@ var (
 )
 
 func NewDockerRuntime(containerized bool, autoRemove bool, callerServerAddress string, logger *slog.Logger) *DockerRuntime {
-	logger.Info("LOL " + callerServerAddress)
 	var clientOpt client.Opt
 	if containerized {
 		clientOpt = client.WithHost("unix:///var/run/docker.sock")

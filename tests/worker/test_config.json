@@ -4,7 +4,7 @@
     "requested_runtime": "docker",
     "log_level": "info",
     "auto_remove": true,
-    "containerized": true,
+    "containerized": false,
     "test_cases": "all",
     "docker_tolerance": 2,
     "listener_timeout": 20,

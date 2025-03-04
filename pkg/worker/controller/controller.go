@@ -72,6 +72,8 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
+	s.logger.Debug("All maps exist")
+
 	// Check if container crashes
 	crashCtx, cancelCrash := context.WithCancel(ctx)
 	defer cancelCrash()
