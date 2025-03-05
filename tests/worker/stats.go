@@ -100,22 +100,21 @@ func TestMultipleNodesListening(client pb.ControllerClient, testController contr
 	statsChan := make(chan *[]*stats.StatusUpdate)
 
 	wgWorkload.Add(1)
-	go func(wg1 *sync.WaitGroup, errCh chan error) {
+	go func(wg *sync.WaitGroup, errCh chan error) {
 		if config.Config.RequestedRuntime == "fake" { //when not running with fake runtime this happens too fast and the node cant connect in time so we need a timeout
 			time.Sleep(5 * time.Second)
 		}
 
 		expectedStats, err := helpers.DoWorkloadHelper(client, logger, spec, config.Workloads[0])
 		if err != nil {
-			logger.Error("Error occurred in Test Case `testOneNodeListening`:", "error", err.Error())
+			logger.Error("Error occurred in Test Case `testMultipleNodesListening`:", "error", err.Error())
 		}
 
 		errCh <- err
 		logger.Debug("Workload is done")
-		wg1.Done()
+		wg.Done()
 		statsChan <- expectedStats
 		logger.Debug("Sent expected stats")
-
 	}(&wgWorkload, errorChan)
 
 	wgNodes := sync.WaitGroup{}

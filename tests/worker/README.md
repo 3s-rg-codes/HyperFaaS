@@ -1,5 +1,7 @@
 # Tests
 
+ATTENTION: Note that due to docker things it is possible that the tests fail due to docker mishaps, if tht tests fail with your changes it's not necessarily the fault of your changes. Just run the tests  again...
+
 ## Functionality
 
 The idea behind these integration tests is that they can be run using a number of different parameters. You can choose:

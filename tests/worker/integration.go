@@ -8,7 +8,6 @@ import (
 	"github.com/golang-cz/devslog"
 	"log/slog"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -133,7 +132,6 @@ func main() {
 		MemoryLimit: int64(config.Config.MemoryLimit * 1024 * 1024),
 	}
 
-	logger.Info(reflect.TypeOf(runtime).String())
 	//////////////////////////////// Test Cases //////////////////////////////////////
 	//TODO: we ideally want this to work without timeouts too
 
@@ -302,9 +300,13 @@ func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.Co
 		time.Sleep(tolerance * time.Second)
 		logger.Debug("Sleeping done")
 
-		if responseContainerID.Id != testContainerID.Id || !runtime.ContainerExists(context.Background(), responseContainerID.Id) {
-			logger.Error("Container was not successfully deleted", "ID", testContainerID)
-			return fmt.Errorf("container was not successfully deleted, code: %v", grpcStatus.Code())
+		if responseContainerID.Id != testContainerID.Id {
+			logger.Error("Requested and actually deleted container are not the same", "requested", testContainerID.Id, "actual", responseContainerID.Id)
+			return fmt.Errorf("requested and actually deleted container are not the same, code: %v", grpcStatus.Code())
+		}
+		if runtime.ContainerExists(context.Background(), responseContainerID.Id) {
+			logger.Error("Container was not deleted successfully, container still exists", "id", responseContainerID.Id)
+			return fmt.Errorf("container was not deleted successfully, container still exists, code: %v", grpcStatus.Code())
 		}
 
 		logger.Info("Stop succeded", "containerID", responseContainerID.Id)
@@ -554,7 +556,7 @@ func (c *TestConfig) UpdateFromFlags(f Flags) {
 		c.AutoRemove = *f.AutoRemove
 	}
 
-	if *f.Containerized != true {
+	if *f.Containerized != false {
 		c.Containerized = *f.Containerized
 	}
 

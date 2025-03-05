@@ -124,7 +124,7 @@ func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *cont
 	// only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed in the container name, just remove all forbidden characters
 	containerName = forbiddenChars.ReplaceAllString(containerName, "")
 
-	resp, err := d.Cli.ContainerCreate(ctx, d.createContainerConfig(imageTag), d.createHostConfig(), &network.NetworkingConfig{}, nil, containerName)
+	resp, err := d.Cli.ContainerCreate(ctx, d.createContainerConfig(imageTag), d.createHostConfig(config), &network.NetworkingConfig{}, nil, containerName)
 
 	if err != nil {
 		d.logger.Error("Could not create container", "image", imageTag, "error", err)
@@ -245,7 +245,7 @@ func (d *DockerRuntime) createContainerConfig(imageTag string) *container.Config
 	}
 }
 
-func (d *DockerRuntime) createHostConfig() *container.HostConfig {
+func (d *DockerRuntime) createHostConfig(config *controller.Config) *container.HostConfig {
 	var networkMode string
 	if d.containerized {
 		networkMode = "hyperfaas-network"
@@ -264,9 +264,9 @@ func (d *DockerRuntime) createHostConfig() *container.HostConfig {
 		},
 		Resources: container.Resources{
 			//TODO UNCOMMENT
-			//Memory:    int64(config.Memory),
-			//CPUPeriod: int64(config.Cpu.Period),
-			//CPUQuota:  int64(config.Cpu.Quota),
+			Memory:    config.Memory, // currently ~ 240 TB (?!?)
+			CPUPeriod: config.Cpu.Period,
+			CPUQuota:  config.Cpu.Quota,
 		},
 	}
 }
