@@ -12,6 +12,6 @@ Every subfolder of the `go` directory is a separate function. You can generate t
 ## How it works internally
 
 The Go functions are part of the main HyperFaaS module (for our convenience when developing). This means that building the images is not trivial, however.
-Every function needs to have a `main.go` file with the default main function. Everything else in the corresponding function directory will be copied as well during the build process.
+Every function needs to have a `main.go` file with the default main instanceStateMap. Everything else in the corresponding instanceStateMap directory will be copied as well during the build process.
 
 If you want to understand how 

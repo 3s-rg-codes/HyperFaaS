@@ -7,16 +7,16 @@ import "common/common.proto";
 
 message Payload {
     bytes data = 1;
-    string instanceId = 2;
-    string functionId = 3;
+    common.InstanceID instanceId = 2;
+    common.FunctionID functionId = 3;
     bool firstExecution = 4;
     common.Error error = 5;
 }
 
 message Call {
     bytes data = 1;
-    string instanceId = 2;
-    string functionId = 3;
+    common.InstanceID instanceId = 2;
+    common.FunctionID functionId = 3;
 }
 
 service FunctionService {

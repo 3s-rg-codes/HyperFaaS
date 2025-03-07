@@ -5,13 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
+	pbc "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"log/slog"
 )
 
-func TestContainerConfig(runtime containerRuntime.ContainerRuntime, client pb.ControllerClient, logger slog.Logger, config TestConfig) error {
+func TestContainerConfig(runtime containerRuntime.ContainerRuntime, client pb.ControllerClient, logger slog.Logger, config FullConfig) error {
 
-	cID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: "hyperfaas-hello:latest"}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: int64(config.CPUPeriod), Quota: int64(config.CPUQuota)}, Memory: int64(config.MemoryLimit * 1024 * 1024)}})
+	testCase := config.Workloads[0]
+
+	cID, err := client.Start(context.Background(), &pbc.FunctionID{Id: testCase.FunctionID})
+
 	if err != nil {
 		logger.Error("Error occurred starting container")
 		return err

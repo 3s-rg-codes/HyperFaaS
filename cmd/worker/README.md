@@ -1,4 +1,4 @@
-# Worker
+# WorkerStateMap
 
 ## Configuration
 
@@ -6,7 +6,7 @@ The program accepts both command-line arguments and environment variables for co
 
 ### Command-Line Arguments
 
-- `-id`: Worker ID (equivalent to `WORKER_ID`).
+- `-id`: WorkerStateMap ID (equivalent to `WORKER_ID`).
 - `-runtime`: Container runtime type (equivalent to `RUNTIME_TYPE`).
 - `-log-level`: Log level (equivalent to `LOG_LEVEL`).
 - `-log-handler`: Log handler mode (`dev` for development, `prod` for production) (equivalent to `LOG_HANDLER`).

@@ -1,6 +1,6 @@
 # This needs to run from the root directory context, as it depends on the main go.mod file (because we want to use the functionRuntimeInterface from the root of the project).
 # It is in this directory so that its easier to understand what it does (building the functions in this folder), but it can't be run from here. Look at the justfile for that.
-ARG GO_VERSION=1.22
+ARG GO_VERSION=1.23
 ARG ALPINE_VERSION=latest
 
 FROM golang:${GO_VERSION}-alpine as builder

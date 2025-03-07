@@ -54,9 +54,9 @@ func (s *syncMapScheduler) Schedule(ctx context.Context, functionID state.Functi
 		workerID = s.workerIDs[rand.Intn(len(s.workerIDs))]
 
 		switch e := err.(type) {
-		case *state.FunctionNotRegisteredError:
-			s.logger.Info("Function not registered, creating on random worker", "functionID", functionID, "workerID", workerID)
-			s.CreateFunction(workerID, functionID)
+		case *state.FunctionNotAssignedError:
+			s.logger.Info("Function not assigned to any worker, creating on random worker", "functionID", functionID, "workerID", workerID)
+			s.workers.AssignFunction(workerID, functionID) //Before s.CreateFunction(workerID, functionID) where we only call s.workers.CreateFunction (which is now AssignFunction) cause we had CreateFunction three times
 		case *state.NoIdleInstanceError:
 			s.logger.Info("No idle instance found, scheduling to random worker", "functionID", functionID, "workerID", workerID)
 		default:
@@ -93,7 +93,8 @@ func (s *syncMapScheduler) UpdateInstanceState(workerID state.WorkerID, function
 }
 
 func (s *syncMapScheduler) CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error {
-	s.workers.CreateFunction(workerID, functionID)
+	//Why does this exist?
+	s.workers.AssignFunction(workerID, functionID)
 	return nil
 }
 
@@ -122,9 +123,9 @@ func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID
 		workerID = s.workerIDs[rand.Intn(len(s.workerIDs))]
 
 		switch e := err.(type) {
-		case *state.FunctionNotRegisteredError:
+		case *state.FunctionNotAssignedError:
 			s.logger.Info("Function not registered, creating on random worker", "functionID", functionID, "workerID", workerID)
-			s.workers.CreateFunction(workerID, functionID)
+			s.workers.AssignFunction(workerID, functionID)
 			s.workers.DebugPrint()
 		case *state.NoIdleInstanceError:
 			s.logger.Info("No idle instance found, scheduling to random worker", "functionID", functionID, "workerID", workerID)
@@ -162,6 +163,6 @@ func (s *mruScheduler) UpdateInstanceState(workerID state.WorkerID, functionID s
 }
 
 func (s *mruScheduler) CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error {
-	s.workers.CreateFunction(workerID, functionID)
+	s.workers.AssignFunction(workerID, functionID) //see above
 	return nil
 }

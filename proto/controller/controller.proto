@@ -5,32 +5,7 @@ import "common/common.proto";
 
 package controller;
 
-message ImageTag {
-  string tag = 1;
-}
-
-message Config {
-  // container memory limit in bytes
-  int64 memory = 1;
-
-  CPUConfig cpu = 2;
-}
-
-// Container CPU configuration. If the host has 2 CPUs and the container should only use 1 CPU, set period to 100000 and quota to 50000.
-message CPUConfig {
-  // CPU CFS (Completely Fair Scheduler) period
-  int64 period = 1;
-  // CPU CFS (Completely Fair Scheduler) quota
-  int64 quota = 2;
-
-}
-message StartRequest {
-  string function_id = 1;
-  ImageTag image_tag = 2;
-  Config config = 3;
-}
-
-enum Type {
+enum VirtualizationType {
   TYPE_CONTAINER = 0;
 }
 
@@ -49,11 +24,11 @@ enum Status {
 }
 
 message StatusUpdate {
-  string instance_id = 1;
-  Type type = 2;
+  common.InstanceID instance_id = 1;
+  VirtualizationType type = 2;
   Event event = 3;
   Status status = 4;
-  string function_id = 5;
+  common.FunctionID function_id = 5;
 }
 
 message StatusRequest {
@@ -69,6 +44,10 @@ message MetricsUpdate{
   repeated double cpu_percent_percpu = 2;
 }
 
+message StateRequest {
+  string node_id = 1;
+}
+
 message InstanceState {
   string instance_id = 1;
   bool is_active = 2;
@@ -78,7 +57,7 @@ message InstanceState {
 }
 
 message FunctionState {
-  string function_id = 1;
+  common.FunctionID function_id = 1;
   repeated InstanceState running = 2;
   repeated InstanceState idle = 3;
 }
@@ -88,12 +67,9 @@ message StateResponse {
   repeated FunctionState functions = 1;
 }
 
-message StateRequest {
-  string node_id = 1;
-}
 
 service Controller {
-  rpc Start (StartRequest) returns (common.InstanceID);
+  rpc Start (common.FunctionID) returns (common.InstanceID);
   rpc Call (common.CallRequest) returns (common.CallResponse);
   rpc Stop (common.InstanceID) returns (common.InstanceID);
   rpc Status (StatusRequest) returns (stream StatusUpdate);

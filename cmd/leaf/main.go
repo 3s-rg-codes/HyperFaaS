@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	"log/slog"
 	"net"
 	"os"
@@ -34,6 +35,8 @@ func main() {
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
 	logFormat := flag.String("log-format", "text", "Log format (json, text or dev) (Env: LOG_FORMAT)")
 	logFilePath := flag.String("log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
+	databaseType := flag.String("database-type", "http", "\"database\" used for managing the functionID -> config relationship")
+	databaseAddress := flag.String("database-address", "http://localhost:8080/", "address of the database server")
 	schedulerType := flag.String("scheduler-type", "naive", "The type of scheduler to use (mru or map)")
 	flag.Var(&workerIDs, "worker-ids", "The IDs of the workers to manage")
 	flag.Parse()
@@ -55,10 +58,18 @@ func main() {
 		ids = append(ids, state.WorkerID(id))
 	}
 
+	var dbClient keyValueStore.DatabaseClient
+
+	switch *databaseType {
+	case "http":
+		dbClient = keyValueStore.NewHttpClient(*databaseAddress, logger)
+	}
+
 	workerState := state.NewWorkers(logger)
 
 	scheduler := scheduling.New(*schedulerType, workerState, ids, logger)
-	server := api.NewLeafServer(scheduler)
+
+	server := api.NewLeafServer(scheduler, dbClient)
 
 	listener, err := net.Listen("tcp", *address)
 	if err != nil {

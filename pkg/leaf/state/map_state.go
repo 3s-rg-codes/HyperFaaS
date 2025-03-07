@@ -21,16 +21,17 @@ func NewWorkersSyncMap(logger *slog.Logger) *WorkersSyncMap {
 	return &WorkersSyncMap{logger: logger}
 }
 
-// GetOrCreateWorker creates a worker's function map
-func (w *WorkersSyncMap) CreateWorker(workerID WorkerID) *sync.Map {
+// CreateWorker creates a new worker in the workers map
+func (w *WorkersSyncMap) CreateWorker(workerID WorkerID) {
 	w.data.Store(workerID, &sync.Map{})
-	return w.GetWorker(workerID)
 }
 
+// DeleteWorker deletes a worker from the workers map
 func (w *WorkersSyncMap) DeleteWorker(workerID WorkerID) {
 	w.data.Delete(workerID)
 }
 
+// GetWorker gets a worker from the workers map
 func (w *WorkersSyncMap) GetWorker(workerID WorkerID) *sync.Map {
 	functionMap, ok := w.data.Load(workerID)
 	if !ok {
@@ -39,30 +40,42 @@ func (w *WorkersSyncMap) GetWorker(workerID WorkerID) *sync.Map {
 	return functionMap.(*sync.Map)
 }
 
-func (w *WorkersSyncMap) GetFunction(workerID WorkerID, functionID FunctionID) *sync.Map {
-	functionMap := w.GetWorker(workerID)
-	if functionMap == nil {
-		w.logger.Error("Function map not found", "workerID", workerID, "functionID", functionID)
-		return nil
-	}
-	function, ok := functionMap.Load(functionID)
-	if !ok {
-		w.logger.Error("Function not found", "workerID", workerID, "functionID", functionID)
-		return nil
-	}
-	return function.(*sync.Map)
-}
-func (w *WorkersSyncMap) CreateFunction(workerID WorkerID, functionID FunctionID) {
+// AssignFunction assigns a function to a worker by saving the function in the supplied worker's map (note difference between workersMap and worker's map)
+func (w *WorkersSyncMap) AssignFunction(workerID WorkerID, functionID FunctionID) {
 	w.GetWorker(workerID).Store(functionID, &sync.Map{})
 
 	//create the running and idle maps.
-	instanceStateMap := w.GetFunction(workerID, functionID)
+	instanceStateMap, err := w.GetFunctionStateMap(workerID, functionID)
+	if err != nil {
+		w.logger.Error(err.Error())
+		return
+	}
 	instanceStateMap.Store(InstanceStateRunning, []Instance{})
 	instanceStateMap.Store(InstanceStateIdle, []Instance{})
 }
 
+// GetFunctionStateMap
+func (w *WorkersSyncMap) GetFunctionStateMap(workerID WorkerID, functionID FunctionID) (*sync.Map, error) {
+	functionMap := w.GetWorker(workerID)
+	if functionMap == nil {
+		w.logger.Error("Function map not found", "workerID", workerID, "functionID", functionID)
+		return nil, fmt.Errorf("error getting function (%v) from worker, no such worker exists %v", functionID, workerID)
+	}
+	function, ok := functionMap.Load(functionID)
+	if !ok {
+		w.logger.Error("Function not found", "workerID", workerID, "functionID", functionID)
+		return nil, fmt.Errorf("no such function (%v) on worker (%v)", functionID, workerID)
+	}
+	return function.(*sync.Map), nil
+}
+
+// GetInstances returns all instances running with the supplied function state on the supplied worker
 func (w *WorkersSyncMap) GetInstances(workerID WorkerID, functionID FunctionID, instanceState InstanceState) []Instance {
-	instanceStateMap := w.GetFunction(workerID, functionID)
+	instanceStateMap, err := w.GetFunctionStateMap(workerID, functionID)
+	if err != nil {
+		w.logger.Error(err.Error())
+		return []Instance{}
+	}
 	if instanceStateMap == nil {
 		return nil
 	}
@@ -74,9 +87,8 @@ func (w *WorkersSyncMap) GetInstances(workerID WorkerID, functionID FunctionID, 
 }
 
 func (w *WorkersSyncMap) UpdateInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instance Instance) {
-	instanceStateMap := w.GetFunction(workerID, functionID)
-	if instanceStateMap == nil {
-		w.logger.Error("Instance state map not found", "workerID", workerID, "functionID", functionID)
+	instanceStateMap, err := w.GetFunctionStateMap(workerID, functionID)
+	if err != nil {
 		return
 	}
 	w.logger.Debug("Updating instance", "workerID", workerID, "functionID", functionID, "instanceState", instanceState, "instance", instance)
@@ -114,14 +126,15 @@ func (w *WorkersSyncMap) UpdateInstance(workerID WorkerID, functionID FunctionID
 	}
 }
 
-func (w *WorkersSyncMap) DeleteInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instanceID InstanceID) {
-	instanceStateMap := w.GetFunction(workerID, functionID)
-	if instanceStateMap == nil {
-		return
+// DeleteInstance deletes the supplied instance of the supplied function in th supplied state from the supplied worker
+func (w *WorkersSyncMap) DeleteInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instanceID InstanceID) error {
+	instanceStateMap, err := w.GetFunctionStateMap(workerID, functionID)
+	if err != nil {
+		return err
 	}
 	instances := w.GetInstances(workerID, functionID, instanceState)
 	if instances == nil {
-		return
+		return err
 	}
 
 	// remove the instance from the slice
@@ -131,7 +144,9 @@ func (w *WorkersSyncMap) DeleteInstance(workerID WorkerID, functionID FunctionID
 			break
 		}
 	}
+
 	instanceStateMap.Store(instanceState, instances)
+	return nil
 }
 
 // Traverses the State Map to find an available function instance.
@@ -177,14 +192,14 @@ func (w *WorkersSyncMap) FindIdleInstance(functionID FunctionID) (WorkerID, Inst
 		return idleWorkerID, idleInstanceID, nil
 	}
 	if !functionExists {
-		return "", "", &FunctionNotRegisteredError{FunctionID: functionID}
-	}
+		return "", "", &FunctionNotAssignedError{FunctionID: functionID}
+	} //TODO would be more like FunctionNotAssigned since Assigning != Creating
 	return "", "", &NoIdleInstanceError{FunctionID: functionID}
 }
 
 func (w *WorkersSyncMap) DebugPrint() {
 	w.data.Range(func(workerID, functionMap interface{}) bool {
-		fmt.Printf("Worker ID: %v\n", workerID)
+		fmt.Printf("WorkerStateMap ID: %v\n", workerID)
 		funcMap := functionMap.(*sync.Map)
 
 		funcMap.Range(func(functionID, instanceStateMap interface{}) bool {

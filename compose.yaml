@@ -28,6 +28,14 @@ services:
             - action: rebuild
               path: .
               target: .
+  database:
+    build:
+      context: .
+      dockerfile: database.Dockerfile
+    ports:
+      - "8080:8080"
+    networks:
+      - hyperfaas-network
 
 volumes:
   function-logs:
