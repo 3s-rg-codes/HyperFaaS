@@ -135,11 +135,11 @@ func (m *MockRuntime) ContainerExists(ctx context.Context, instanceID string) bo
 	for _, list := range m.Running {
 		for _, val := range list {
 			if val.id == instanceID {
-				return true
+				return false
 			}
 		}
 	}
-	return false
+	return true
 }
 
 func fakeEchoFunction(payload *pb.Payload, ctx context.Context, callerRef *caller.CallerServer, logger *slog.Logger) {

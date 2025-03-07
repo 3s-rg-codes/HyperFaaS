@@ -265,7 +265,7 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 			},
 		},
 		Resources: container.Resources{
-			Memory:    config.Memory,
+			Memory:    config.Memory, 
 			CPUPeriod: config.Cpu.Period,
 			CPUQuota:  config.Cpu.Quota,
 		},
