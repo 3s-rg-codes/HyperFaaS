@@ -85,12 +85,12 @@ func (r *Reconciler) ListenToWorkerStatusUpdates(ctx context.Context, workerID s
 			r.logger.Debug("Received status update", "update", update)
 
 			switch update.Type {
-			case controllerpb.Type_TYPE_CONTAINER:
+			case controllerpb.VirtualizationType_TYPE_CONTAINER:
 				switch update.Event {
 				case controllerpb.Event_EVENT_TIMEOUT:
-					r.handleContainerTimeout(workerID, state.FunctionID(update.FunctionId), state.InstanceID(update.InstanceId))
+					r.handleContainerTimeout(workerID, state.FunctionID(update.FunctionId.Id), state.InstanceID(update.InstanceId.Id))
 				case controllerpb.Event_EVENT_DOWN:
-					r.handleContainerDown(workerID, state.FunctionID(update.FunctionId), state.InstanceID(update.InstanceId))
+					r.handleContainerDown(workerID, state.FunctionID(update.FunctionId.Id), state.InstanceID(update.InstanceId.Id))
 				default:
 					r.logger.Warn("Received status update of unknown event", "event", update.Event)
 				}

@@ -41,7 +41,7 @@ func NewMockRuntime(server *caller.CallerServer, logger *slog.Logger) *MockRunti
 	}
 }
 
-func (m *MockRuntime) Start(ctx context.Context, imageTag string, config *controller.Config) (string, error) {
+func (m *MockRuntime) Start(ctx context.Context, imageTag string, _ *common.Config) (string, error) {
 
 	longID, err := uuid.NewUUID()
 	if err != nil {
@@ -56,7 +56,7 @@ func (m *MockRuntime) Start(ctx context.Context, imageTag string, config *contro
 	m.mapLock.Lock()
 	m.Running[imageTag] = append(m.Running[imageTag], instance)
 	m.mapLock.Unlock()
-	payload := &pb.Payload{FirstExecution: true, InstanceId: instanceID}
+	payload := &pb.Payload{FirstExecution: true, InstanceId: &common.InstanceID{Id: instanceID}}
 	switch imageTag {
 	case "hyperfaas-hello:latest":
 		go fakeHelloFunction(payload, controlContext, m.callerRef, m.logger)
@@ -84,6 +84,14 @@ func (m *MockRuntime) Call(ctx context.Context, req *common.CallRequest) (*commo
 }
 
 func (m *MockRuntime) Stop(ctx context.Context, req *common.InstanceID) (*common.InstanceID, error) { //Currently the instance will still finish running
+	for image, list := range m.Running {
+		for _, instance := range list {
+			m.logger.Debug("Instance for Image", "image", image, "instance", instance.id)
+		}
+	}
+
+	m.logger.Debug("Trying to stop instance", "instanceId", req.Id)
+
 	m.mapLock.Lock()
 	defer m.mapLock.Unlock()
 	for image, list := range m.Running {
@@ -91,12 +99,15 @@ func (m *MockRuntime) Stop(ctx context.Context, req *common.InstanceID) (*common
 			if instance.id == req.Id {
 				m.logger.Info("Stopping running instance", "id", instance.id)
 				instance.ctx.Done() //this should stop the goroutine
-				deleteFromList(m.Running[image], instance.id)
+				m.Running[image] = deleteFromList(m.Running[image], instance.id)
+				if len(m.Running[image]) == 0 {
+					delete(m.Running, image)
+				}
 				return &common.InstanceID{Id: instance.id}, nil
 			}
 		}
 	}
-
+	m.logger.Warn("No such instance running", "id", req.Id)
 	return nil, status.Errorf(codes.NotFound, "no such instance running %v", req.Id)
 }
 
@@ -197,7 +208,7 @@ func fakeHelloFunction(payload *pb.Payload, ctx context.Context, callerRef *call
 }
 
 func deleteFromList(list []RunningInstance, item string) []RunningInstance {
-	result := make([]RunningInstance, 1)
+	result := make([]RunningInstance, 0)
 	for _, v := range list {
 		if v.id != item {
 			result = append(result, v)

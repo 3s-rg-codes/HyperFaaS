@@ -118,10 +118,15 @@ func TestSyncMapSchedulerCreateFunction(t *testing.T) {
 	scheduler.CreateFunction("worker2", "func3")
 	scheduler.CreateFunction("worker2", "func1")
 
-	assert.NotNil(t, scheduler.workers.GetFunction("worker1", "func1"))
-	assert.NotNil(t, scheduler.workers.GetFunction("worker1", "func2"))
-	assert.NotNil(t, scheduler.workers.GetFunction("worker2", "func3"))
-	assert.NotNil(t, scheduler.workers.GetFunction("worker2", "func1"))
+	fsm1, _ := scheduler.workers.GetFunctionStateMap("worker1", "func1")
+	fsm2, _ := scheduler.workers.GetFunctionStateMap("worker1", "func2")
+	fsm3, _ := scheduler.workers.GetFunctionStateMap("worker2", "func3")
+	fsm4, _ := scheduler.workers.GetFunctionStateMap("worker2", "func1")
+
+	assert.NotNil(t, fsm1)
+	assert.NotNil(t, fsm2)
+	assert.NotNil(t, fsm3)
+	assert.NotNil(t, fsm4)
 
 	// The Idle and Running slices should exist
 	assert.NotNil(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateIdle))
@@ -132,7 +137,7 @@ func TestSyncMapSchedulerCreateFunction(t *testing.T) {
 
 func TestSyncMapSchedulerUpdateInstanceState(t *testing.T) {
 	scheduler := CreateTestSyncMapScheduler()
-	//------------Worker 1------------
+	//------------WorkerStateMap 1------------
 	// Turn instance 1 to Running
 	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateRunning)
 	// Should be 3 running and 2 idle
@@ -145,7 +150,7 @@ func TestSyncMapSchedulerUpdateInstanceState(t *testing.T) {
 	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateRunning), 5)
 	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateIdle), 0)
 
-	//------------Worker 2------------
+	//------------WorkerStateMap 2------------
 	// Turn instance 10 to Running
 	scheduler.UpdateInstanceState("worker2", "func3", "instance10", state.InstanceStateRunning)
 	// Should be 3 running and 1 idle
@@ -193,33 +198,29 @@ func TestMRUSchedulerUpdateWorkerState(t *testing.T) {
 	scheduler := NewMRUScheduler(state.NewWorkers(logger), []state.WorkerID{"worker1", "worker2"}, logger)
 	scheduler.UpdateWorkerState("worker1", state.WorkerStateUp)
 	scheduler.UpdateWorkerState("worker2", state.WorkerStateUp)
-	worker, err := scheduler.workers.GetWorker("worker1")
-	assert.NoError(t, err)
+	worker := scheduler.workers.GetWorker("worker1")
 	assert.NotNil(t, worker)
-	worker, err = scheduler.workers.GetWorker("worker2")
-	assert.NoError(t, err)
+	worker = scheduler.workers.GetWorker("worker2")
 	assert.NotNil(t, worker)
 }
 
 func TestMRUSchedulerUpdateInstanceState(t *testing.T) {
 	scheduler := CreateTestMRUScheduler()
-	//------------Worker 1------------
+	//------------WorkerStateMap 1------------
 	// Turn instance 1 to Running
 	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateRunning)
 	// Should be 3 running and 2 idle
-	worker, err := scheduler.workers.GetWorker("worker1")
-	assert.NoError(t, err)
+	worker := scheduler.workers.GetWorker("worker1")
 	idleInstances := worker.Functions["func1"].Instances[state.InstanceStateIdle]
 	runningInstances := worker.Functions["func1"].Instances[state.InstanceStateRunning]
 	assert.Len(t, idleInstances, 2)
 	assert.Len(t, runningInstances, 3)
 
-	//------------Worker 2------------
+	//------------WorkerStateMap 2------------
 	// Turn instance 10 to Running
 	scheduler.UpdateInstanceState("worker2", "func3", "instance10", state.InstanceStateRunning)
 	// Should be 3 running and 1 idle
-	worker, err = scheduler.workers.GetWorker("worker2")
-	assert.NoError(t, err)
+	worker = scheduler.workers.GetWorker("worker2")
 	idleInstances = worker.Functions["func3"].Instances[state.InstanceStateIdle]
 	runningInstances = worker.Functions["func3"].Instances[state.InstanceStateRunning]
 	assert.Len(t, idleInstances, 1)
@@ -230,7 +231,7 @@ func TestMRUSchedulerUpdateInstanceState(t *testing.T) {
 func TestMRUSchedulerSchedule(t *testing.T) {
 	scheduler := CreateTestMRUScheduler()
 
-	//------------Worker 1------------
+	//------------WorkerStateMap 1------------
 	// There are 3 idle instances for func1
 	workerID, instanceID, err := scheduler.Schedule(context.Background(), "func1")
 	assert.NoError(t, err)

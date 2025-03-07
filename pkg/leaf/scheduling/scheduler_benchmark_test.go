@@ -39,7 +39,7 @@ func remove(slice []state.WorkerID, s state.WorkerID) []state.WorkerID {
 func runBenchmark(b *testing.B, scheduler Scheduler) {
 	wg := sync.WaitGroup{}
 
-	// Worker creation goroutine
+	// WorkerStateMap creation goroutine
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -49,7 +49,7 @@ func runBenchmark(b *testing.B, scheduler Scheduler) {
 		}
 	}()
 
-	// Worker deletion goroutine
+	// WorkerStateMap deletion goroutine
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

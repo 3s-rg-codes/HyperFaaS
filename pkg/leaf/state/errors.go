@@ -2,11 +2,11 @@ package state
 
 import "fmt"
 
-type FunctionNotRegisteredError struct {
+type FunctionNotAssignedError struct {
 	FunctionID FunctionID
 }
 
-func (e *FunctionNotRegisteredError) Error() string {
+func (e *FunctionNotAssignedError) Error() string {
 	return fmt.Sprintf("function %s not registered with any worker", e.FunctionID)
 }
 

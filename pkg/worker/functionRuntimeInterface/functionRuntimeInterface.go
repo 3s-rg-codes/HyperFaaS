@@ -62,6 +62,8 @@ func New(timeout int) *Function {
 func (f *Function) Ready(handler handler) {
 	logger := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.instanceId))
 
+	logger.Info("Address", "address", f.address)
+
 	connection, err := grpc.NewClient(f.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		logger.Error("failed to connect", "error", err)
@@ -80,7 +82,7 @@ func (f *Function) Ready(handler handler) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(f.timeout)*time.Second)
 
 		//We ask for a new request whilst sending the response of the previous one
-		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, InstanceId: f.response.Id, FunctionId: f.functionId, FirstExecution: first, Error: &common.Error{Message: f.response.Error}})
+		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, InstanceId: &common.InstanceID{Id: f.response.Id}, FunctionId: &common.FunctionID{Id: f.functionId}, FirstExecution: first, Error: &common.Error{Message: f.response.Error}})
 
 		cancel()
 
@@ -91,7 +93,7 @@ func (f *Function) Ready(handler handler) {
 		}
 		logger.Debug("Received request", "data", p.Data)
 
-		f.request = &Request{p.Data, p.InstanceId}
+		f.request = &Request{p.Data, p.InstanceId.Id}
 
 		f.response = handler(ctx, f.request)
 

@@ -1,6 +1,8 @@
 {
   "test_config_defaults":{
     "server_address": "localhost:50051",
+    "caller_server_address": "localhost:50052",
+    "database_server_address": "http://localhost:8080/",
     "requested_runtime": "docker",
     "log_level": "info",
     "auto_remove": true,
@@ -10,7 +12,7 @@
     "listener_timeout": 20,
     "cpu_period": 100000,
     "cpu_quota": 50000,
-    "memory_limit": 250000000
+    "memory_limit": 500000000
   },
 
 
