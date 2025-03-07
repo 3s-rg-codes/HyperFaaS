@@ -149,7 +149,6 @@ func (d *DockerRuntime) Call(ctx context.Context, req *common.CallRequest) (*com
 
 func (d *DockerRuntime) Stop(ctx context.Context, req *common.InstanceID) (*common.InstanceID, error) {
 	// Check if the container exists
-	d.logger.Debug("Entering stop for id", "id", req.Id) //TODO
 	_, err := d.Cli.ContainerInspect(ctx, req.Id)
 	if err != nil {
 		d.logger.Error("Container does not exist", "id", req.Id)
@@ -265,7 +264,7 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 			},
 		},
 		Resources: container.Resources{
-			Memory:    config.Memory, 
+			Memory:    config.Memory,
 			CPUPeriod: config.Cpu.Period,
 			CPUQuota:  config.Cpu.Quota,
 		},

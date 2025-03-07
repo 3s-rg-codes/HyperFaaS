@@ -12,7 +12,7 @@
     "listener_timeout": 20,
     "cpu_period": 100000,
     "cpu_quota": 50000,
-    "memory_limit": 500000000
+    "memory_limit": 250000000
   },
 
 
