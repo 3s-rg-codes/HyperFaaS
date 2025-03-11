@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	"github.com/golang-cz/devslog"
 	"log/slog"
 	"os"
@@ -18,7 +19,7 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/mock"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	pbc "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/tests/helpers"
 	"google.golang.org/grpc"
@@ -26,17 +27,18 @@ import (
 )
 
 type Flags struct {
-	ServerAddress    *string
-	RequestedRuntime *string
-	LogLevel         *string
-	AutoRemove       *bool
-	Containerized    *bool
-	TestCases        *string
-	DockerTolerance  *int
-	ListenerTimeout  *int
-	CPUPeriod        *int
-	CPUQuota         *int
-	MemoryLimit      *int
+	ServerAddress         *string
+	DatabaseServerAddress *string
+	RequestedRuntime      *string
+	LogLevel              *string
+	AutoRemove            *bool
+	Containerized         *bool
+	TestCases             *string
+	DockerTolerance       *int
+	ListenerTimeout       *int
+	CPUPeriod             *int
+	CPUQuota              *int
+	MemoryLimit           *int
 }
 
 type FullConfig struct {
@@ -46,18 +48,19 @@ type FullConfig struct {
 }
 
 type TestConfig struct {
-	ServerAddress       string `json:"server_address"`
-	CallerServerAddress string `json:"caller_server_address"`
-	RequestedRuntime    string `json:"requested_runtime"`
-	LogLevel            string `json:"log_level"`
-	AutoRemove          bool   `json:"auto_remove"`
-	Containerized       bool   `json:"containerized"`
-	TestCases           string `json:"test_cases"`
-	DockerTolerance     int    `json:"docker_tolerance"`
-	ListenerTimeout     int    `json:"listener_timeout"`
-	CPUPeriod           int    `json:"cpu_period"`
-	CPUQuota            int    `json:"cpu_quota"`
-	MemoryLimit         int    `json:"memory_limit"`
+	ServerAddress         string `json:"server_address"`
+	DatabaseServerAddress string `json:"database_server_address"`
+	CallerServerAddress   string `json:"caller_server_address"`
+	RequestedRuntime      string `json:"requested_runtime"`
+	LogLevel              string `json:"log_level"`
+	AutoRemove            bool   `json:"auto_remove"`
+	Containerized         bool   `json:"containerized"`
+	TestCases             string `json:"test_cases"`
+	DockerTolerance       int    `json:"docker_tolerance"`
+	ListenerTimeout       int    `json:"listener_timeout"`
+	CPUPeriod             int    `json:"cpu_period"`
+	CPUQuota              int    `json:"cpu_quota"`
+	MemoryLimit           int    `json:"memory_limit"`
 }
 
 type StatsTest struct {
@@ -75,8 +78,16 @@ type Test struct {
 
 func main() {
 
-	//Everything related to parsing the flags adn setting up logging
+	//Everything related to parsing the flags and setting up logging
 	config, logger, testsMap := configuration()
+
+	dbClient, err := setupDBClient(config, logger)
+	if err != nil {
+		logger.Error("Error adding test data to database", "error", err)
+		return
+	}
+
+	logger.Debug(config.Workloads[0].FunctionID)
 
 	//Dependency Injection :O
 	statsManager := stats.NewStatsManager(logger, time.Duration(config.Config.ListenerTimeout)*time.Second)
@@ -85,7 +96,6 @@ func main() {
 
 	var testController controller.Controller
 	var runtime containerRuntime.ContainerRuntime
-	var err error
 
 	//Determining the runtime according to `requested_runtime` or a flag
 	switch config.Config.RequestedRuntime {
@@ -94,14 +104,17 @@ func main() {
 	case "fake":
 		runtime = mock.NewMockRuntime(callerServer, logger)
 		testsMap[6] = false
-		logger.Info("Mock runtime and container config test not compatible: Removing...")
+		logger.Info("Mock runtime and container config test not compatible: Removing...") //TODO: it should be
+	default:
+		logger.Error("No such runtime available, must be 'fake' or 'docker' ")
+		return
 	}
 
 	//Determining the environment according to `containerized` or a flag
 
 	if !config.Config.Containerized {
 		logger.Info("Setting up local environment")
-		testController = setupLocalEnv(runtime, callerServer, statsManager, logger, config.Config)
+		testController = setupLocalEnv(runtime, callerServer, statsManager, logger, config.Config, dbClient)
 	}
 	//For containerized running we don't need anything else set up
 
@@ -187,7 +200,7 @@ func main() {
 	if testsMap[6] {
 		name := "container config"
 		logger.Info("Starting test", "test", name)
-		tErr := TestContainerConfig(runtime, controllerClient, *logger, config.Config)
+		tErr := TestContainerConfig(runtime, controllerClient, *logger, config)
 		test := Test{name: name, err: tErr}
 		testArray = append(testArray, test)
 		time.Sleep(5 * time.Second)
@@ -234,15 +247,12 @@ func main() {
 
 }
 
-////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////// MAIN INTEGRATION TESTS/////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////
-
 func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.ContainerRuntime, logger slog.Logger, spec helpers.ResourceSpec, config FullConfig) error {
 
 	for i := 0; i < 2; i++ {
 		tCase := config.Workloads[i]
-		testContainerID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: tCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: spec.CPUPeriod, Quota: spec.CPUQuota}, Memory: spec.MemoryLimit}})
+		logger.Info("Looking for function id", "id", tCase.FunctionID) //TODO
+		testContainerID, err := client.Start(context.Background(), &pbc.FunctionID{Id: tCase.FunctionID})
 
 		grpcStatus, ok := status.FromError(err)
 		if !ok {
@@ -265,7 +275,7 @@ func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.Co
 		}
 		logger.Info("GRPC response code for start is as expected", "expected", tCase.ExpectedErrorCode, "actual", grpcStatus.Code())
 
-		response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: testContainerID, Data: tCase.CallPayload, FunctionId: &common.FunctionID{Id: tCase.ImageTag}})
+		response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: testContainerID, Data: tCase.CallPayload, FunctionId: &pbc.FunctionID{Id: tCase.ImageTag}})
 
 		grpcStatus, ok = status.FromError(err)
 
@@ -315,11 +325,15 @@ func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.Co
 	return nil
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////// MAIN INTEGRATION TESTS/////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+
 func testStopNonExistingContainer(client pb.ControllerClient, logger slog.Logger, config FullConfig) error {
 
 	tCase := config.Workloads[2]
 
-	_, err := client.Stop(context.Background(), &common.InstanceID{Id: tCase.InstanceID})
+	_, err := client.Stop(context.Background(), &pbc.InstanceID{Id: tCase.InstanceID})
 
 	grpcStatus, ok := status.FromError(err)
 
@@ -342,7 +356,7 @@ func testCallNonExistingContainer(client pb.ControllerClient, logger slog.Logger
 
 	tCase := config.Workloads[4]
 
-	_, err := client.Call(context.Background(), &common.CallRequest{InstanceId: &common.InstanceID{Id: tCase.InstanceID}, Data: []byte(""), FunctionId: &common.FunctionID{Id: tCase.ImageTag}})
+	_, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: &pbc.InstanceID{Id: tCase.InstanceID}, Data: []byte(""), FunctionId: &pbc.FunctionID{Id: tCase.ImageTag}})
 
 	grpcStatus, ok := status.FromError(err)
 
@@ -388,7 +402,7 @@ func testStartNonLocalImages(client pb.ControllerClient, runtime containerRuntim
 			return err
 		}
 
-		_, err = client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: tCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: spec.CPUPeriod, Quota: spec.CPUQuota}, Memory: spec.MemoryLimit}})
+		_, err = client.Start(context.Background(), &pbc.FunctionID{Id: tCase.FunctionID})
 
 		grpcStatus, ok := status.FromError(err)
 
@@ -413,9 +427,9 @@ func testStartNonLocalImages(client pb.ControllerClient, runtime containerRuntim
 	return nil
 }
 
-func setupLocalEnv(runtime containerRuntime.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, config TestConfig) controller.Controller {
+func setupLocalEnv(runtime containerRuntime.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, config TestConfig, client kv.FunctionMetadataStore) controller.Controller {
 
-	testController := *controller.NewController(runtime, callerServer, statsManager, logger, config.ServerAddress)
+	testController := *controller.NewController(runtime, callerServer, statsManager, logger, config.ServerAddress, client)
 
 	logger.Debug("Created controller")
 	//CallerServer
@@ -442,17 +456,18 @@ type ContainerStats struct {
 
 func configuration() (FullConfig, *slog.Logger, map[int]bool) {
 	flags := Flags{
-		ServerAddress:    flag.String("server_address", "", "Server address"),
-		RequestedRuntime: flag.String("requested_runtime", "", "Requested runtime"),
-		LogLevel:         flag.String("log_level", "", "Log level"),
-		AutoRemove:       flag.Bool("auto_remove", true, "Auto remove"),
-		Containerized:    flag.Bool("containerized", false, "Containerized"),
-		TestCases:        flag.String("test_cases", "", "test cases to run"),
-		DockerTolerance:  flag.Int("docker_tolerance", 0, "Docker tolerance"),
-		ListenerTimeout:  flag.Int("listener_timeout", 0, "Listener timeout"),
-		CPUPeriod:        flag.Int("cpu_period", 0, "CPU period"),
-		CPUQuota:         flag.Int("cpu_quota", 0, "CPU quota"),
-		MemoryLimit:      flag.Int("memory_limit", 0, "Memory limit"),
+		ServerAddress:         flag.String("server_address", "", "Server address"),
+		DatabaseServerAddress: flag.String("database_server_address", "", "address of the function ID KV store"),
+		RequestedRuntime:      flag.String("requested_runtime", "", "Requested runtime"),
+		LogLevel:              flag.String("log_level", "", "Log level"),
+		AutoRemove:            flag.Bool("auto_remove", true, "Auto remove"),
+		Containerized:         flag.Bool("containerized", false, "Containerized"),
+		TestCases:             flag.String("test_cases", "", "test cases to run"),
+		DockerTolerance:       flag.Int("docker_tolerance", 0, "Docker tolerance"),
+		ListenerTimeout:       flag.Int("listener_timeout", 0, "Listener timeout"),
+		CPUPeriod:             flag.Int("cpu_period", 0, "CPU period"),
+		CPUQuota:              flag.Int("cpu_quota", 0, "CPU quota"),
+		MemoryLimit:           flag.Int("memory_limit", 0, "Memory limit"),
 	}
 
 	flag.Parse()
@@ -538,10 +553,50 @@ func parseJSON() FullConfig {
 	return config
 }
 
+func setupDBClient(config FullConfig, logger *slog.Logger) (kv.FunctionMetadataStore, error) {
+
+	time.Sleep(2 * time.Second) //Wait for db container to start
+
+	dbClient := kv.NewHttpClient(config.Config.DatabaseServerAddress, logger)
+
+	logger.Debug("Adding the test data to database")
+
+	//Add all necessary data to db, so that the worker can access image-tags and configs without needing a leaf
+	for i := range config.Workloads {
+
+		workload := &config.Workloads[i]
+
+		tag := &pbc.ImageTag{Tag: workload.ImageTag}
+		functionConfig := &pbc.Config{
+			Memory: int64(config.Config.MemoryLimit),
+			Cpu: &pbc.CPUConfig{
+				Quota:  int64(config.Config.CPUQuota),
+				Period: int64(config.Config.CPUQuota),
+			},
+		}
+
+		functionID, err := dbClient.Put(tag, functionConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		logger.Debug("Added key to database", "key", functionID.Id)
+		logger.Debug("Added values", "tag", tag.Tag, "memory", functionConfig.Memory, "quota", functionConfig.Cpu.Quota, "period", functionConfig.Cpu.Period)
+
+		workload.FunctionID = functionID.Id
+	}
+
+	return dbClient, nil
+}
+
 func (c *TestConfig) UpdateFromFlags(f Flags) {
 
 	if *f.ServerAddress != "" {
 		c.ServerAddress = *f.ServerAddress
+	}
+
+	if *f.DatabaseServerAddress != "" {
+		c.DatabaseServerAddress = *f.DatabaseServerAddress
 	}
 
 	if *f.RequestedRuntime != "" {

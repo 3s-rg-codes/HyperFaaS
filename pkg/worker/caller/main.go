@@ -50,10 +50,10 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 	// Pass payload to the functionResponses channel IF it exists
 	if !payload.FirstExecution {
 		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.InstanceId)
-		go s.QueueInstanceResponse(payload.InstanceId, payload.Data)
+		go s.QueueInstanceResponse(payload.InstanceId.Id, payload.Data)
 	}
 
-	callChan := s.GetInstanceCall(payload.InstanceId)
+	callChan := s.GetInstanceCall(payload.InstanceId.Id)
 	if callChan == nil {
 		s.logger.Error("Channel not found", "instance ID", payload.InstanceId)
 		return nil, status.Error(codes.NotFound, "Function channel not found")
@@ -71,8 +71,8 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 		return &pb.Call{Data: call, InstanceId: payload.InstanceId}, nil
 	case <-ctx.Done():
 		s.logger.Info("Context cancelled while waiting for call", "function ID", payload.FunctionId, "instance ID", payload.InstanceId)
-		s.StatsManager.Enqueue(stats.Event().Function(payload.FunctionId).Container(payload.InstanceId).Timeout())
-		s.UnregisterFunctionInstance(payload.InstanceId)
+		s.StatsManager.Enqueue(stats.Event().Function(payload.FunctionId.Id).Container(payload.InstanceId.Id).Timeout())
+		s.UnregisterFunctionInstance(payload.InstanceId.Id)
 		return nil, nil
 	}
 }

@@ -102,6 +102,7 @@ test-integration-containerized list:
 
 #Local integration tests
 test-integration-local-all runtime loglevel:
+    cd ./cmd/database && go run . &
     cd ./tests/worker && go run . {{runtime}} {{loglevel}}
 
 ############################
@@ -114,5 +115,12 @@ clean:
     docker images | grep hyperfaas- | awk '{print $3}' | xargs docker rmi -f
 
 #Kills the locally running integration test in case it cant shutdown gracefully
-kill:
+kill-worker:
     pid=$(ps aux | grep '[e]xe/worker' | awk '{print $2}') && kill -9 $pid
+
+kill-db:
+    pid=$(ps aux | grep '[e]xe/database' | awk '{print $2}') && kill -9 $pid
+
+kill: kill-worker kill-db
+
+

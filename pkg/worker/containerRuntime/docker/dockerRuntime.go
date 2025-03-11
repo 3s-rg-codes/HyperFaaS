@@ -92,7 +92,7 @@ func NewDockerRuntime(containerized bool, autoRemove bool, callerServerAddress s
 }
 
 // Start a container with the given image tag and configuration.
-func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *controller.Config) (string, error) {
+func (d *DockerRuntime) Start(ctx context.Context, imageTag string, config *common.Config) (string, error) {
 	// Start by checking if the image exists locally already
 	imageListArgs := filters.NewArgs()
 	imageListArgs.Add("reference", imageTag)
@@ -189,6 +189,7 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId *common.Inst
 			// Ignore Docker event errors as they're usually not critical
 			continue
 		case <-ctx.Done():
+			d.logger.Debug("Crash context done")
 			return nil
 		}
 	}
@@ -245,12 +246,12 @@ func (d *DockerRuntime) createContainerConfig(imageTag string) *container.Config
 	}
 }
 
-func (d *DockerRuntime) createHostConfig(config *controller.Config) *container.HostConfig {
+func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostConfig {
 	var networkMode string
 	if d.containerized {
 		networkMode = "hyperfaas-network"
 	} else {
-		networkMode = "host"
+		networkMode = "bridge" //Cannot be host since otherwise the container id pulled by the docker container from env will always be docker-desktop
 	}
 	return &container.HostConfig{
 		AutoRemove:  d.autoRemove,
@@ -263,8 +264,7 @@ func (d *DockerRuntime) createHostConfig(config *controller.Config) *container.H
 			},
 		},
 		Resources: container.Resources{
-			//TODO UNCOMMENT
-			Memory:    config.Memory, // currently ~ 240 TB (?!?)
+			Memory:    config.Memory,
 			CPUPeriod: config.Cpu.Period,
 			CPUQuota:  config.Cpu.Quota,
 		},

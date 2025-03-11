@@ -9,7 +9,7 @@ services:
       - hyperfaas-network
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    entrypoint: ["./main", "-containerized=true", "-log_level=debug","-server_address=worker:50051", "${ENTRYPOINT_CMD}"]
+    entrypoint: ["./main", "-containerized=true", "-log_level=debug","-server_address=worker:50051", "${ENTRYPOINT_CMD}", "-database_server_address=http://database:8080"]
     develop:
       watch:
         - action: rebuild

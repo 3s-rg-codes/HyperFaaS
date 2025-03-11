@@ -69,3 +69,6 @@ listen to the incoming events and compare them to the ones that are expected
    2. Testing the functionality with three nodes listening and checking if they all get all events
    3. Testing if events are still delivered correctly even if the listener crashes (Considering the listener timeout)
 
+## Known bugs
+
+- there seems to be a case where the mock runtime (dead)locks itself, im not sure what causes ist, but it doesn't happen always

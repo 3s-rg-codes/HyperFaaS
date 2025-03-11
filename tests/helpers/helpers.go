@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	pbc "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,6 +25,7 @@ type ResourceSpec struct {
 
 type ControllerWorkload struct {
 	TestName          string     `json:"workload_name"`
+	FunctionID        string     `json:"function_id"` //TODO add to config file
 	ImageTag          string     `json:"image_tag"`
 	ExpectsError      bool       `json:"expects_error"`
 	ReturnError       bool       `json:"return_error"`
@@ -50,7 +51,7 @@ func BuildMockClientHelper(controllerServerAddress string) (pb.ControllerClient,
 
 func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec ResourceSpec, testCase ControllerWorkload) (*[]*stats.StatusUpdate, error) {
 
-	cID, err := client.Start(context.Background(), &pb.StartRequest{ImageTag: &pb.ImageTag{Tag: testCase.ImageTag}, Config: &pb.Config{Cpu: &pb.CPUConfig{Period: spec.CPUPeriod, Quota: spec.CPUQuota}, Memory: spec.MemoryLimit}})
+	cID, err := client.Start(context.Background(), &pbc.FunctionID{Id: testCase.FunctionID})
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +68,7 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusSuccess})
 	}
 
-	response, err := client.Call(context.Background(), &common.CallRequest{InstanceId: cID, Data: testCase.CallPayload, FunctionId: &common.FunctionID{Id: testCase.ImageTag}})
+	response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: cID, Data: testCase.CallPayload, FunctionId: &pbc.FunctionID{Id: testCase.ImageTag}})
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +151,7 @@ func ConnectNodeHelper(controllerServerAddress string, nodeID string, logger slo
 			logger.Debug("Received stat", "stat", stat, "nodeID", nodeID)
 			// Copy the stats to a new struct to avoid copying mutex
 			statCopy := &stats.StatusUpdate{
-				InstanceID: stat.InstanceId,
+				InstanceID: stat.InstanceId.Id,
 				Type:       stats.UpdateType(stat.Type),
 				Event:      stats.UpdateEvent(stat.Event),
 				Status:     stats.UpdateStatus(stat.Status),

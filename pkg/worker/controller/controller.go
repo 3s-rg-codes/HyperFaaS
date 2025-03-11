@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	"log/slog"
 	"net"
 	"os"
@@ -25,16 +26,37 @@ import (
 
 type Controller struct {
 	controller.UnimplementedControllerServer
-	runtime      cr.ContainerRuntime
-	CallerServer *caller.CallerServer
-	StatsManager *stats.StatsManager
-	logger       *slog.Logger
-	address      string
+	runtime         cr.ContainerRuntime
+	CallerServer    *caller.CallerServer
+	StatsManager    *stats.StatsManager
+	logger          *slog.Logger
+	address         string
+	dbClient        kv.FunctionMetadataStore
+	functionIDCache map[string]kv.FunctionData
 }
 
-func (s *Controller) Start(ctx context.Context, req *controller.StartRequest) (*common.InstanceID, error) {
+func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common.InstanceID, error) {
 
-	instanceId, err := s.runtime.Start(ctx, req.ImageTag.Tag, req.Config)
+	//Check if we have config and image for ID cached and if not get it from db
+	if _, ok := s.functionIDCache[req.Id]; !ok {
+		s.logger.Debug("FunctionData not available locally, fetching from server", "functionID", req.Id)
+		imageTag, config, err := s.dbClient.Get(req)
+		if err != nil {
+			return &common.InstanceID{}, err
+		}
+
+		d := kv.FunctionData{
+			Config:   config,
+			ImageTag: imageTag,
+		}
+
+		s.functionIDCache[req.Id] = d
+	}
+
+	functionData := s.functionIDCache[req.Id]
+
+	s.logger.Debug("Starting container with params:", "tag", functionData.ImageTag, "memory", functionData.Config.Memory, "quota", functionData.Config.Cpu.Quota, "period", functionData.Config.Cpu.Period)
+	instanceId, err := s.runtime.Start(ctx, functionData.ImageTag.Tag, functionData.Config)
 
 	// Truncate the ID to the first 12 characters to match Docker's short ID format
 	shortID := instanceId
@@ -132,6 +154,8 @@ func (s *Controller) Stop(ctx context.Context, req *common.InstanceID) (*common.
 
 	s.StatsManager.Enqueue(stats.Event().Container(req.Id).Stop().Success())
 
+	s.logger.Debug("Successfully enqueued event for container", "container", req.Id)
+
 	return resp, nil
 
 }
@@ -155,9 +179,9 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 		if stream.Context().Err() == nil {
 			if err := stream.Send(
 				&controller.StatusUpdate{
-					InstanceId: data.InstanceID,
-					FunctionId: data.FunctionID,
-					Type:       controller.Type(data.Type),
+					InstanceId: &common.InstanceID{Id: data.InstanceID},
+					FunctionId: &common.FunctionID{Id: data.FunctionID},
+					Type:       controller.VirtualizationType(data.Type),
 					Event:      controller.Event(data.Event),
 					Status:     controller.Status(data.Status),
 				}); err != nil {
@@ -188,13 +212,15 @@ func (s *Controller) Metrics(ctx context.Context, req *controller.MetricsRequest
 	return &controller.MetricsUpdate{CpuPercentPercpu: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
 }
 
-func NewController(runtime cr.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, address string) *Controller {
+func NewController(runtime cr.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, address string, client kv.FunctionMetadataStore) *Controller {
 	return &Controller{
-		runtime:      runtime,
-		StatsManager: statsManager,
-		CallerServer: callerServer,
-		logger:       logger,
-		address:      address,
+		runtime:         runtime,
+		StatsManager:    statsManager,
+		CallerServer:    callerServer,
+		logger:          logger,
+		address:         address,
+		dbClient:        client,
+		functionIDCache: make(map[string]kv.FunctionData),
 	}
 }
 

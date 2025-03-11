@@ -29,7 +29,7 @@ const (
 	InstanceStateTimeout
 )
 
-type Function struct {
+type FunctionStateMap struct {
 	// TODO: separate into ordered lists for more efficient lookups
 	Instances map[InstanceState]map[InstanceID]Instance
 	sync.RWMutex
@@ -43,67 +43,71 @@ type Instance struct {
 	Created    time.Time
 }
 
-type Worker struct {
-	Functions map[FunctionID]*Function
+type WorkerStateMap struct {
+	Functions map[FunctionID]*FunctionStateMap
 	sync.RWMutex
 }
 
 type Workers struct {
-	workers map[WorkerID]*Worker
+	workers map[WorkerID]*WorkerStateMap
 	sync.RWMutex
 	logger *slog.Logger
 }
 
 func NewWorkers(logger *slog.Logger) *Workers {
 	return &Workers{
-		workers: make(map[WorkerID]*Worker),
+		workers: make(map[WorkerID]*WorkerStateMap),
 		logger:  logger,
 	}
 }
 
+// CreateWorker creates a new worker in the workers map
 func (w *Workers) CreateWorker(workerID WorkerID) {
 	w.Lock()
 	defer w.Unlock()
-	w.workers[workerID] = &Worker{
-		Functions: make(map[FunctionID]*Function),
+	w.workers[workerID] = &WorkerStateMap{
+		Functions: make(map[FunctionID]*FunctionStateMap),
 	}
 }
 
+// DeleteWorker deletes a worker from the workers map
 func (w *Workers) DeleteWorker(workerID WorkerID) {
 	w.Lock()
 	defer w.Unlock()
 	delete(w.workers, workerID)
 }
 
-func (w *Workers) GetWorker(workerID WorkerID) (*Worker, error) {
+// GetWorker gets a worker from the workers map
+func (w *Workers) GetWorker(workerID WorkerID) *WorkerStateMap {
 	w.RLock()
 	worker, ok := w.workers[workerID]
 	w.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("worker not found: %v", workerID)
+		return nil
 	}
-	return worker, nil
+	return worker
 }
 
-func (w *Workers) CreateFunction(workerID WorkerID, functionID FunctionID) error {
-	worker, err := w.GetWorker(workerID)
-	if err != nil {
-		return err
+// AssignFunction assigns a function to a worker by saving the function in the supplied worker's map (note difference between workersMap and worker's map)
+func (w *Workers) AssignFunction(workerID WorkerID, functionID FunctionID) {
+	functionMap := w.GetWorker(workerID)
+	if functionMap == nil {
+		return
 	}
 
-	worker.Lock()
-	defer worker.Unlock()
-	worker.Functions[functionID] = &Function{
+	functionMap.Lock()
+	defer functionMap.Unlock()
+	functionMap.Functions[functionID] = &FunctionStateMap{
 		Instances: make(map[InstanceState]map[InstanceID]Instance),
 	}
-	return nil
 }
 
-func (w *Workers) GetFunction(workerID WorkerID, functionID FunctionID) (*Function, error) {
-	worker, err := w.GetWorker(workerID)
-	if err != nil {
-		return nil, fmt.Errorf("error getting worker for function %v: %v", functionID, err)
+// GetFunctionStateMap returns the map, which maps the following Relationship for the supplied worker: InstanceState -> map[InstanceID][]Instances
+func (w *Workers) GetFunctionStateMap(workerID WorkerID, functionID FunctionID) (*FunctionStateMap, error) {
+	worker := w.GetWorker(workerID)
+	if worker == nil {
+		return nil, fmt.Errorf("error getting function (%v) from worker, no such worker exists %v", functionID, workerID)
 	}
 
 	worker.RLock()
@@ -116,44 +120,15 @@ func (w *Workers) GetFunction(workerID WorkerID, functionID FunctionID) (*Functi
 	return function, nil
 }
 
-// addInstance adds an instance to a function's state
-func (f *Function) addInstance(state InstanceState, instance Instance) {
-	f.Lock()
-	defer f.Unlock()
-
-	if f.Instances[state] == nil {
-		f.Instances[state] = make(map[InstanceID]Instance)
-	}
-	f.Instances[state][instance.InstanceID] = instance
-}
-
-func (f *Function) RemoveInstance(state InstanceState, instanceID InstanceID) {
-	f.Lock()
-	defer f.Unlock()
-	delete(f.Instances[state], instanceID)
-}
-
-// moveInstance moves an instance from one map to another. It also checks if the instance is now idle and updates its last worked time.
-func (f *Function) moveInstance(fromState, toState InstanceState, instance Instance) error {
-	f.Lock()
-	defer f.Unlock()
-
-	_, ok := f.Instances[fromState][instance.InstanceID]
-	if !ok {
-		return fmt.Errorf("instance not found in state %v: %v", fromState, instance.InstanceID)
-	}
-
-	delete(f.Instances[fromState], instance.InstanceID)
-
-	if f.Instances[toState] == nil {
-		f.Instances[toState] = make(map[InstanceID]Instance)
-	}
-	f.Instances[toState][instance.InstanceID] = instance
-	return nil
-}
-
+/*
+UpdateInstance changes the state (which we supply) of the supplied instance (on the given worker, for the given function) according to the following rules: <Supplied> -> <New>
+- InstanceStateNew -> InstanceStateRunning
+- InstanceStateIdle -> InstanceStateRunning
+- InstanceStateRunning -> InstanceStateIdle
+For InstanceStateTimeout and InstanceStateDown delete the given instance
+*/
 func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instance Instance) error {
-	function, err := w.GetFunction(workerID, functionID)
+	function, err := w.GetFunctionStateMap(workerID, functionID)
 	if err != nil {
 		return err
 	}
@@ -187,16 +162,21 @@ func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, insta
 	return nil
 }
 
+// DeleteInstance deletes the supplied instance of the supplied function in th supplied state from the supplied worker
 func (w *Workers) DeleteInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instanceID InstanceID) error {
-	function, err := w.GetFunction(workerID, functionID)
+	instanceStateMap, err := w.GetFunctionStateMap(workerID, functionID)
 	if err != nil {
 		return err
 	}
 
-	function.RemoveInstance(instanceState, instanceID)
+	instanceStateMap.Lock()
+	defer instanceStateMap.Unlock()
+	delete(instanceStateMap.Instances[instanceState], instanceID)
+
 	return nil
 }
 
+// FindIdleInstance looks for any idle instance for the supplied functionID
 func (w *Workers) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID, error) {
 	w.RLock()
 	defer w.RUnlock()
@@ -212,7 +192,7 @@ func (w *Workers) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID,
 		}
 
 		functionExists = true
-		w.logger.Info("Found Worker with function", "id", workerID, "functionID", functionID)
+		w.logger.Info("Found WorkerStateMap with function", "id", workerID, "functionID", functionID)
 
 		// MRU Algorithm
 		function.RLock()
@@ -239,7 +219,7 @@ func (w *Workers) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID,
 
 	if !functionExists {
 		// TODO pick worker based on load to create function
-		return "", "", &FunctionNotRegisteredError{FunctionID: functionID}
+		return "", "", &FunctionNotAssignedError{FunctionID: functionID}
 	}
 
 	return "", "", &NoIdleInstanceError{FunctionID: functionID}
@@ -250,10 +230,10 @@ func (w *Workers) DebugPrint() {
 	defer w.RUnlock()
 
 	for workerID, worker := range w.workers {
-		fmt.Printf("Worker ID: %v\n", workerID)
+		fmt.Printf("WorkerStateMap ID: %v\n", workerID)
 
 		worker.RLock()
-		functions := make(map[FunctionID]*Function)
+		functions := make(map[FunctionID]*FunctionStateMap)
 		for fID, f := range worker.Functions {
 			functions[fID] = f
 		}
@@ -292,4 +272,34 @@ func (w *Workers) DebugPrint() {
 			}
 		}
 	}
+}
+
+// addInstance adds an instance to a function's state
+func (f *FunctionStateMap) addInstance(state InstanceState, instance Instance) {
+	f.Lock()
+	defer f.Unlock()
+
+	if f.Instances[state] == nil {
+		f.Instances[state] = make(map[InstanceID]Instance)
+	}
+	f.Instances[state][instance.InstanceID] = instance
+}
+
+// moveInstance moves an instance from one map to another. It also checks if the instance is now idle and updates its last worked time.
+func (f *FunctionStateMap) moveInstance(fromState, toState InstanceState, instance Instance) error {
+	f.Lock()
+	defer f.Unlock()
+
+	_, ok := f.Instances[fromState][instance.InstanceID]
+	if !ok {
+		return fmt.Errorf("instance not found in state %v: %v", fromState, instance.InstanceID)
+	}
+
+	delete(f.Instances[fromState], instance.InstanceID)
+
+	if f.Instances[toState] == nil {
+		f.Instances[toState] = make(map[InstanceID]Instance)
+	}
+	f.Instances[toState][instance.InstanceID] = instance
+	return nil
 }
