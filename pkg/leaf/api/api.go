@@ -19,7 +19,7 @@ import (
 type LeafServer struct {
 	leaf.UnimplementedLeafServer
 	scheduler       scheduling.Scheduler
-	database        kv.DatabaseClient
+	database        kv.FunctionMetadataStore
 	functionIdCache map[string]kv.FunctionData
 }
 
@@ -100,7 +100,7 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	return resp, nil
 }
 
-func NewLeafServer(scheduler scheduling.Scheduler, httpClient kv.DatabaseClient) *LeafServer {
+func NewLeafServer(scheduler scheduling.Scheduler, httpClient kv.FunctionMetadataStore) *LeafServer {
 	return &LeafServer{
 		scheduler:       scheduler,
 		database:        httpClient,

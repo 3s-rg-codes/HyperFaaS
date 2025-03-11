@@ -114,7 +114,7 @@ func main() {
 	callerServer := caller.NewCallerServer(wc.General.CallerServerAddress, logger, statsManager)
 
 	var dbAddress string
-	var dbClient kv.DatabaseClient
+	var dbClient kv.FunctionMetadataStore
 
 	if wc.Runtime.Containerized {
 		dbAddress = "http://database:8080/" //needs to have this format for http to work

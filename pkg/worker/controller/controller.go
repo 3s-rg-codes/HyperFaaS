@@ -31,7 +31,7 @@ type Controller struct {
 	StatsManager    *stats.StatsManager
 	logger          *slog.Logger
 	address         string
-	dbClient        kv.DatabaseClient
+	dbClient        kv.FunctionMetadataStore
 	functionIDCache map[string]kv.FunctionData
 }
 
@@ -212,7 +212,7 @@ func (s *Controller) Metrics(ctx context.Context, req *controller.MetricsRequest
 	return &controller.MetricsUpdate{CpuPercentPercpu: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
 }
 
-func NewController(runtime cr.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, address string, client kv.DatabaseClient) *Controller {
+func NewController(runtime cr.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, address string, client kv.FunctionMetadataStore) *Controller {
 	return &Controller{
 		runtime:         runtime,
 		StatsManager:    statsManager,

@@ -58,7 +58,7 @@ func main() {
 		ids = append(ids, state.WorkerID(id))
 	}
 
-	var dbClient keyValueStore.DatabaseClient
+	var dbClient keyValueStore.FunctionMetadataStore
 
 	switch *databaseType {
 	case "http":

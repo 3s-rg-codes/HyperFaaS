@@ -427,7 +427,7 @@ func testStartNonLocalImages(client pb.ControllerClient, runtime containerRuntim
 	return nil
 }
 
-func setupLocalEnv(runtime containerRuntime.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, config TestConfig, client kv.DatabaseClient) controller.Controller {
+func setupLocalEnv(runtime containerRuntime.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, config TestConfig, client kv.FunctionMetadataStore) controller.Controller {
 
 	testController := *controller.NewController(runtime, callerServer, statsManager, logger, config.ServerAddress, client)
 
@@ -553,7 +553,7 @@ func parseJSON() FullConfig {
 	return config
 }
 
-func setupDBClient(config FullConfig, logger *slog.Logger) (kv.DatabaseClient, error) {
+func setupDBClient(config FullConfig, logger *slog.Logger) (kv.FunctionMetadataStore, error) {
 
 	time.Sleep(2 * time.Second) //Wait for db container to start
 

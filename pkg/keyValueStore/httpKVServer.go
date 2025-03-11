@@ -1,12 +1,18 @@
 package keyValueStore
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"io"
 	"net/http"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
+	"time"
 )
 
 type Store struct {
@@ -41,10 +47,32 @@ func (t *Store) Start() {
 		}
 	})
 
-	fmt.Println("Server starting on :8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		fmt.Printf("Server error: %v\n", err)
+	server := http.Server{
+		Addr:    ":8080",
+		Handler: nil,
 	}
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		fmt.Println("Server starting on :8080")
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Printf("Server error: %v\n", err)
+		}
+	}()
+
+	<-stop
+	fmt.Println("Gracefully shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		fmt.Printf("Server forced to shutdown: %v\n", err)
+	}
+
+	fmt.Println("Server gracefully stopped")
 }
 
 func (t *Store) handleGet(w http.ResponseWriter, r *http.Request) {

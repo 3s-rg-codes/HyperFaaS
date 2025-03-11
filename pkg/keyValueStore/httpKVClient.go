@@ -10,7 +10,7 @@ import (
 )
 
 type HttpDBClient struct {
-	DatabaseClient
+	FunctionMetadataStore
 	client  http.Client
 	address string
 	logger  *slog.Logger
