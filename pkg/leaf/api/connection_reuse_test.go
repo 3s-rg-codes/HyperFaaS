@@ -71,7 +71,7 @@ func TestConnectionPoolingConcurrent(t *testing.T) {
 	// Wait for all Goroutines to finish
 	wg.Wait()
 
-	// Ensure that the number of created connections does not exceed the max pool size (5)
+	// Ensure that the number of created connections does not exceed the max pool size (7)
 	assert.LessOrEqual(t, createCount, 7, "More connections were created than expected")
 
 	fmt.Printf("Total connections created: %d\n", createCount)
