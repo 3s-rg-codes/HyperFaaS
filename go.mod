@@ -9,6 +9,7 @@ require (
 	github.com/docker/go-connections v0.5.0
 	github.com/golang-cz/devslog v0.0.11
 	github.com/google/uuid v1.6.0
+	github.com/processout/grpc-go-pool v1.2.1
 	github.com/shirou/gopsutil/v4 v4.24.7
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/grpc v1.64.0
