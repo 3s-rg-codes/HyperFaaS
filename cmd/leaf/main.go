@@ -76,7 +76,6 @@ func main() {
 		logger.Error("failed to serve", "error", err)
 		os.Exit(1)
 	}
-
 }
 
 func setupLogger(logLevel string, logFormat string, logFilePath string) *slog.Logger {

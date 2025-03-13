@@ -63,7 +63,7 @@ d:
     docker compose up --build --detach
 
 
-# generates proto, builds binary, builds docker go and runs the workser
+# generates proto, builds binary, builds docker go and runs the worker and the leaf
 dev: build start
 
 

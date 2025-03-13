@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	Leaf_ScheduleCall_FullMethodName = "/leaf.Leaf/ScheduleCall"
+	Leaf_Stop_FullMethodName         = "/leaf.Leaf/Stop"
 )
 
 // LeafClient is the client API for Leaf service.
@@ -28,6 +29,7 @@ const (
 type LeafClient interface {
 	// Schedules a function call on the worker identified by the provided function ID.
 	ScheduleCall(ctx context.Context, in *ScheduleCallRequest, opts ...grpc.CallOption) (*ScheduleCallResponse, error)
+	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
 }
 
 type leafClient struct {
@@ -48,12 +50,23 @@ func (c *leafClient) ScheduleCall(ctx context.Context, in *ScheduleCallRequest, 
 	return out, nil
 }
 
+func (c *leafClient) Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StopResponse)
+	err := c.cc.Invoke(ctx, Leaf_Stop_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LeafServer is the server API for Leaf service.
 // All implementations must embed UnimplementedLeafServer
 // for forward compatibility.
 type LeafServer interface {
 	// Schedules a function call on the worker identified by the provided function ID.
 	ScheduleCall(context.Context, *ScheduleCallRequest) (*ScheduleCallResponse, error)
+	Stop(context.Context, *StopRequest) (*StopResponse, error)
 	mustEmbedUnimplementedLeafServer()
 }
 
@@ -66,6 +79,9 @@ type UnimplementedLeafServer struct{}
 
 func (UnimplementedLeafServer) ScheduleCall(context.Context, *ScheduleCallRequest) (*ScheduleCallResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ScheduleCall not implemented")
+}
+func (UnimplementedLeafServer) Stop(context.Context, *StopRequest) (*StopResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Stop not implemented")
 }
 func (UnimplementedLeafServer) mustEmbedUnimplementedLeafServer() {}
 func (UnimplementedLeafServer) testEmbeddedByValue()              {}
@@ -106,6 +122,24 @@ func _Leaf_ScheduleCall_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Leaf_Stop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LeafServer).Stop(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Leaf_Stop_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LeafServer).Stop(ctx, req.(*StopRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Leaf_ServiceDesc is the grpc.ServiceDesc for Leaf service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -116,6 +150,10 @@ var Leaf_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ScheduleCall",
 			Handler:    _Leaf_ScheduleCall_Handler,
+		},
+		{
+			MethodName: "Stop",
+			Handler:    _Leaf_Stop_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

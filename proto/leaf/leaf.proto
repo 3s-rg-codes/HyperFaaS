@@ -20,8 +20,12 @@ message ScheduleCallResponse {
     common.Error error = 2;
 }
 
+message StopRequest {}
+message StopResponse {}
+
 service Leaf {
     // Schedules a function call on the worker identified by the provided function ID.
     rpc ScheduleCall(ScheduleCallRequest) returns (ScheduleCallResponse);
+    rpc Stop(StopRequest) returns (StopResponse);
 }
 
