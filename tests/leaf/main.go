@@ -38,6 +38,8 @@ func main() {
 	// Create leaf client
 	client, conn := createClient()
 	defer conn.Close()
+	defer stopLeafServer(client)
+
 	// Call ScheduleCall RPC
 	wg := sync.WaitGroup{}
 	for i := 0; i < 20; i++ {
@@ -84,4 +86,16 @@ func testTwoCallsToSameFunction(client pb.LeafClient) {
 	} */
 
 	fmt.Printf("Response data: %s\n", string(resp.Data))
+}
+
+func stopLeafServer(client pb.LeafClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := client.Stop(ctx, &pb.StopRequest{})
+	if err != nil {
+		log.Printf("Failed to stop Leaf server: %v", err)
+	} else {
+		log.Println("Leaf server stopped successfully.")
+	}
 }
