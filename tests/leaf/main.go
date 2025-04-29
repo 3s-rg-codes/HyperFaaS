@@ -27,10 +27,10 @@ func main() {
 	createReq := &pb.CreateFunctionRequest{
 		ImageTag: &common.ImageTag{Tag: "hyperfaas-simul"},
 		Config: &common.Config{
-			Memory: 100 * 1024 * 1024,
+			Memory: 100 * 1024 * 1024, // 100MB
 			Cpu: &common.CPUConfig{
-				Quota:  1000,
-				Period: 1000,
+				Period: 100000, // 100ms in microseconds - Docker's default period
+				Quota:  50000,
 			},
 		},
 	}
