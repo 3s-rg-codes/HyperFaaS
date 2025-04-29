@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -23,8 +24,26 @@ func main() {
 
 	leafClient := pb.NewLeafClient(conn)
 
+	createReq := &pb.CreateFunctionRequest{
+		ImageTag: &common.ImageTag{Tag: "hyperfaas-simul"},
+		Config: &common.Config{
+			Memory: 100 * 1024 * 1024,
+			Cpu: &common.CPUConfig{
+				Quota:  1000,
+				Period: 1000,
+			},
+		},
+	}
+
+	createFunctionResp, err := leafClient.CreateFunction(context.Background(), createReq)
+	if err != nil {
+		log.Fatalf("Failed to create function: %v", err)
+	}
+
+	fmt.Printf("Successfully created function: %v\n", createFunctionResp.FunctionID)
+
 	req := &pb.ScheduleCallRequest{
-		FunctionId: "hyperfaas-simul",
+		FunctionID: createFunctionResp.FunctionID,
 		Data:       []byte(""),
 	}
 
@@ -44,7 +63,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			testTwoCallsToSameFunction(client)
+			testTwoCallsToSameFunction(client, createFunctionResp.FunctionID)
 		}()
 	}
 	wg.Wait()
@@ -60,11 +79,11 @@ func createClient() (pb.LeafClient, *grpc.ClientConn) {
 	return pb.NewLeafClient(conn), conn
 }
 
-func testTwoCallsToSameFunction(client pb.LeafClient) {
+func testTwoCallsToSameFunction(client pb.LeafClient, functionID *common.FunctionID) {
 	// sleep for random time between 100ms and 2 seconds
 	time.Sleep(time.Duration(rand.Intn(1900)+100) * time.Millisecond)
 	startReq := &pb.ScheduleCallRequest{
-		FunctionId: "hyperfaas-simul",
+		FunctionID: functionID,
 		Data:       []byte(""),
 	}
 
