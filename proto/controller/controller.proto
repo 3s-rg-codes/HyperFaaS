@@ -16,7 +16,7 @@ enum Event {
   EVENT_START = 3;
   EVENT_STOP = 4;
   EVENT_CALL = 5;
-  EVENT_REQUESTED = 6;
+  EVENT_RUNNING = 6;
 }
 
 enum Status {

@@ -12,12 +12,12 @@ const (
 
 const (
 	EventResponse UpdateEvent = iota
-	EventRequested
 	EventDown
 	EventTimeout
 	EventStart
 	EventStop
 	EventCall
+	EventRunning
 )
 
 const (
@@ -30,7 +30,7 @@ func (t UpdateType) String() string {
 }
 
 func (e UpdateEvent) String() string {
-	return [...]string{"response", "requested", "down", "timeout", "start", "stop", "call"}[e]
+	return [...]string{"response", "down", "timeout", "start", "stop", "call", "running"}[e]
 }
 
 func (s UpdateStatus) String() string {
@@ -103,7 +103,7 @@ func (su *StatusUpdate) Failed() *StatusUpdate {
 	return su
 }
 
-func (su *StatusUpdate) Requested() *StatusUpdate {
-	su.Event = EventRequested
+func (su *StatusUpdate) Running() *StatusUpdate {
+	su.Event = EventRunning
 	return su
 }

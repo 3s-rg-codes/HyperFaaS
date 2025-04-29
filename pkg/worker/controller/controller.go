@@ -68,10 +68,11 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 	}
 
 	if err != nil {
-		s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().Failed())
+		s.StatsManager.Enqueue(stats.Event().Function(req.Id).Container(shortID).Start().Failed())
 		return nil, err
 	}
-	s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().Success())
+	// Container has been requested; we actually dont know if its running or not
+	s.StatsManager.Enqueue(stats.Event().Function(req.Id).Container(shortID).Start().Success())
 
 	s.CallerServer.RegisterFunctionInstance(shortID)
 
@@ -82,14 +83,12 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 // runtime.Call is also called to check for errors
 func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 
-	// Check if the instance ID is present in the FunctionCalls map
 	if _, ok := s.CallerServer.FunctionCalls.FcMap[req.InstanceId.Id]; !ok {
 		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
 		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
-	// Check if the instance ID is present in the FunctionResponses map
 	if _, ok := s.CallerServer.FunctionResponses.FrMap[req.InstanceId.Id]; !ok {
 		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
 		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
@@ -115,8 +114,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 	go func() {
 		// Pass the call to the channel based on the instance ID
 		s.CallerServer.QueueInstanceCall(req.InstanceId.Id, req.Data)
-		// stats
-		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().Success())
+		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Call().Success())
 
 	}()
 
@@ -126,13 +124,11 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 		cancelCrash()
 		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Response().Success())
 		s.logger.Debug("Extracted response", "response", data, "instance ID", req.InstanceId.Id)
-		response := &common.CallResponse{Data: data}
-		return response, nil
+		return &common.CallResponse{Data: data}, nil
 
 	case err := <-crashChan:
 
 		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Down())
-
 		s.logger.Error("Container crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
 
 		return nil, &ContainerCrashError{InstanceID: req.InstanceId.Id, ContainerError: err.Error()}

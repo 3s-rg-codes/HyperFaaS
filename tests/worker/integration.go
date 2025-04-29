@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
-	"github.com/golang-cz/devslog"
 	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
+	"github.com/golang-cz/devslog"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
@@ -309,7 +310,10 @@ func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.Co
 		tolerance := time.Duration(config.Config.DockerTolerance)
 		time.Sleep(tolerance * time.Second)
 		logger.Debug("Sleeping done")
-
+		if responseContainerID == nil {
+			logger.Error("Stop failed, containerID is nil")
+			return fmt.Errorf("stopping container failed, containerID is nil")
+		}
 		if responseContainerID.Id != testContainerID.Id {
 			logger.Error("Requested and actually deleted container are not the same", "requested", testContainerID.Id, "actual", responseContainerID.Id)
 			return fmt.Errorf("requested and actually deleted container are not the same, code: %v", grpcStatus.Code())
