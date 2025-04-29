@@ -2,13 +2,14 @@ package controller
 
 import (
 	"context"
-	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
@@ -22,6 +23,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Controller struct {
@@ -181,6 +183,7 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 				&controller.StatusUpdate{
 					InstanceId: &common.InstanceID{Id: data.InstanceID},
 					FunctionId: &common.FunctionID{Id: data.FunctionID},
+					Timestamp:  timestamppb.New(data.Timestamp),
 					Type:       controller.VirtualizationType(data.Type),
 					Event:      controller.Event(data.Event),
 					Status:     controller.Status(data.Status),
