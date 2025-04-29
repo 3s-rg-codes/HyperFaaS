@@ -2,7 +2,12 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
+	"sync"
+	"time"
+
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
@@ -15,9 +20,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"log"
-	"sync"
-	"time"
 )
 
 type LeafServer struct {
@@ -33,7 +35,7 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 
 	functionID, err := s.database.Put(req.ImageTag, req.Config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to store function in database: %w", err)
 	}
 
 	s.functionIdCache[functionID.Id] = kv.FunctionData{
@@ -53,7 +55,10 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	if _, ok := s.functionIdCache[req.FunctionID.Id]; !ok {
 		ImageTag, Config, err := s.database.Get(req.FunctionID)
 		if err != nil {
-			return nil, err //Error can also be when the requested id does not exist in the db
+			if errors.As(err, &kv.NoSuchKeyError{}) {
+				return nil, status.Errorf(codes.NotFound, "failed to get function from database: %s", req.FunctionID.Id)
+			}
+			return nil, fmt.Errorf("failed to get function from database: %w", err)
 		}
 
 		s.functionIdCache[req.FunctionID.Id] = kv.FunctionData{
@@ -62,36 +67,36 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 		}
 	}
 
-	data := s.functionIdCache[req.FunctionID.Id]
-	imgTag := state.FunctionID(data.ImageTag.Tag)
+	//data := s.functionIdCache[req.FunctionID.Id]
+	functionId := state.FunctionID(req.FunctionID.Id)
 
-	workerID, instanceID, err := s.scheduler.Schedule(ctx, imgTag)
+	workerID, instanceID, err := s.scheduler.Schedule(ctx, functionId)
 	if err != nil {
 		return nil, err
 	}
 
 	if instanceID == "" {
 		// There is no idle instance available
-		instanceID, err = s.startInstance(ctx, workerID, imgTag)
+		instanceID, err = s.startInstance(ctx, workerID, functionId)
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("Started new instance for function %s on worker %s, instanceID: %s", imgTag, workerID, instanceID)
-		s.scheduler.UpdateInstanceState(workerID, imgTag, instanceID, state.InstanceStateNew)
+		log.Printf("Started new instance for function %s on worker %s, instanceID: %s", functionId, workerID, instanceID)
+		s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateNew)
 	} else {
 		// An Idle instance was found
-		s.scheduler.UpdateInstanceState(workerID, imgTag, instanceID, state.InstanceStateRunning)
+		s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateRunning)
 	}
 
-	resp, err := s.callWorker(ctx, workerID, imgTag, instanceID, req)
+	resp, err := s.callWorker(ctx, workerID, functionId, instanceID, req)
 	if err != nil {
 		switch err.(type) {
 		case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
-			s.scheduler.UpdateInstanceState(workerID, imgTag, instanceID, state.InstanceStateDown)
+			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
 			// TODO: handle this and dont return.
 			return nil, err
 		case *WorkerDownError:
-			s.scheduler.UpdateInstanceState(workerID, imgTag, instanceID, state.InstanceStateDown)
+			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
 			s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
 			return nil, err
 		default:
@@ -100,7 +105,7 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	}
 	log.Printf("Recieved response from worker %s, instanceID: %s, response: %v", workerID, instanceID, resp)
 	// The instance is no longer running
-	s.scheduler.UpdateInstanceState(workerID, imgTag, instanceID, state.InstanceStateIdle)
+	s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateIdle)
 
 	return resp, nil
 }

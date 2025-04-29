@@ -52,7 +52,7 @@ start-rebuild:
 
 start:
     @echo "Starting docker service"
-    docker compose up
+    docker compose up --detach --remove-orphans
 
 stop:
     @echo "Stopping docker service"

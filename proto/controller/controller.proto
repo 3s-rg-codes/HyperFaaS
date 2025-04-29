@@ -2,7 +2,7 @@ syntax = "proto3";
 option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/controller";
 
 import "common/common.proto";
-
+import "google/protobuf/timestamp.proto";
 package controller;
 
 enum VirtualizationType {
@@ -16,6 +16,7 @@ enum Event {
   EVENT_START = 3;
   EVENT_STOP = 4;
   EVENT_CALL = 5;
+  EVENT_RUNNING = 6;
 }
 
 enum Status {
@@ -29,6 +30,7 @@ message StatusUpdate {
   Event event = 3;
   Status status = 4;
   common.FunctionID function_id = 5;
+  google.protobuf.Timestamp timestamp = 6;
 }
 
 message StatusRequest {

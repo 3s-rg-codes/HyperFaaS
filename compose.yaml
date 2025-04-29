@@ -23,6 +23,7 @@ services:
       - "50050:50050"
     networks:
         - hyperfaas-network
+    command: ["./leaf", "--address=0.0.0.0:50050", "--log-level=debug", "--log-format=dev", "--worker-ids=worker:50051", "--scheduler-type=mru", "--database-address=http://database:8080"]
     develop:
         watch:
             - action: rebuild

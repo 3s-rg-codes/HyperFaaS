@@ -91,8 +91,12 @@ func (r *Reconciler) ListenToWorkerStatusUpdates(ctx context.Context, workerID s
 					r.handleContainerTimeout(workerID, state.FunctionID(update.FunctionId.Id), state.InstanceID(update.InstanceId.Id))
 				case controllerpb.Event_EVENT_DOWN:
 					r.handleContainerDown(workerID, state.FunctionID(update.FunctionId.Id), state.InstanceID(update.InstanceId.Id))
+				case controllerpb.Event_EVENT_START:
+				case controllerpb.Event_EVENT_STOP:
+				case controllerpb.Event_EVENT_RUNNING:
+				case controllerpb.Event_EVENT_CALL:
 				default:
-					r.logger.Warn("Received status update of unknown event", "event", update.Event)
+					//r.logger.Warn("Received status update of unknown event", "event", update.Event)
 				}
 			default:
 				r.logger.Warn("Received status update of unknown type", "type", update.Type)

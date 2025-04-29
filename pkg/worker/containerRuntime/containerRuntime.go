@@ -2,15 +2,16 @@ package containerRuntime
 
 import (
 	"context"
+	"io"
+
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
-	"io"
 )
 
 // ContainerRuntime is an interface for starting and stopping containers.
 type ContainerRuntime interface {
 	// Start a container with the given image tag and configuration.
-	Start(ctx context.Context, imageTag string, config *common.Config) (string, error)
+	Start(ctx context.Context, functionID string, imageTag string, config *common.Config) (string, error)
 
 	// Call a container with the given request.
 	Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error)

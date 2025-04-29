@@ -47,8 +47,10 @@ func NewCallerServer(address string, logger *slog.Logger, statsManager *stats.St
 }
 
 func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call, error) {
+
 	// Pass payload to the functionResponses channel IF it exists
 	if !payload.FirstExecution {
+		s.StatsManager.Enqueue(stats.Event().Function(payload.FunctionId.Id).Container(payload.InstanceId.Id).Running().Success())
 		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.InstanceId)
 		go s.QueueInstanceResponse(payload.InstanceId.Id, payload.Data)
 	}

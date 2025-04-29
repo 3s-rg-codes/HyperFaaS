@@ -2,13 +2,14 @@ package controller
 
 import (
 	"context"
-	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
@@ -22,6 +23,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Controller struct {
@@ -56,7 +58,7 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 	functionData := s.functionIDCache[req.Id]
 
 	s.logger.Debug("Starting container with params:", "tag", functionData.ImageTag, "memory", functionData.Config.Memory, "quota", functionData.Config.Cpu.Quota, "period", functionData.Config.Cpu.Period)
-	instanceId, err := s.runtime.Start(ctx, functionData.ImageTag.Tag, functionData.Config)
+	instanceId, err := s.runtime.Start(ctx, req.Id, functionData.ImageTag.Tag, functionData.Config)
 
 	// Truncate the ID to the first 12 characters to match Docker's short ID format
 	shortID := instanceId
@@ -66,10 +68,11 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 	}
 
 	if err != nil {
-		s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().Failed())
+		s.StatsManager.Enqueue(stats.Event().Function(req.Id).Container(shortID).Start().Failed())
 		return nil, err
 	}
-	s.StatsManager.Enqueue(stats.Event().Container(shortID).Start().Success())
+	// Container has been requested; we actually dont know if its running or not
+	s.StatsManager.Enqueue(stats.Event().Function(req.Id).Container(shortID).Start().Success())
 
 	s.CallerServer.RegisterFunctionInstance(shortID)
 
@@ -80,14 +83,12 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 // runtime.Call is also called to check for errors
 func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 
-	// Check if the instance ID is present in the FunctionCalls map
 	if _, ok := s.CallerServer.FunctionCalls.FcMap[req.InstanceId.Id]; !ok {
 		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
 		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
-	// Check if the instance ID is present in the FunctionResponses map
 	if _, ok := s.CallerServer.FunctionResponses.FrMap[req.InstanceId.Id]; !ok {
 		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
 		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
@@ -113,8 +114,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 	go func() {
 		// Pass the call to the channel based on the instance ID
 		s.CallerServer.QueueInstanceCall(req.InstanceId.Id, req.Data)
-		// stats
-		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId.Id).Call().Success())
+		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Call().Success())
 
 	}()
 
@@ -124,13 +124,11 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 		cancelCrash()
 		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Response().Success())
 		s.logger.Debug("Extracted response", "response", data, "instance ID", req.InstanceId.Id)
-		response := &common.CallResponse{Data: data}
-		return response, nil
+		return &common.CallResponse{Data: data}, nil
 
 	case err := <-crashChan:
 
 		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Down())
-
 		s.logger.Error("Container crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
 
 		return nil, &ContainerCrashError{InstanceID: req.InstanceId.Id, ContainerError: err.Error()}
@@ -181,6 +179,7 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 				&controller.StatusUpdate{
 					InstanceId: &common.InstanceID{Id: data.InstanceID},
 					FunctionId: &common.FunctionID{Id: data.FunctionID},
+					Timestamp:  timestamppb.New(data.Timestamp),
 					Type:       controller.VirtualizationType(data.Type),
 					Event:      controller.Event(data.Event),
 					Status:     controller.Status(data.Status),

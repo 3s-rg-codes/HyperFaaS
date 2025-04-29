@@ -3,11 +3,12 @@ package mock
 import (
 	"context"
 	"errors"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"io"
 	"log/slog"
 	"sync"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
@@ -41,7 +42,7 @@ func NewMockRuntime(server *caller.CallerServer, logger *slog.Logger) *MockRunti
 	}
 }
 
-func (m *MockRuntime) Start(ctx context.Context, imageTag string, _ *common.Config) (string, error) {
+func (m *MockRuntime) Start(ctx context.Context, functionID string, imageTag string, _ *common.Config) (string, error) {
 
 	longID, err := uuid.NewUUID()
 	if err != nil {

@@ -1,5 +1,7 @@
 package stats
 
+import "time"
+
 type UpdateType int
 type UpdateEvent int
 type UpdateStatus int
@@ -15,6 +17,7 @@ const (
 	EventStart
 	EventStop
 	EventCall
+	EventRunning
 )
 
 const (
@@ -27,7 +30,7 @@ func (t UpdateType) String() string {
 }
 
 func (e UpdateEvent) String() string {
-	return [...]string{"response", "down", "timeout", "start", "stop", "call"}[e]
+	return [...]string{"response", "down", "timeout", "start", "stop", "call", "running"}[e]
 }
 
 func (s UpdateStatus) String() string {
@@ -36,6 +39,7 @@ func (s UpdateStatus) String() string {
 
 type StatusUpdate struct {
 	InstanceID string
+	Timestamp  time.Time
 	Type       UpdateType
 	Event      UpdateEvent
 	Status     UpdateStatus
@@ -43,7 +47,7 @@ type StatusUpdate struct {
 }
 
 func Event() *StatusUpdate {
-	return &StatusUpdate{}
+	return &StatusUpdate{Timestamp: time.Now().UTC().Truncate(time.Nanosecond)}
 }
 
 func (su *StatusUpdate) Container(instanceID string) *StatusUpdate {
@@ -96,5 +100,10 @@ func (su *StatusUpdate) Success() *StatusUpdate {
 
 func (su *StatusUpdate) Failed() *StatusUpdate {
 	su.Status = StatusFailed
+	return su
+}
+
+func (su *StatusUpdate) Running() *StatusUpdate {
+	su.Event = EventRunning
 	return su
 }
