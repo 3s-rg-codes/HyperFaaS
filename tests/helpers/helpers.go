@@ -64,8 +64,10 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 		// add an error event to the stats
 		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusFailed})
 	} else {
-		// add a success event to the stats
+		// add a success start event to the stats
 		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusSuccess})
+		// add a success running event to the stats
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventRunning, Status: stats.StatusSuccess})
 	}
 
 	response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: cID, Data: testCase.CallPayload, FunctionId: &pbc.FunctionID{Id: testCase.ImageTag}})
