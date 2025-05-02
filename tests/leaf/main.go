@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	pbc "github.com/3s-rg-codes/HyperFaaS/proto/common"
+	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -61,6 +63,15 @@ func main() {
 	//testConcurrentCalls(client, createFunctionResp.FunctionID, 20, createFunctionResp.FunctionID)
 	// Sequential calls
 	testSequentialCalls(client, createFunctionResp.FunctionID)
+
+	// Test worker concurrent calls
+	controllerClient, conn, err := BuildMockClientHelper("localhost:50051")
+	if err != nil {
+		log.Fatalf("Failed to build mock client: %v", err)
+	}
+	defer conn.Close()
+
+	TestWorkerConcurrentCalls(controllerClient, createFunctionResp.FunctionID)
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {
@@ -134,4 +145,78 @@ func testSequentialCalls(client pb.LeafClient, functionID *common.FunctionID) {
 		}
 		fmt.Printf("Successfully got response from sequential call %d\n", i)
 	}
+}
+
+func TestWorkerConcurrentCalls(client workerpb.ControllerClient, functionID *common.FunctionID) error {
+	totalInstances := 500
+	totalFunctions := 10
+	totalCallsPerInstance := 200
+
+	instanceIDs := make([]string, totalInstances)
+	functions := make([]string, totalFunctions)
+	for i := 0; i < totalFunctions; i++ {
+		functions[i] = functionID.Id
+	}
+
+	// Start all instances
+	for i := 0; i < totalInstances; i++ {
+		instanceID, err := client.Start(context.Background(), &pbc.FunctionID{Id: functions[rand.Intn(totalFunctions)]})
+		if err != nil {
+			log.Printf("Error starting instance: %v", err)
+			return fmt.Errorf("error starting instance: %v", err)
+		}
+		instanceIDs[i] = instanceID.Id
+	}
+	log.Printf("Started %d instances", totalInstances)
+	// Send all calls
+	ctx := context.Background()
+
+	g, _ := errgroup.WithContext(ctx)
+	var successCount, failureCount int32
+	var countMu sync.Mutex
+
+	for _, instanceID := range instanceIDs {
+		for i := 0; i < totalCallsPerInstance; i++ {
+			g.Go(func() error {
+				response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: &pbc.InstanceID{Id: instanceID}, Data: make([]byte, 0), FunctionId: &pbc.FunctionID{Id: functions[rand.Intn(totalFunctions)]}})
+				if err != nil {
+					countMu.Lock()
+					failureCount++
+					countMu.Unlock()
+					log.Printf("Error calling instance: %v", err)
+					return fmt.Errorf("error calling instance: %v", err)
+				}
+				if response == nil {
+					countMu.Lock()
+					failureCount++
+					countMu.Unlock()
+					log.Printf("No response from instance: %v", instanceID)
+					return fmt.Errorf("no response from instance: %v", instanceID)
+				}
+				countMu.Lock()
+				successCount++
+				countMu.Unlock()
+				return nil
+			})
+		}
+	}
+
+	// Wait for all goroutines to complete
+	_ = g.Wait()
+
+	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d\n", successCount, failureCount)
+
+	return nil
+}
+
+func BuildMockClientHelper(controllerServerAddress string) (workerpb.ControllerClient, *grpc.ClientConn, error) {
+	var err error
+	connection, err := grpc.NewClient(controllerServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, nil, err
+	}
+	//t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
+	testClient := workerpb.NewControllerClient(connection)
+
+	return testClient, connection, nil
 }
