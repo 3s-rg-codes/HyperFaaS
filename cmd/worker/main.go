@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 	"log/slog"
 	"os"
 	"time"
@@ -11,6 +12,9 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/mock"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
+
+	"net/http"
+	_ "net/http/pprof"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
@@ -103,6 +107,9 @@ func setupLogger(config WorkerConfig) *slog.Logger {
 }
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 	wc := parseArgs()
 	logger := setupLogger(wc)
 

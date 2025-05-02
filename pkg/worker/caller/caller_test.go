@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -141,7 +142,7 @@ func TestReadyTimeout(t *testing.T) {
 
 func TestConcurrentOperations(t *testing.T) {
 	server := setupTestServer()
-	const concurrentInstances = 50
+	const concurrentInstances = 500
 	const callsPerInstance = 10
 
 	instanceIDs := make([]string, concurrentInstances)
@@ -220,7 +221,9 @@ func TestConcurrentOperations(t *testing.T) {
 
 	// Check all expected responses were received
 	for id, expected := range expectedResponses {
+		mu.Lock()
 		actual := responsesReceived[id]
+		mu.Unlock()
 		assert.Len(t, actual, len(expected), "Wrong number of responses for instance %s", id)
 		for _, exp := range expected {
 			found := false
@@ -293,77 +296,125 @@ func TestReadyNonFirstExecution(t *testing.T) {
 	server.UnregisterFunctionInstance(instanceID)
 }
 
-/* func TestInstanceBehaviorWithoutUnregister(t *testing.T) {
+func TestConcurrentOperations2(t *testing.T) {
 	server := setupTestServer()
+	const concurrentInstances = 5000
+	const callsPerInstance = 10
 
-	// Register multiple instances but don't unregister them explicitly
-	instancesToTest := 5
-	for i := 0; i < instancesToTest; i++ {
-		instanceID := fmt.Sprintf("persist-instance-%d", i)
-		server.RegisterFunctionInstance(instanceID)
+	// Create and register all instances first
+	instanceIDs := make([]string, concurrentInstances)
+	for i := 0; i < concurrentInstances; i++ {
+		instanceIDs[i] = fmt.Sprintf("instance-%d", i)
+		server.RegisterFunctionInstance(instanceIDs[i])
+	}
 
-		// Queue some data to the instance
-		callData := []byte(fmt.Sprintf("call-data-%d", i))
-		server.QueueInstanceCall(instanceID, callData)
+	// Track expected calls and responses for verification
+	expectedCalls := make(map[string][][]byte)
+	expectedResponses := make(map[string][][]byte)
+	var mu sync.Mutex
 
-		// Verify channels exist and data was queued
-		callChan := server.GetInstanceCall(instanceID)
-		require.NotNil(t, callChan)
+	// Collect received responses
+	responsesReceived := make(map[string][][]byte)
+	var wg sync.WaitGroup
 
-		select {
-		case receivedData := <-callChan:
-			assert.Equal(t, callData, receivedData)
-		case <-time.After(100 * time.Millisecond):
-			t.Fatalf("Failed to receive call data for instance %s", instanceID)
+	// For each instance, start a goroutine to send calls and check responses
+	for i, instanceID := range instanceIDs {
+		// Simulate instances
+		wg.Add(1)
+		go SimulateInstance(instanceID, server, &wg)
+
+		wg.Add(1)
+		go func(id string, index int) {
+			defer wg.Done()
+
+			// Prepare test data for this instance
+			callsData := make([][]byte, callsPerInstance)
+			responsesData := make([][]byte, callsPerInstance)
+			for j := 0; j < callsPerInstance; j++ {
+				callsData[j] = []byte(fmt.Sprintf("call-%s-%d", id, j))
+				responsesData[j] = []byte{} // Helper returns empty []byte
+			}
+
+			// Track expected data
+			mu.Lock()
+			expectedCalls[id] = callsData
+			expectedResponses[id] = responsesData
+			responsesReceived[id] = make([][]byte, 0, callsPerInstance)
+			mu.Unlock()
+
+			// Get response channel for this instance
+			responseChan := server.GetInstanceResponse(id)
+			require.NotNil(t, responseChan)
+
+			// Start goroutine to receive responses
+			var responseWg sync.WaitGroup
+			responseWg.Add(1)
+			go func() {
+				defer responseWg.Done()
+				for j := 0; j < callsPerInstance; j++ {
+					select {
+					case resp := <-responseChan:
+						mu.Lock()
+						responsesReceived[id] = append(responsesReceived[id], resp)
+						mu.Unlock()
+					case <-time.After(10 * time.Second): // Increased timeout for processing delay
+						t.Errorf("Timeout waiting for response %d for instance %s", j, id)
+						return
+					}
+				}
+			}()
+
+			// Queue calls for this instance
+			for _, callData := range callsData {
+				// Small random delay to simulate concurrent queueing
+				time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
+				server.QueueInstanceCall(id, callData)
+			}
+
+			// Wait for all responses to be received
+			responseWg.Wait()
+		}(instanceID, i)
+	}
+
+	// Wait for all test operations to complete
+	wg.Wait()
+
+	// Verify all expected responses were received
+	for id, expected := range expectedResponses {
+		received, ok := responsesReceived[id]
+		if !assert.True(t, ok, "No responses received for instance %s", id) {
+			continue
+		}
+
+		// Check we received the correct number of responses
+		assert.Equal(t, len(expected), len(received), "Wrong number of responses for instance %s", id)
+
+		// All responses should be empty []byte
+		for _, rec := range received {
+			assert.Empty(t, rec, "Expected empty response for instance %s", id)
 		}
 	}
 
-	// Check that all instances are still registered and functional
-	for i := 0; i < instancesToTest; i++ {
-		instanceID := fmt.Sprintf("persist-instance-%d", i)
+	// Cleanup
+	for _, id := range instanceIDs {
+		server.UnregisterFunctionInstance(id)
+	}
+}
 
-		// Instance channel should still exist
-		assert.NotNil(t, server.GetInstanceCall(instanceID))
-		assert.NotNil(t, server.GetInstanceResponse(instanceID))
-
-		// Queue and verify new data works
-		newData := []byte(fmt.Sprintf("new-data-%d", i))
-		server.QueueInstanceCall(instanceID, newData)
-
-		callChan := server.GetInstanceCall(instanceID)
+func SimulateInstance(instanceID string, server *CallerServer, wg *sync.WaitGroup) {
+	defer wg.Done()
+	//Get call channel
+	callChan := server.GetInstanceCall(instanceID)
+	for {
 		select {
-		case receivedData := <-callChan:
-			assert.Equal(t, newData, receivedData)
-		case <-time.After(100 * time.Millisecond):
-			t.Fatalf("Failed to receive new call data for instance %s", instanceID)
+		case _ = <-callChan:
+			// Simulate some processing delay
+			time.Sleep(10 * time.Millisecond)
+
+			// Queue the response
+			server.QueueInstanceResponse(instanceID, make([]byte, 0))
+		case <-time.After(10 * time.Second):
+			return
 		}
 	}
-
-	// Run a Ready call with timeout to verify unregistration behavior
-	instanceID := fmt.Sprintf("persist-instance-%d", 0)
-	functionID := "test-function-persist"
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	payload := &pb.Payload{
-		InstanceId:     &common.InstanceID{Id: instanceID},
-		FunctionId:     &common.FunctionID{Id: functionID},
-		FirstExecution: false,
-	}
-
-	// This should timeout and unregister the instance
-	result, err := server.Ready(ctx, payload)
-	assert.Nil(t, result)
-	assert.Nil(t, err)
-
-	// Verify the instance was unregistered due to timeout
-	assert.Nil(t, server.GetInstanceCall(instanceID))
-	assert.Nil(t, server.GetInstanceResponse(instanceID))
-
-	// Other instances should still be registered
-	for i := 1; i < instancesToTest; i++ {
-		otherID := fmt.Sprintf("persist-instance-%d", i)
-		assert.NotNil(t, server.GetInstanceCall(otherID), "Instance %s was unexpectedly unregistered", otherID)
-	}
-} */
+}

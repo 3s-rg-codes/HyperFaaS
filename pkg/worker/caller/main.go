@@ -56,6 +56,7 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 	if !payload.FirstExecution {
 		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.InstanceId)
 		go s.QueueInstanceResponse(payload.InstanceId.Id, payload.Data)
+		// TODO: Generate event of response
 	} else {
 		// To measure cold start time
 		s.StatsManager.Enqueue(stats.Event().Function(payload.FunctionId.Id).Container(payload.InstanceId.Id).Running().Success())

@@ -162,7 +162,7 @@ func (s *Controller) Stop(ctx context.Context, req *common.InstanceID) (*common.
 // Streams the status updates to a client.
 // Using a channel to listen to the stats manager for status updates
 // Status Updates are defined in pkg/stats/statusUpdate.go
-func (s *Controller) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
+/* func (s *Controller) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
 
 	//If a node is re-hitting the status endpoint, use the existing channel
 	statsChannel := s.StatsManager.GetListenerByID(req.NodeID)
@@ -199,6 +199,51 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 	}
 
 	return nil
+} */
+
+func (s *Controller) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
+	ctx := stream.Context()
+	nodeID := req.NodeID
+
+	// Get or create listener channel
+	statsChannel := s.StatsManager.GetListenerByID(nodeID)
+	if statsChannel == nil {
+		// Create a new channel if none exists
+		statsChannel = make(chan stats.StatusUpdate, 10000)
+		s.StatsManager.AddListener(nodeID, statsChannel)
+	}
+
+	// Handle channel receives and context cancellation
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Debug("Stream context done", "node_id", nodeID, "error", ctx.Err())
+			s.StatsManager.RemoveListener(nodeID)
+			return ctx.Err()
+
+		case data, ok := <-statsChannel:
+			if !ok {
+				// Channel was closed
+				s.logger.Debug("Stats channel closed", "node_id", nodeID)
+				return nil
+			}
+
+			if err := stream.Send(
+				&controller.StatusUpdate{
+					InstanceId: &common.InstanceID{Id: data.InstanceID},
+					FunctionId: &common.FunctionID{Id: data.FunctionID},
+					Timestamp:  timestamppb.New(data.Timestamp),
+					Type:       controller.VirtualizationType(data.Type),
+					Event:      controller.Event(data.Event),
+					Status:     controller.Status(data.Status),
+				}); err != nil {
+				s.logger.Error("Error streaming data", "error", err, "node_id", nodeID)
+				s.StatsManager.RemoveListener(nodeID)
+				return err
+			}
+			s.logger.Debug("Sent status update", "node_id", nodeID, "event", data.Event, "status", data.Status)
+		}
+	}
 }
 
 func (s *Controller) Metrics(ctx context.Context, req *controller.MetricsRequest) (*controller.MetricsUpdate, error) {

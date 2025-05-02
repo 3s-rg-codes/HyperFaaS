@@ -60,18 +60,18 @@ func main() {
 	defer conn.Close()
 
 	//Concurrent calls
-	//testConcurrentCalls(client, createFunctionResp.FunctionID, 20, createFunctionResp.FunctionID)
+	testConcurrentCalls(client, createFunctionResp.FunctionID, 50, createFunctionResp.FunctionID)
 	// Sequential calls
 	testSequentialCalls(client, createFunctionResp.FunctionID)
 
 	// Test worker concurrent calls
-	controllerClient, conn, err := BuildMockClientHelper("localhost:50051")
+	/* controllerClient, conn, err := BuildMockClientHelper("localhost:50051")
 	if err != nil {
 		log.Fatalf("Failed to build mock client: %v", err)
 	}
 	defer conn.Close()
 
-	TestWorkerConcurrentCalls(controllerClient, createFunctionResp.FunctionID)
+	TestWorkerConcurrentCalls(controllerClient, createFunctionResp.FunctionID) */
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {

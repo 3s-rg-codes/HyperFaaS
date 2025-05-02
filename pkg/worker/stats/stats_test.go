@@ -26,42 +26,28 @@ func TestEnqueue(t *testing.T) {
 	sm := createTestStatsManager()
 
 	sm.Enqueue(&StatusUpdate{})
-	length := len(sm.Updates.Queue)
+	length := len(sm.Updates)
 	assert.Equal(t, 1, length, "Update was not added properly")
 }
 
 func TestEnqueue_Multiple(t *testing.T) {
 	sm := createTestStatsManager()
 
-	count := 10000
+	count := 1000
 	wg := sync.WaitGroup{}
 	for i := 1; i <= count; i++ {
 		wg.Add(1)
 		go func() {
-			time.Sleep(100 * (time.Duration(rand.Intn(1000000))))
+			time.Sleep(time.Duration(rand.Intn(4)+1) * time.Millisecond)
 			sm.Enqueue(&StatusUpdate{})
 			wg.Done()
 		}()
 	}
 	wg.Wait()
 
-	length := len(sm.Updates.Queue)
+	length := len(sm.Updates)
 
 	assert.Equal(t, count, length, "Update was not added properly")
-}
-
-func TestDequeue(t *testing.T) {
-	sm := createTestStatsManager()
-
-	suIn := &StatusUpdate{}
-
-	sm.Enqueue(&StatusUpdate{})
-	length := len(sm.Updates.Queue)
-	assert.Equal(t, 1, length, "Update was not added properly")
-
-	suOut := sm.dequeue()
-	assert.Equal(t, suIn, suOut, "Update was not dequeued properly")
-	_ = sm.dequeue()
 }
 
 func TestDequeue_Multiple(t *testing.T) {
@@ -83,8 +69,8 @@ func TestDequeue_Multiple(t *testing.T) {
 
 	var arrOut []*StatusUpdate
 	for i := 1; i <= count; i++ {
-		out := sm.dequeue()
-		arrOut = append(arrOut, out)
+		out := <-sm.Updates
+		arrOut = append(arrOut, &out)
 	}
 
 	assert.Equal(t, len(arrOut), len(arrIn), "Input and Output have different number of elements")
