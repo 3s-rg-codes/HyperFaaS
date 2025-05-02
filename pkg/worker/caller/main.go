@@ -13,6 +13,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	BUFFER_SIZE = 1000
+)
+
 type CallerServer struct {
 	pb.UnimplementedFunctionServiceServer
 	Address           string
@@ -50,9 +54,12 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 
 	// Pass payload to the functionResponses channel IF it exists
 	if !payload.FirstExecution {
-		s.StatsManager.Enqueue(stats.Event().Function(payload.FunctionId.Id).Container(payload.InstanceId.Id).Running().Success())
 		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.InstanceId)
 		go s.QueueInstanceResponse(payload.InstanceId.Id, payload.Data)
+		// TODO: Generate event of response
+	} else {
+		// To measure cold start time
+		s.StatsManager.Enqueue(stats.Event().Function(payload.FunctionId.Id).Container(payload.InstanceId.Id).Running().Success())
 	}
 
 	callChan := s.GetInstanceCall(payload.InstanceId.Id)
@@ -72,7 +79,7 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 		s.logger.Debug("Received call", "call", call)
 		return &pb.Call{Data: call, InstanceId: payload.InstanceId}, nil
 	case <-ctx.Done():
-		s.logger.Info("Context cancelled while waiting for call", "function ID", payload.FunctionId, "instance ID", payload.InstanceId)
+		s.logger.Info("Instance timed out waiting for call", "function ID", payload.FunctionId, "instance ID", payload.InstanceId)
 		s.StatsManager.Enqueue(stats.Event().Function(payload.FunctionId.Id).Container(payload.InstanceId.Id).Timeout())
 		s.UnregisterFunctionInstance(payload.InstanceId.Id)
 		return nil, nil
@@ -99,11 +106,11 @@ func (s *CallerServer) Start() {
 // RegisterFunctionInstance adds message channels for the given function ID
 func (s *CallerServer) RegisterFunctionInstance(id string) {
 	s.FunctionCalls.mu.Lock()
-	s.FunctionCalls.FcMap[id] = make(chan []byte)
+	s.FunctionCalls.FcMap[id] = make(chan []byte, BUFFER_SIZE)
 	s.FunctionCalls.mu.Unlock()
 
 	s.FunctionResponses.mu.Lock()
-	s.FunctionResponses.FrMap[id] = make(chan []byte)
+	s.FunctionResponses.FrMap[id] = make(chan []byte, BUFFER_SIZE)
 	s.FunctionResponses.mu.Unlock()
 }
 
@@ -125,11 +132,17 @@ func (s *CallerServer) UnregisterFunctionInstance(id string) {
 }
 
 func (s *CallerServer) QueueInstanceCall(id string, call []byte) {
-	s.FunctionCalls.mu.RLock()
-	defer s.FunctionCalls.mu.RUnlock()
-	if ch, ok := s.FunctionCalls.FcMap[id]; ok {
+	s.FunctionCalls.mu.RLock() // Use Read Lock to find the channel
+	ch, ok := s.FunctionCalls.FcMap[id]
+	if ok {
+		s.logger.Debug("Queueing call data", "instance ID", id)
 		ch <- call
+		s.logger.Debug("Finished queueing call data", "instance ID", id)
+	} else {
+		s.logger.Warn("Attempted to queue call for unregistered/removed instance", "instanceId", id)
 	}
+	s.FunctionCalls.mu.RUnlock()
+
 }
 
 func (s *CallerServer) GetInstanceCall(id string) chan []byte {
@@ -155,8 +168,14 @@ func (s *CallerServer) GetInstanceResponse(id string) chan []byte {
 
 func (s *CallerServer) QueueInstanceResponse(id string, response []byte) {
 	s.FunctionResponses.mu.RLock()
-	defer s.FunctionResponses.mu.RUnlock()
-	if ch, ok := s.FunctionResponses.FrMap[id]; ok {
+	ch, ok := s.FunctionResponses.FrMap[id]
+	if ok {
+		s.logger.Debug("Queueing response data", "instance ID", id)
 		ch <- response
+		s.logger.Debug("Finished queueing response data", "instance ID", id)
+	} else {
+		s.logger.Warn("Attempted to queue response for unregistered/removed instance", "instanceId", id)
 	}
+	s.FunctionResponses.mu.RUnlock()
+
 }

@@ -111,6 +111,13 @@ func NewMRUScheduler(workers *state.Workers, workerIDs []state.WorkerID, logger 
 	}
 	reconciler := NewReconciler(workerIDs, workers, logger)
 	go reconciler.Run(context.Background())
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			workers.DebugPrint()
+		}
+	}()
+
 	return &mruScheduler{workers: workers, workerIDs: workerIDs, logger: logger, reconciler: reconciler}
 
 }

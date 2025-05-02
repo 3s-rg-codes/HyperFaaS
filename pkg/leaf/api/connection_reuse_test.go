@@ -3,12 +3,13 @@ package api
 import (
 	"context"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Global counter for created connections
@@ -34,7 +35,7 @@ func TestConnectionPoolingConcurrent(t *testing.T) {
 	createCount = 0
 
 	// Create a new PoolManager
-	poolManager := NewPoolManager()
+	poolManager := NewPoolManager(1, 100, 120*time.Second)
 
 	// Worker ID we are testing
 	workerID := "localhost:50051"

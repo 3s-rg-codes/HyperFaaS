@@ -2,14 +2,19 @@ package main
 
 import (
 	"flag"
-	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
+	"log"
 	"log/slog"
 	"os"
 	"time"
 
+	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
+
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/mock"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
+
+	"net/http"
+	_ "net/http/pprof"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
@@ -39,7 +44,7 @@ func parseArgs() (wc WorkerConfig) {
 	flag.StringVar(&(wc.General.Address), "address", "", "Worker address. (Env: WORKER_ADDRESS)")
 	flag.StringVar(&(wc.General.CallerServerAddress), "caller-server-address", "", "Caller server address. (Env: CALLER_SERVER_ADDRESS)")
 	flag.StringVar(&(wc.General.DatabaseType), "database-type", "", "Type of the database. (Env: DATABASE_TYPE)")
-	flag.StringVar(&(wc.Runtime.Type), "runtime", "", "Container runtime type. (Env: RUNTIME_TYPE)")
+	flag.StringVar(&(wc.Runtime.Type), "runtime", "docker", "Container runtime type. (Env: RUNTIME_TYPE)")
 	flag.IntVar(&(wc.General.ListenerTimeout), "timeout", 20, "Timeout in seconds before leafnode listeners are removed from status stream updates. (Env: LISTENER_TIMEOUT)")
 	flag.BoolVar(&(wc.Runtime.AutoRemove), "auto-remove", false, "Auto remove containers. (Env: RUNTIME_AUTOREMOVE)")
 	flag.StringVar(&(wc.Log.Level), "log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
@@ -102,6 +107,9 @@ func setupLogger(config WorkerConfig) *slog.Logger {
 }
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 	wc := parseArgs()
 	logger := setupLogger(wc)
 

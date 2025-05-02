@@ -69,6 +69,7 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 
 	if err != nil {
 		s.StatsManager.Enqueue(stats.Event().Function(req.Id).Container(shortID).Start().Failed())
+		s.logger.Error("Failed to start container", "error", err)
 		return nil, err
 	}
 	// Container has been requested; we actually dont know if its running or not
@@ -95,8 +96,6 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
-	s.logger.Debug("All maps exist")
-
 	// Check if container crashes
 	crashCtx, cancelCrash := context.WithCancel(ctx)
 	defer cancelCrash()
@@ -118,9 +117,11 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 	}()
 
+	responseChan := s.CallerServer.GetInstanceResponse(req.InstanceId.Id)
+
 	select {
 
-	case data := <-s.CallerServer.FunctionResponses.FrMap[req.InstanceId.Id]:
+	case data := <-responseChan:
 		cancelCrash()
 		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Response().Success())
 		s.logger.Debug("Extracted response", "response", data, "instance ID", req.InstanceId.Id)
@@ -161,7 +162,7 @@ func (s *Controller) Stop(ctx context.Context, req *common.InstanceID) (*common.
 // Streams the status updates to a client.
 // Using a channel to listen to the stats manager for status updates
 // Status Updates are defined in pkg/stats/statusUpdate.go
-func (s *Controller) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
+/* func (s *Controller) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
 
 	//If a node is re-hitting the status endpoint, use the existing channel
 	statsChannel := s.StatsManager.GetListenerByID(req.NodeID)
@@ -198,6 +199,51 @@ func (s *Controller) Status(req *controller.StatusRequest, stream controller.Con
 	}
 
 	return nil
+} */
+
+func (s *Controller) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
+	ctx := stream.Context()
+	nodeID := req.NodeID
+
+	// Get or create listener channel
+	statsChannel := s.StatsManager.GetListenerByID(nodeID)
+	if statsChannel == nil {
+		// Create a new channel if none exists
+		statsChannel = make(chan stats.StatusUpdate, 10000)
+		s.StatsManager.AddListener(nodeID, statsChannel)
+	}
+
+	// Handle channel receives and context cancellation
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Debug("Stream context done", "node_id", nodeID, "error", ctx.Err())
+			s.StatsManager.RemoveListener(nodeID)
+			return ctx.Err()
+
+		case data, ok := <-statsChannel:
+			if !ok {
+				// Channel was closed
+				s.logger.Debug("Stats channel closed", "node_id", nodeID)
+				return nil
+			}
+
+			if err := stream.Send(
+				&controller.StatusUpdate{
+					InstanceId: &common.InstanceID{Id: data.InstanceID},
+					FunctionId: &common.FunctionID{Id: data.FunctionID},
+					Timestamp:  timestamppb.New(data.Timestamp),
+					Type:       controller.VirtualizationType(data.Type),
+					Event:      controller.Event(data.Event),
+					Status:     controller.Status(data.Status),
+				}); err != nil {
+				s.logger.Error("Error streaming data", "error", err, "node_id", nodeID)
+				s.StatsManager.RemoveListener(nodeID)
+				return err
+			}
+			s.logger.Debug("Sent status update", "node_id", nodeID, "event", data.Event, "status", data.Status)
+		}
+	}
 }
 
 func (s *Controller) Metrics(ctx context.Context, req *controller.MetricsRequest) (*controller.MetricsUpdate, error) {

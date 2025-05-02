@@ -6,106 +6,141 @@ import (
 	"time"
 )
 
-type StatusUpdateQueue struct {
-	Queue []StatusUpdate
-	mu    sync.Mutex
-}
-
 type StatsManager struct {
-	Updates         StatusUpdateQueue
+	Updates         chan StatusUpdate
 	listeners       map[string]chan StatusUpdate
 	toBeTerminated  map[string]chan bool
-	mu              sync.Mutex
+	mu              sync.RWMutex
 	logger          *slog.Logger
 	listenerTimeout time.Duration
 }
 
 func NewStatsManager(logger *slog.Logger, listenerTimeout time.Duration) *StatsManager {
 	return &StatsManager{
-		Updates:         StatusUpdateQueue{Queue: make([]StatusUpdate, 0)},
+		Updates:         make(chan StatusUpdate, 1000),
 		listeners:       make(map[string]chan StatusUpdate),
-		toBeTerminated:  make(map[string]chan bool, 5),
+		toBeTerminated:  make(map[string]chan bool),
 		logger:          logger,
 		listenerTimeout: listenerTimeout,
 	}
 }
 
 func (s *StatsManager) Enqueue(su *StatusUpdate) {
-	s.Updates.mu.Lock()
-	defer s.Updates.mu.Unlock()
-	s.Updates.Queue = append(s.Updates.Queue, *su)
-}
-
-func (s *StatsManager) dequeue() *StatusUpdate {
-	s.Updates.mu.Lock()
-	defer s.Updates.mu.Unlock()
-
-	if len(s.Updates.Queue) == 0 {
-		return nil
+	select {
+	case s.Updates <- *su:
+	default:
+		s.logger.Warn("Updates channel is full, dropping update")
 	}
-	data := s.Updates.Queue[0]
-	s.Updates.Queue = s.Updates.Queue[1:]
-	return &data
 }
 
 func (s *StatsManager) AddListener(nodeID string, listener chan StatusUpdate) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Clean up any existing listener for this node
+	if _, exists := s.listeners[nodeID]; exists {
+		// Don't close the channel here as it might be in use elsewhere
+		delete(s.listeners, nodeID)
+	}
+
 	s.listeners[nodeID] = listener
 	s.logger.Info("Added listener with ID", "id", nodeID)
-	s.mu.Unlock()
 }
 
 func (s *StatsManager) RemoveListener(nodeID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.logger.Debug("Removed listener", "id", nodeID)
+
+	// Remove from termination map if present
+	if _, exists := s.toBeTerminated[nodeID]; exists {
+		delete(s.toBeTerminated, nodeID)
+		// Don't close the channel here as it might be in use elsewhere
+	}
+
+	// Remove from listeners
 	delete(s.listeners, nodeID)
+	s.logger.Debug("Removed listener", "id", nodeID)
 }
 
 func (s *StatsManager) GetListenerByID(nodeID string) chan StatusUpdate {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	_, ok1 := s.toBeTerminated[nodeID]
-	updateChan, ok2 := s.listeners[nodeID]
-	if ok1 && ok2 {
-		s.toBeTerminated[nodeID] <- true
-		delete(s.toBeTerminated, nodeID)
-	} else {
+
+	// Check if the node exists
+	terminationCh, hasTermination := s.toBeTerminated[nodeID]
+	updateChan, hasListener := s.listeners[nodeID]
+
+	if !hasListener {
+		s.mu.Unlock()
 		return nil
 	}
+
+	// If it's marked for termination, cancel that
+	if hasTermination {
+		delete(s.toBeTerminated, nodeID)
+		s.mu.Unlock()
+
+		// Signal after releasing the lock
+		select {
+		case terminationCh <- true:
+			// Successfully signaled
+		default:
+			s.logger.Warn("Failed to signal termination channel", "node_id", nodeID)
+		}
+	} else {
+		s.mu.Unlock()
+	}
+
 	return updateChan
 }
 
 func (s *StatsManager) RemoveListenerAfterTimeout(nodeID string) {
+	terminationCh := make(chan bool, 1)
+
 	s.mu.Lock()
-	ch := make(chan bool, 10)
-	s.toBeTerminated[nodeID] = ch
+	// Clean up any existing termination channel
+	if _, exists := s.toBeTerminated[nodeID]; exists {
+		delete(s.toBeTerminated, nodeID)
+		// Don't close here as it might be in use
+	}
+
+	s.toBeTerminated[nodeID] = terminationCh
 	s.logger.Info("Node set to be terminated", "id", nodeID)
 	s.mu.Unlock()
 
+	// Wait for either signal or timeout
 	select {
-	case <-ch:
-		break
-	case <-time.After(s.listenerTimeout * time.Second):
-
+	case <-terminationCh:
+		// Termination cancelled, clean up channel
+		s.logger.Debug("Termination cancelled for node", "id", nodeID)
+	case <-time.After(s.listenerTimeout):
+		// Timeout occurred, remove the listener
 		s.mu.Lock()
 		delete(s.listeners, nodeID)
+		delete(s.toBeTerminated, nodeID)
 		s.mu.Unlock()
+		s.logger.Debug("Listener removed after timeout", "id", nodeID)
 	}
+
+	// Close the channel when done with it
+	close(terminationCh)
 }
 
 // Streams the status updates to all channels in the listeners map.
 func (s *StatsManager) StartStreamingToListeners() {
-	s.logger.Debug("Started Streaming to listeners")
-	for {
-		data := s.dequeue()
-		if data == nil {
-			continue
-		}
+	for update := range s.Updates {
+		// Make a copy of the listeners map to avoid holding the lock during sends
+		s.mu.RLock()
+		activeListeners := make(map[string]chan StatusUpdate, len(s.listeners))
 		for nodeID, listener := range s.listeners {
-			select {
-			case listener <- *data:
+			activeListeners[nodeID] = listener
+		}
+		s.mu.RUnlock()
 
+		// Send updates to all active listeners
+		for nodeID, listener := range activeListeners {
+			select {
+			case listener <- update:
+				// Successfully sent
 			default:
 				s.logger.Debug("Listener is full, dropping update", "node_id", nodeID)
 			}
