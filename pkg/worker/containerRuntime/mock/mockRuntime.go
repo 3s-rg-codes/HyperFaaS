@@ -57,7 +57,11 @@ func (m *MockRuntime) Start(ctx context.Context, functionID string, imageTag str
 	m.mapLock.Lock()
 	m.Running[imageTag] = append(m.Running[imageTag], instance)
 	m.mapLock.Unlock()
-	payload := &pb.Payload{FirstExecution: true, InstanceId: &common.InstanceID{Id: instanceID}}
+	payload := &pb.Payload{
+		FirstExecution: true,
+		InstanceId:     &common.InstanceID{Id: instanceID},
+		FunctionId:     &common.FunctionID{Id: functionID},
+	}
 	switch imageTag {
 	case "hyperfaas-hello:latest":
 		go fakeHelloFunction(payload, controlContext, m.callerRef, m.logger)
@@ -169,6 +173,7 @@ func fakeEchoFunction(payload *pb.Payload, ctx context.Context, callerRef *calle
 			payload = &pb.Payload{
 				Data:           data,
 				InstanceId:     payload.InstanceId,
+				FunctionId:     payload.FunctionId,
 				Error:          nil,
 				FirstExecution: false,
 			}
@@ -200,6 +205,7 @@ func fakeHelloFunction(payload *pb.Payload, ctx context.Context, callerRef *call
 			payload = &pb.Payload{
 				Data:           []byte("HELLO WORLD!"),
 				InstanceId:     payload.InstanceId,
+				FunctionId:     payload.FunctionId,
 				Error:          nil,
 				FirstExecution: false,
 			}

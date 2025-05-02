@@ -10,6 +10,7 @@ services:
       - "50051:50051"
     networks:
       - hyperfaas-network
+    command: ["./main", "-address=0.0.0.0:50051", "-runtime=fake", "-log-level=debug", "-log-format=text", "--auto-remove=true", "-containerized=true", "-caller-server-address=0.0.0.0:50052", "-database-type=http"]
     develop:
       watch:
         - action: rebuild

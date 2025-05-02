@@ -69,6 +69,7 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 
 	if err != nil {
 		s.StatsManager.Enqueue(stats.Event().Function(req.Id).Container(shortID).Start().Failed())
+		s.logger.Error("Failed to start container", "error", err)
 		return nil, err
 	}
 	// Container has been requested; we actually dont know if its running or not
@@ -95,8 +96,6 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
-	s.logger.Debug("All maps exist")
-
 	// Check if container crashes
 	crashCtx, cancelCrash := context.WithCancel(ctx)
 	defer cancelCrash()
@@ -118,9 +117,11 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 	}()
 
+	responseChan := s.CallerServer.GetInstanceResponse(req.InstanceId.Id)
+
 	select {
 
-	case data := <-s.CallerServer.FunctionResponses.FrMap[req.InstanceId.Id]:
+	case data := <-responseChan:
 		cancelCrash()
 		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Response().Success())
 		s.logger.Debug("Extracted response", "response", data, "instance ID", req.InstanceId.Id)
