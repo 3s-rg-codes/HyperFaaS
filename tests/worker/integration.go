@@ -234,6 +234,14 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
+	if testsMap[10] {
+		name := "concurrent calls"
+		logger.Info("Starting test", "test", name)
+		tErr := TestConcurrentCalls(controllerClient, runtime, *logger, spec, config)
+		test := Test{name: name, err: tErr}
+		testArray = append(testArray, test)
+	}
+
 	////////////////////////////////////////////////////////////////////////////////////
 
 	logger.Info("TEST RESULTS ")
@@ -485,7 +493,7 @@ func configuration() (FullConfig, *slog.Logger, map[int]bool) {
 	config.Config.printConfig(*logger)
 
 	//Configuring the tests cases that should be run
-	testCasesMax := 9
+	testCasesMax := 10
 	testsMap := make(map[int]bool, 10)
 
 	if config.Config.TestCases == "all" {
