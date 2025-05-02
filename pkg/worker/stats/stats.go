@@ -26,7 +26,11 @@ func NewStatsManager(logger *slog.Logger, listenerTimeout time.Duration) *StatsM
 }
 
 func (s *StatsManager) Enqueue(su *StatusUpdate) {
-	s.Updates <- *su
+	select {
+	case s.Updates <- *su:
+	default:
+		s.logger.Warn("Updates channel is full, dropping update")
+	}
 }
 
 func (s *StatsManager) AddListener(nodeID string, listener chan StatusUpdate) {

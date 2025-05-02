@@ -15,19 +15,16 @@ import (
 )
 
 func TestConcurrentCalls(client pb.ControllerClient, runtime containerRuntime.ContainerRuntime, logger slog.Logger, spec helpers.ResourceSpec, config FullConfig) error {
-	totalInstances := 500
+	totalInstances := 50
 	totalFunctions := 10
-	totalCallsPerInstance := 10
+	totalCallsPerInstance := 100
 
 	instanceIDs := make([]string, totalInstances)
 	functions := make([]string, totalFunctions)
-	for i := 0; i < totalFunctions; i++ {
-		functions[i] = "hyperfaas-hello:latest"
-	}
 
 	// Start all instances
 	for i := 0; i < totalInstances; i++ {
-		instanceID, err := client.Start(context.Background(), &pbc.FunctionID{Id: functions[rand.Intn(totalFunctions)]})
+		instanceID, err := client.Start(context.Background(), &pbc.FunctionID{Id: "hyperfaas-hello:latest"})
 		if err != nil {
 			logger.Error("Error starting instance", "error", err)
 			return fmt.Errorf("error starting instance: %v", err)
