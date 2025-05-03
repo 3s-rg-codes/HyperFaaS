@@ -105,6 +105,16 @@ test-integration-local-all runtime loglevel:
     cd ./cmd/database && go run . &
     cd ./tests/worker && go run . {{runtime}} {{loglevel}}
 
+###### Metrics Tests ########
+metrics-client:
+    go run ./cmd/metrics-client
+
+metrics-test:
+    go run ./tests/metrics/main.go
+
+metrics-analyse:
+    cd benchmarks && uv run analyse.py
+
 ############################
 # Misc. Stuff
 ############################

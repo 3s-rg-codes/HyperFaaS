@@ -2,11 +2,10 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
-	"math/rand"
 	"sync"
-	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pbc "github.com/3s-rg-codes/HyperFaaS/proto/common"
@@ -19,16 +18,20 @@ import (
 )
 
 const (
-	RequestedMemory    = 100 * 1024 * 1024 // 100MB
-	RequestedCPUPeriod = 100000
-	RequestedCPUQuota  = 50000
-	SQLITE_DB_PATH     = "metrics.db"
+	RequestedMemory       = 100 * 1024 * 1024 // 100MB
+	RequestedCPUPeriod    = 100000
+	RequestedCPUQuota     = 50000
+	SQLITE_DB_PATH        = "./benchmarks/metrics.db"
+	totalInstances        = 5
+	totalCallsPerInstance = 500
 )
 
+// This test sends concurrent calls directly to the worker.
+// It must first register the functions through the leaf node so their metadata is available in the db
 func main() {
 	// Create leaf client
-	client, conn := createClient()
-	defer conn.Close()
+	leafClient, leafConn := createLeafClient()
+	defer leafConn.Close()
 
 	imageTags := []string{
 		"hyperfaas-hello:latest",
@@ -40,29 +43,41 @@ func main() {
 
 	// Create functions and save their id:imagetag mapping
 	for i, imageTag := range imageTags {
-		functionID, err := createFunction(imageTag, &client)
+		functionID, err := createFunction(imageTag, &leafClient)
 		if err != nil {
 			log.Fatalf("Failed to create function: %v", err)
+		}
+		err = saveFunctionId(functionID, imageTag)
+		if err != nil {
+			log.Fatalf("Failed to save function id: %v", err)
 		}
 		functionIDs[i] = functionID
 	}
 
-	//Concurrent calls
-	testConcurrentCalls(client, functionIDs[0], 50)
-	// Sequential calls
-	//testSequentialCalls(client, createFunctionResp.FunctionID)
+	ctx := context.Background()
 
-	// Test worker concurrent calls
-	/* controllerClient, conn, err := BuildMockClientHelper("localhost:50051")
-	if err != nil {
-		log.Fatalf("Failed to build mock client: %v", err)
+	g, _ := errgroup.WithContext(ctx)
+
+	for _, functionID := range functionIDs {
+		g.Go(func() error {
+			return TestWorkerConcurrentCalls(functionID)
+		})
 	}
-	defer conn.Close()
 
-	TestWorkerConcurrentCalls(controllerClient, createFunctionResp.FunctionID) */
+	g.Wait()
+
 }
 
-func createClient() (pb.LeafClient, *grpc.ClientConn) {
+func createWorkerClient() (workerpb.ControllerClient, *grpc.ClientConn) {
+	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+
+	return workerpb.NewControllerClient(conn), conn
+}
+
+func createLeafClient() (pb.LeafClient, *grpc.ClientConn) {
 	conn, err := grpc.NewClient("localhost:50050", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
@@ -71,84 +86,15 @@ func createClient() (pb.LeafClient, *grpc.ClientConn) {
 	return pb.NewLeafClient(conn), conn
 }
 
-func testConcurrentCalls(client pb.LeafClient, functionID *common.FunctionID, numCalls int) {
-	// Create main context
-	ctx := context.Background()
-
-	g, _ := errgroup.WithContext(ctx)
-
-	// Track success/failure counts
-	var successCount, failureCount int32
-	var countMu sync.Mutex
-
-	// Launch concurrent calls
-	for i := 0; i < numCalls; i++ {
-		g.Go(func() error {
-			err := sendCall(client, functionID)
-			countMu.Lock()
-			if err != nil {
-				failureCount++
-				fmt.Printf("Failed to send call: %v\n", err)
-			} else {
-				successCount++
-			}
-			countMu.Unlock()
-			return nil // Don't propagate errors to cancel other goroutines
-		})
-	}
-
-	// Wait for all goroutines to complete
-	_ = g.Wait()
-
-	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d\n", successCount, failureCount)
-}
-
-func sendCall(client pb.LeafClient, functionID *common.FunctionID) error {
-	// sleep for random time between 100ms and 2 seconds
-	time.Sleep(time.Duration(rand.Intn(1900)+100) * time.Millisecond)
-	startReq := &pb.ScheduleCallRequest{
-		FunctionID: functionID,
-		Data:       []byte(""),
-	}
-
-	_, err := client.ScheduleCall(context.Background(), startReq)
-	if err != nil {
-		return fmt.Errorf("failed to schedule call: %v", err)
-	}
-
-	return nil
-}
-
-func testSequentialCalls(client pb.LeafClient, functionID *common.FunctionID) {
-	for i := 0; i < 20; i++ {
-		//time.Sleep(time.Duration(rand.Intn(1900)+100) * time.Millisecond)
-		req := &pb.ScheduleCallRequest{
-			FunctionID: functionID,
-			Data:       []byte(""),
-		}
-
-		_, err := client.ScheduleCall(context.Background(), req)
-		if err != nil {
-			log.Fatalf("Failed to schedule sequential call %d: %v", i, err)
-		}
-		fmt.Printf("Successfully got response from sequential call %d\n", i)
-	}
-}
-
-func TestWorkerConcurrentCalls(client workerpb.ControllerClient, functionID *common.FunctionID) error {
-	totalInstances := 500
-	totalFunctions := 10
-	totalCallsPerInstance := 200
+func TestWorkerConcurrentCalls(functionID *common.FunctionID) error {
+	client, conn := createWorkerClient()
+	defer conn.Close()
 
 	instanceIDs := make([]string, totalInstances)
-	functions := make([]string, totalFunctions)
-	for i := 0; i < totalFunctions; i++ {
-		functions[i] = functionID.Id
-	}
 
 	// Start all instances
 	for i := 0; i < totalInstances; i++ {
-		instanceID, err := client.Start(context.Background(), &pbc.FunctionID{Id: functions[rand.Intn(totalFunctions)]})
+		instanceID, err := client.Start(context.Background(), &pbc.FunctionID{Id: functionID.Id})
 		if err != nil {
 			log.Printf("Error starting instance: %v", err)
 			return fmt.Errorf("error starting instance: %v", err)
@@ -166,7 +112,7 @@ func TestWorkerConcurrentCalls(client workerpb.ControllerClient, functionID *com
 	for _, instanceID := range instanceIDs {
 		for i := 0; i < totalCallsPerInstance; i++ {
 			g.Go(func() error {
-				response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: &pbc.InstanceID{Id: instanceID}, Data: make([]byte, 0), FunctionId: &pbc.FunctionID{Id: functions[rand.Intn(totalFunctions)]}})
+				response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: &pbc.InstanceID{Id: instanceID}, Data: make([]byte, 0), FunctionId: &pbc.FunctionID{Id: functionID.Id}})
 				if err != nil {
 					countMu.Lock()
 					failureCount++
@@ -227,4 +173,18 @@ func createFunction(imageTag string, client *pb.LeafClient) (*common.FunctionID,
 	}
 
 	return createFunctionResp.FunctionID, nil
+}
+
+func saveFunctionId(functionID *common.FunctionID, imageTag string) error {
+	db, err := sql.Open("sqlite3", SQLITE_DB_PATH)
+	if err != nil {
+		return fmt.Errorf("failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec("INSERT INTO function_images (function_id, image_tag) VALUES (?, ?)", functionID.Id, imageTag)
+	if err != nil {
+		return fmt.Errorf("failed to insert function id: %v", err)
+	}
+	return nil
 }
