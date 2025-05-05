@@ -42,6 +42,15 @@ func NewSyncMapScheduler(workerIDs []state.WorkerID, logger *slog.Logger) *syncM
 	for _, workerID := range workerIDs {
 		workers.CreateWorker(workerID)
 	}
+	r := NewReconciler(workerIDs, workers, logger)
+	go r.Run(context.Background())
+
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			workers.DebugPrint()
+		}
+	}()
 	return &syncMapScheduler{workers: *workers, workerIDs: workerIDs, logger: logger}
 }
 
@@ -80,6 +89,7 @@ func (s *syncMapScheduler) UpdateWorkerState(workerID state.WorkerID, newState s
 
 func (s *syncMapScheduler) UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error {
 	switch newState {
+	//TODO handle errors
 	case state.InstanceStateRunning:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID})
 	case state.InstanceStateIdle:
@@ -133,7 +143,6 @@ func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID
 		case *state.FunctionNotAssignedError:
 			s.logger.Info("Function not registered, creating on random worker", "functionID", functionID, "workerID", workerID)
 			s.workers.AssignFunction(workerID, functionID)
-			s.workers.DebugPrint()
 		case *state.NoIdleInstanceError:
 			s.logger.Info("No idle instance found, scheduling to random worker", "functionID", functionID, "workerID", workerID)
 		default:
@@ -142,6 +151,8 @@ func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID
 		return workerID, "", nil
 	}
 	s.logger.Debug("Found idle instance", "functionID", functionID, "workerID", workerID, "instanceID", instanceID)
+	// UpdateInstance to running
+	s.UpdateInstanceState(workerID, functionID, instanceID, state.InstanceStateRunning)
 	return workerID, instanceID, nil
 }
 

@@ -69,7 +69,7 @@ func (w *WorkersSyncMap) GetFunctionStateMap(workerID WorkerID, functionID Funct
 	return function.(*sync.Map), nil
 }
 
-// GetInstances returns all instances running with the supplied function state on the supplied worker
+// GetInstances returns all instances with the supplied function state on the supplied worker
 func (w *WorkersSyncMap) GetInstances(workerID WorkerID, functionID FunctionID, instanceState InstanceState) []Instance {
 	instanceStateMap, err := w.GetFunctionStateMap(workerID, functionID)
 	if err != nil {
@@ -86,10 +86,10 @@ func (w *WorkersSyncMap) GetInstances(workerID WorkerID, functionID FunctionID, 
 	return instanceStateSlice.([]Instance)
 }
 
-func (w *WorkersSyncMap) UpdateInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instance Instance) {
+func (w *WorkersSyncMap) UpdateInstance(workerID WorkerID, functionID FunctionID, instanceState InstanceState, instance Instance) error {
 	instanceStateMap, err := w.GetFunctionStateMap(workerID, functionID)
 	if err != nil {
-		return
+		return err
 	}
 	w.logger.Debug("Updating instance", "workerID", workerID, "functionID", functionID, "instanceState", instanceState, "instance", instance)
 	// Todo maybe make this cleaner and update the timestamps.
@@ -123,7 +123,26 @@ func (w *WorkersSyncMap) UpdateInstance(workerID WorkerID, functionID FunctionID
 			}
 		}
 		instanceStateMap.Store(InstanceStateIdle, idleInstances)
+	case InstanceStateTimeout:
+		// Remove from Idle
+		idleInstances := w.GetInstances(workerID, functionID, InstanceStateIdle)
+		for i, idleInstance := range idleInstances {
+			if idleInstance.InstanceID == instance.InstanceID {
+				idleInstances = append(idleInstances[:i], idleInstances[i+1:]...)
+				break
+			}
+		}
+	case InstanceStateDown:
+		// Remove from Running
+		runningInstances := w.GetInstances(workerID, functionID, InstanceStateRunning)
+		for i, runningInstance := range runningInstances {
+			if runningInstance.InstanceID == instance.InstanceID {
+				runningInstances = append(runningInstances[:i], runningInstances[i+1:]...)
+				break
+			}
+		}
 	}
+	return nil
 }
 
 // DeleteInstance deletes the supplied instance of the supplied function in th supplied state from the supplied worker
@@ -177,10 +196,16 @@ func (w *WorkersSyncMap) FindIdleInstance(functionID FunctionID) (WorkerID, Inst
 		if len(instances) > 0 {
 			// There is an idle instance for this function
 			idleWorkerID = workerID.(WorkerID)
-			// For now just pick the first idle instance
-			idleInstanceID = instances[0].InstanceID
+			// Find the instance that worked most recently
+			mostRecent := instances[0]
+			for _, instance := range instances[1:] {
+				if instance.LastWorked.After(mostRecent.LastWorked) {
+					mostRecent = instance
+				}
+			}
+			idleInstanceID = mostRecent.InstanceID
 			// Move the instance to the running state
-			w.UpdateInstance(idleWorkerID, functionID, InstanceStateRunning, instances[0])
+			w.UpdateInstance(idleWorkerID, functionID, InstanceStateRunning, mostRecent)
 			found = true
 			return false // Stop iteration
 		}
@@ -208,7 +233,7 @@ func (w *WorkersSyncMap) DebugPrint() {
 
 			stateMap.Range(func(instanceState, instances interface{}) bool {
 				// Instance State 0 is Running
-				// Instance State 2 is Idle
+				// Instance State 1 is Idle
 				var isS string
 				if instanceState == InstanceStateRunning {
 					isS = "Running"

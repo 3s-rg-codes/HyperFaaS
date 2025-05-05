@@ -183,10 +183,12 @@ func TestSyncMapSchedulerDeleteInstance(t *testing.T) {
 
 func TestSyncMapSchedulerSchedule(t *testing.T) {
 	scheduler := CreateTestSyncMapScheduler()
-	workerID, instanceID, err := scheduler.Schedule(context.Background(), "func1") // either func1, func2, or func3 should be scheduled
+	workerID, instanceID, err := scheduler.Schedule(context.Background(), "func1")
+
+	// instance 3 should have been picked because it's the most recently used
 	assert.NoError(t, err)
 	assert.Equal(t, state.WorkerID("worker1"), workerID)
-	assert.Equal(t, state.InstanceID("instance1"), instanceID)
+	assert.Equal(t, state.InstanceID("instance3"), instanceID)
 	// now  4 ,5 and an additional instance should be running
 	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateRunning), 3)
 	// now just 2 should be idle
@@ -198,9 +200,9 @@ func TestMRUSchedulerUpdateWorkerState(t *testing.T) {
 	scheduler := NewMRUScheduler(state.NewWorkers(logger), []state.WorkerID{"worker1", "worker2"}, logger)
 	scheduler.UpdateWorkerState("worker1", state.WorkerStateUp)
 	scheduler.UpdateWorkerState("worker2", state.WorkerStateUp)
-	worker := scheduler.workers.GetWorker("worker1")
+	worker := scheduler.workers.Workers["worker1"]
 	assert.NotNil(t, worker)
-	worker = scheduler.workers.GetWorker("worker2")
+	worker = scheduler.workers.Workers["worker2"]
 	assert.NotNil(t, worker)
 }
 
@@ -210,21 +212,17 @@ func TestMRUSchedulerUpdateInstanceState(t *testing.T) {
 	// Turn instance 1 to Running
 	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateRunning)
 	// Should be 3 running and 2 idle
-	worker := scheduler.workers.GetWorker("worker1")
-	idleInstances := worker.Functions["func1"].Instances[state.InstanceStateIdle]
-	runningInstances := worker.Functions["func1"].Instances[state.InstanceStateRunning]
-	assert.Len(t, idleInstances, 2)
-	assert.Len(t, runningInstances, 3)
+	worker := scheduler.workers.Workers["worker1"]
+	assert.Equal(t, 2, countOccurences(worker.Functions["func1"], state.InstanceStateIdle))
+	assert.Equal(t, 3, countOccurences(worker.Functions["func1"], state.InstanceStateRunning))
 
 	//------------WorkerStateMap 2------------
 	// Turn instance 10 to Running
 	scheduler.UpdateInstanceState("worker2", "func3", "instance10", state.InstanceStateRunning)
 	// Should be 3 running and 1 idle
-	worker = scheduler.workers.GetWorker("worker2")
-	idleInstances = worker.Functions["func3"].Instances[state.InstanceStateIdle]
-	runningInstances = worker.Functions["func3"].Instances[state.InstanceStateRunning]
-	assert.Len(t, idleInstances, 1)
-	assert.Len(t, runningInstances, 3)
+	worker = scheduler.workers.Workers["worker2"]
+	assert.Equal(t, 1, countOccurences(worker.Functions["func3"], state.InstanceStateIdle))
+	assert.Equal(t, 3, countOccurences(worker.Functions["func3"], state.InstanceStateRunning))
 
 }
 
@@ -253,4 +251,14 @@ func TestMRUSchedulerSchedule(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, state.InstanceID(""), instanceID)
 
+}
+
+func countOccurences(instances map[state.InstanceID]*state.Instance, state state.InstanceState) int {
+	count := 0
+	for _, inst := range instances {
+		if inst.State == state {
+			count++
+		}
+	}
+	return count
 }
