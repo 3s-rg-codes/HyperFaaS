@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,12 +36,17 @@ type Controller struct {
 	address         string
 	dbClient        kv.FunctionMetadataStore
 	functionIDCache map[string]kv.FunctionData
+	mu              sync.RWMutex
 }
 
 func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common.InstanceID, error) {
 
 	//Check if we have config and image for ID cached and if not get it from db
-	if _, ok := s.functionIDCache[req.Id]; !ok {
+	s.mu.RLock()
+	_, ok := s.functionIDCache[req.Id]
+	s.mu.RUnlock()
+
+	if !ok {
 		s.logger.Debug("FunctionData not available locally, fetching from server", "functionID", req.Id)
 		imageTag, config, err := s.dbClient.Get(req)
 		if err != nil {
@@ -52,7 +58,9 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 			ImageTag: imageTag,
 		}
 
+		s.mu.Lock()
 		s.functionIDCache[req.Id] = d
+		s.mu.Unlock()
 	}
 
 	functionData := s.functionIDCache[req.Id]
@@ -84,13 +92,25 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 // runtime.Call is also called to check for errors
 func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 
-	if _, ok := s.CallerServer.FunctionCalls.FcMap[req.InstanceId.Id]; !ok {
+	/* if _, ok := s.CallerServer.FunctionCalls.FcMap[req.InstanceId.Id]; !ok {
 		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
 		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
 	if _, ok := s.CallerServer.FunctionResponses.FrMap[req.InstanceId.Id]; !ok {
+		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
+		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
+		return nil, status.Errorf(codes.NotFound, err.Error())
+	} */
+
+	if _, ok := s.CallerServer.FunctionCalls.FcMap.Load(req.InstanceId.Id); !ok {
+		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
+		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
+		return nil, status.Errorf(codes.NotFound, err.Error())
+	}
+
+	if _, ok := s.CallerServer.FunctionResponses.FrMap.Load(req.InstanceId.Id); !ok {
 		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
 		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
 		return nil, status.Errorf(codes.NotFound, err.Error())
@@ -130,7 +150,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 	case err := <-crashChan:
 
 		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Down())
-		s.logger.Error("Container crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
+		s.logger.Error("Container timed out or crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
 
 		return nil, &ContainerCrashError{InstanceID: req.InstanceId.Id, ContainerError: err.Error()}
 
