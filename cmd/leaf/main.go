@@ -4,11 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	"log/slog"
 	"net"
 	"os"
 	"time"
+
+	"github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/api"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
@@ -37,7 +38,7 @@ func main() {
 	logFilePath := flag.String("log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
 	databaseType := flag.String("database-type", "http", "\"database\" used for managing the functionID -> config relationship")
 	databaseAddress := flag.String("database-address", "http://localhost:8080/", "address of the database server")
-	schedulerType := flag.String("scheduler-type", "naive", "The type of scheduler to use (mru or map)")
+	schedulerType := flag.String("scheduler-type", "mru", "The type of scheduler to use (mru or map)")
 	flag.Var(&workerIDs, "worker-ids", "The IDs of the workers to manage")
 	flag.Parse()
 
@@ -46,6 +47,9 @@ func main() {
 	}
 
 	logger := setupLogger(*logLevel, *logFormat, *logFilePath)
+
+	// Print configuration
+	logger.Info("Configuration", "address", *address, "logLevel", *logLevel, "logFormat", *logFormat, "logFilePath", *logFilePath, "databaseType", *databaseType, "databaseAddress", *databaseAddress, "schedulerType", *schedulerType, "workerIDs", workerIDs)
 
 	var ids []state.WorkerID
 	logger.Debug("Setting worker IDs", "workerIDs", workerIDs, "len", len(workerIDs))
