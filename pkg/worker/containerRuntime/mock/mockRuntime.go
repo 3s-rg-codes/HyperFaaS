@@ -122,8 +122,7 @@ func (m *MockRuntime) Status(req *controller.StatusRequest, stream controller.Co
 }
 
 func (m *MockRuntime) NotifyCrash(ctx context.Context, instanceId *common.InstanceID) error {
-
-	select {} //Just runs forever since we don't need this functionality
+	return nil
 }
 
 func (m *MockRuntime) ContainerStats(ctx context.Context, containerID string) io.ReadCloser {
