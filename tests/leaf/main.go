@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	pbc "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	_ "github.com/mattn/go-sqlite3"
@@ -48,18 +46,12 @@ func main() {
 	}
 
 	//Concurrent calls
-	testConcurrentCalls(client, functionIDs[0], 50)
+	//testConcurrentCalls(client, functionIDs[0], 10)
 	// Sequential calls
 	//testSequentialCalls(client, createFunctionResp.FunctionID)
 
-	// Test worker concurrent calls
-	/* controllerClient, conn, err := BuildMockClientHelper("localhost:50051")
-	if err != nil {
-		log.Fatalf("Failed to build mock client: %v", err)
-	}
-	defer conn.Close()
-
-	TestWorkerConcurrentCalls(controllerClient, createFunctionResp.FunctionID) */
+	// Concurrent calls for duration
+	testConcurrentCallsForDuration(client, functionIDs[0], 100, 120*time.Second)
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {
@@ -79,18 +71,20 @@ func testConcurrentCalls(client pb.LeafClient, functionID *common.FunctionID, nu
 
 	// Track success/failure counts
 	var successCount, failureCount int32
+	var totalLatency time.Duration
 	var countMu sync.Mutex
 
 	// Launch concurrent calls
 	for i := 0; i < numCalls; i++ {
 		g.Go(func() error {
-			err := sendCall(client, functionID)
+			latency, err := sendCall(client, functionID)
 			countMu.Lock()
 			if err != nil {
 				failureCount++
 				fmt.Printf("Failed to send call: %v\n", err)
 			} else {
 				successCount++
+				totalLatency += latency
 			}
 			countMu.Unlock()
 			return nil // Don't propagate errors to cancel other goroutines
@@ -100,28 +94,48 @@ func testConcurrentCalls(client pb.LeafClient, functionID *common.FunctionID, nu
 	// Wait for all goroutines to complete
 	_ = g.Wait()
 
-	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d\n", successCount, failureCount)
+	avgLatency := totalLatency / time.Duration(numCalls)
+
+	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d, AvgLatency: %v\n", successCount, failureCount, avgLatency)
+}
+func testConcurrentCallsForDuration(client pb.LeafClient, functionID *common.FunctionID, rps int, duration time.Duration) {
+	ticker := time.NewTicker(time.Second / time.Duration(rps))
+	done := make(chan bool)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				go testConcurrentCalls(client, functionID, rps)
+			case <-done:
+				return
+			}
+		}
+	}()
+	time.Sleep(duration)
+	ticker.Stop()
+	done <- true
+
 }
 
-func sendCall(client pb.LeafClient, functionID *common.FunctionID) error {
-	// sleep for random time between 100ms and 2 seconds
-	time.Sleep(time.Duration(rand.Intn(1900)+100) * time.Millisecond)
+func sendCall(client pb.LeafClient, functionID *common.FunctionID) (time.Duration, error) {
+	//time.Sleep(time.Duration(rand.Intn(10)+100) * time.Millisecond)
 	startReq := &pb.ScheduleCallRequest{
 		FunctionID: functionID,
 		Data:       []byte(""),
 	}
-
+	//ctx := context.WithValue(context.Background(), "RequestID", uuid.New().String())
+	start := time.Now()
 	_, err := client.ScheduleCall(context.Background(), startReq)
 	if err != nil {
-		return fmt.Errorf("failed to schedule call: %v", err)
+		fmt.Printf("Failed to schedule call: %v\n", err)
+		return 0, fmt.Errorf("failed to schedule call: %v", err)
 	}
 
-	return nil
+	return time.Since(start), nil
 }
 
 func testSequentialCalls(client pb.LeafClient, functionID *common.FunctionID) {
 	for i := 0; i < 20; i++ {
-		//time.Sleep(time.Duration(rand.Intn(1900)+100) * time.Millisecond)
 		req := &pb.ScheduleCallRequest{
 			FunctionID: functionID,
 			Data:       []byte(""),
@@ -133,68 +147,6 @@ func testSequentialCalls(client pb.LeafClient, functionID *common.FunctionID) {
 		}
 		fmt.Printf("Successfully got response from sequential call %d\n", i)
 	}
-}
-
-func TestWorkerConcurrentCalls(client workerpb.ControllerClient, functionID *common.FunctionID) error {
-	totalInstances := 500
-	totalFunctions := 10
-	totalCallsPerInstance := 200
-
-	instanceIDs := make([]string, totalInstances)
-	functions := make([]string, totalFunctions)
-	for i := 0; i < totalFunctions; i++ {
-		functions[i] = functionID.Id
-	}
-
-	// Start all instances
-	for i := 0; i < totalInstances; i++ {
-		instanceID, err := client.Start(context.Background(), &pbc.FunctionID{Id: functions[rand.Intn(totalFunctions)]})
-		if err != nil {
-			log.Printf("Error starting instance: %v", err)
-			return fmt.Errorf("error starting instance: %v", err)
-		}
-		instanceIDs[i] = instanceID.Id
-	}
-	log.Printf("Started %d instances", totalInstances)
-	// Send all calls
-	ctx := context.Background()
-
-	g, _ := errgroup.WithContext(ctx)
-	var successCount, failureCount int32
-	var countMu sync.Mutex
-
-	for _, instanceID := range instanceIDs {
-		for i := 0; i < totalCallsPerInstance; i++ {
-			g.Go(func() error {
-				response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: &pbc.InstanceID{Id: instanceID}, Data: make([]byte, 0), FunctionId: &pbc.FunctionID{Id: functions[rand.Intn(totalFunctions)]}})
-				if err != nil {
-					countMu.Lock()
-					failureCount++
-					countMu.Unlock()
-					log.Printf("Error calling instance: %v", err)
-					return fmt.Errorf("error calling instance: %v", err)
-				}
-				if response == nil {
-					countMu.Lock()
-					failureCount++
-					countMu.Unlock()
-					log.Printf("No response from instance: %v", instanceID)
-					return fmt.Errorf("no response from instance: %v", instanceID)
-				}
-				countMu.Lock()
-				successCount++
-				countMu.Unlock()
-				return nil
-			})
-		}
-	}
-
-	// Wait for all goroutines to complete
-	_ = g.Wait()
-
-	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d\n", successCount, failureCount)
-
-	return nil
 }
 
 func BuildMockClientHelper(controllerServerAddress string) (workerpb.ControllerClient, *grpc.ClientConn, error) {

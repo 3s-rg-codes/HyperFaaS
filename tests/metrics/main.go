@@ -22,8 +22,8 @@ const (
 	RequestedCPUPeriod    = 100000
 	RequestedCPUQuota     = 50000
 	SQLITE_DB_PATH        = "./benchmarks/metrics.db"
-	totalInstances        = 5
-	totalCallsPerInstance = 500
+	totalInstances        = 10
+	totalCallsPerInstance = 2500
 )
 
 // This test sends concurrent calls directly to the worker.
@@ -36,7 +36,6 @@ func main() {
 	imageTags := []string{
 		"hyperfaas-hello:latest",
 		"hyperfaas-echo:latest",
-		"hyperfaas-simul:latest",
 	}
 
 	functionIDs := make([]*common.FunctionID, len(imageTags))
@@ -57,6 +56,8 @@ func main() {
 	ctx := context.Background()
 
 	g, _ := errgroup.WithContext(ctx)
+
+	log.Printf("Starting test with %d instances and %d calls per instance", totalInstances, totalCallsPerInstance)
 
 	for _, functionID := range functionIDs {
 		g.Go(func() error {
