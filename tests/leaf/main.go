@@ -51,7 +51,7 @@ func main() {
 	//testSequentialCalls(client, createFunctionResp.FunctionID)
 
 	// Concurrent calls for duration
-	testConcurrentCallsForDuration(client, functionIDs[0], 100, 120*time.Second)
+	testConcurrentCallsForDuration(client, functionIDs[0], 60, 60*time.Second)
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {

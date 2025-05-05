@@ -79,19 +79,19 @@ func (f *Function) Ready(handler handler) {
 	first := true
 
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(f.timeout)*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), time.Duration(f.timeout)*time.Second)
 
 		//We ask for a new request whilst sending the response of the previous one
 		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, InstanceId: &common.InstanceID{Id: f.response.Id}, FunctionId: &common.FunctionID{Id: f.functionId}, FirstExecution: first, Error: &common.Error{Message: f.response.Error}})
 
-		cancel()
+		//cancel()
 
 		first = false
 		if err != nil {
 			logger.Error("failed to call", "error", err)
 			return
 		}
-		logger.Debug("Received request", "data", p.Data)
+		logger.Info("Received request", "data", p.Data)
 
 		f.request = &Request{p.Data, p.InstanceId.Id}
 

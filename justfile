@@ -54,6 +54,10 @@ start:
     @echo "Starting docker service"
     docker compose up --detach --remove-orphans
 
+restart:
+    @echo "Restarting docker service"
+    docker compose restart
+
 stop:
     @echo "Stopping docker service"
     docker compose down

@@ -117,7 +117,7 @@ func main() {
 
 	var runtime cr.ContainerRuntime
 
-	statsManager := stats.NewStatsManager(logger, time.Duration(wc.General.ListenerTimeout)*time.Second)
+	statsManager := stats.NewStatsManager(logger, time.Duration(wc.General.ListenerTimeout)*time.Second, 1.0)
 
 	callerServer := caller.NewCallerServer(wc.General.CallerServerAddress, logger, statsManager)
 

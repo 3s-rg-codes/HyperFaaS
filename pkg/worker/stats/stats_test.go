@@ -18,7 +18,7 @@ const (
 
 func createTestStatsManager() *StatsManager {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	return NewStatsManager(logger, listenerTimeout)
+	return NewStatsManager(logger, listenerTimeout, 1.0)
 }
 
 func TestEnqueue(t *testing.T) {

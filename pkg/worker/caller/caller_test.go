@@ -19,7 +19,7 @@ import (
 
 func setupTestServer() *CallerServer {
 	logger := slog.Default()
-	statsManager := stats.NewStatsManager(logger, 30*time.Second)
+	statsManager := stats.NewStatsManager(logger, 30*time.Second, 1.0)
 	return NewCallerServer("localhost:0", logger, statsManager)
 }
 

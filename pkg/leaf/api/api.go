@@ -226,7 +226,6 @@ func (pm *PoolManager) GetPool(workerID string, factory grpcpool.Factory) (*grpc
 	defer pm.mu.Unlock()
 
 	if pool, ok := pm.pools[workerID]; ok {
-		log.Printf("[PoolManager] Reusing existing connection pool for worker %s", workerID)
 		return pool, nil
 	}
 

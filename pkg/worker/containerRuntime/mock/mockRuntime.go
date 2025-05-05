@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -147,7 +148,8 @@ func (m *MockRuntime) ContainerExists(ctx context.Context, instanceID string) bo
 }
 
 func fakeEchoFunction(payload *pb.Payload, ctx context.Context, callerRef *caller.CallerServer, logger *slog.Logger) {
-
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	for {
 		select {
 		case <-ctx.Done():
@@ -182,6 +184,8 @@ func fakeEchoFunction(payload *pb.Payload, ctx context.Context, callerRef *calle
 }
 
 func fakeHelloFunction(payload *pb.Payload, ctx context.Context, callerRef *caller.CallerServer, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	for {
 		select {
 		case <-ctx.Done():
