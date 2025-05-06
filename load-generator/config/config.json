@@ -1,0 +1,11 @@
+{
+    "function": {
+        "name": "MyFunction",
+        "serviceFn": "test.MyService/MyFunction",
+        "params": [
+            "param1",
+            "param2",
+            "..."
+        ]
+    }
+}
