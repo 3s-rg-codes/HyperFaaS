@@ -14,6 +14,7 @@ type Scheduler interface {
 	Schedule(ctx context.Context, functionID state.FunctionID) (state.WorkerID, state.InstanceID, error)
 	UpdateWorkerState(workerID state.WorkerID, newState state.WorkerState) error
 	UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error
+	GetInstanceCount(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState) (int, error)
 	CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error
 }
 
@@ -94,8 +95,8 @@ func (s *syncMapScheduler) UpdateInstanceState(workerID state.WorkerID, function
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID})
 	case state.InstanceStateIdle:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
-	case state.InstanceStateNew:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateNew, state.Instance{InstanceID: instanceID, LastWorked: time.Now(), Created: time.Now()})
+	case state.InstanceStateStarting:
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateStarting, state.Instance{InstanceID: instanceID, Created: time.Now()})
 	case state.InstanceStateDown:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
 	}
@@ -103,9 +104,12 @@ func (s *syncMapScheduler) UpdateInstanceState(workerID state.WorkerID, function
 }
 
 func (s *syncMapScheduler) CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error {
-	//Why does this exist?
 	s.workers.AssignFunction(workerID, functionID)
 	return nil
+}
+
+func (s *syncMapScheduler) GetInstanceCount(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState) (int, error) {
+	return s.workers.CountInstancesInState(workerID, functionID, instanceState)
 }
 
 type mruScheduler struct {
@@ -172,8 +176,8 @@ func (s *mruScheduler) UpdateInstanceState(workerID state.WorkerID, functionID s
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID})
 	case state.InstanceStateIdle:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
-	case state.InstanceStateNew:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateNew, state.Instance{InstanceID: instanceID, LastWorked: time.Now(), Created: time.Now()})
+	case state.InstanceStateStarting:
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateStarting, state.Instance{InstanceID: instanceID, Created: time.Now()})
 	case state.InstanceStateDown:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
 	}
@@ -181,6 +185,10 @@ func (s *mruScheduler) UpdateInstanceState(workerID state.WorkerID, functionID s
 }
 
 func (s *mruScheduler) CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error {
-	s.workers.AssignFunction(workerID, functionID) //see above
+	s.workers.AssignFunction(workerID, functionID)
 	return nil
+}
+
+func (s *mruScheduler) GetInstanceCount(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState) (int, error) {
+	return s.workers.CountInstancesInState(workerID, functionID, instanceState)
 }

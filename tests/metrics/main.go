@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	pbc "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	_ "github.com/mattn/go-sqlite3"
@@ -24,6 +24,7 @@ const (
 	SQLITE_DB_PATH        = "./benchmarks/metrics.db"
 	totalInstances        = 10
 	totalCallsPerInstance = 2500
+	TIMEOUT               = 60 * time.Second
 )
 
 // This test sends concurrent calls directly to the worker.
@@ -95,7 +96,7 @@ func TestWorkerConcurrentCalls(functionID *common.FunctionID) error {
 
 	// Start all instances
 	for i := 0; i < totalInstances; i++ {
-		instanceID, err := client.Start(context.Background(), &pbc.FunctionID{Id: functionID.Id})
+		instanceID, err := client.Start(context.Background(), &common.FunctionID{Id: functionID.Id})
 		if err != nil {
 			log.Printf("Error starting instance: %v", err)
 			return fmt.Errorf("error starting instance: %v", err)
@@ -107,18 +108,27 @@ func TestWorkerConcurrentCalls(functionID *common.FunctionID) error {
 	ctx := context.Background()
 
 	g, _ := errgroup.WithContext(ctx)
-	var successCount, failureCount int32
+	var successCount, failureCount, timeoutCount int32
 	var countMu sync.Mutex
 
 	for _, instanceID := range instanceIDs {
 		for i := 0; i < totalCallsPerInstance; i++ {
 			g.Go(func() error {
-				response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: &pbc.InstanceID{Id: instanceID}, Data: make([]byte, 0), FunctionId: &pbc.FunctionID{Id: functionID.Id}})
+				ctx, cancel := context.WithTimeout(context.Background(), TIMEOUT)
+				//ctx, cancel := context.Background(), func() {}
+				defer cancel()
+
+				response, err := client.Call(ctx, &common.CallRequest{InstanceId: &common.InstanceID{Id: instanceID}, Data: []byte("hello"), FunctionId: &common.FunctionID{Id: functionID.Id}})
 				if err != nil {
 					countMu.Lock()
-					failureCount++
+					if ctx.Err() == context.DeadlineExceeded {
+						timeoutCount++
+						//log.Printf("Call timed out for instance: %v", instanceID)
+					} else {
+						failureCount++
+						//log.Printf("Error calling instance: %v", err)
+					}
 					countMu.Unlock()
-					log.Printf("Error calling instance: %v", err)
 					return fmt.Errorf("error calling instance: %v", err)
 				}
 				if response == nil {
@@ -139,7 +149,8 @@ func TestWorkerConcurrentCalls(functionID *common.FunctionID) error {
 	// Wait for all goroutines to complete
 	_ = g.Wait()
 
-	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d\n", successCount, failureCount)
+	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d, Timed out: %d\n",
+		successCount, failureCount, timeoutCount)
 
 	return nil
 }

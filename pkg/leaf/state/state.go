@@ -1,7 +1,6 @@
 package state
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -24,7 +23,7 @@ const (
 const (
 	InstanceStateRunning InstanceState = iota
 	InstanceStateIdle
-	InstanceStateNew
+	InstanceStateStarting
 	InstanceStateDown
 	InstanceStateTimeout
 )
@@ -157,7 +156,7 @@ func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, state
 	worker, exists := w.Workers[workerID]
 	w.mu.RUnlock()
 	if !exists {
-		return errors.New("worker not found")
+		return &WorkerNotFoundError{WorkerID: workerID}
 	}
 
 	worker.mutex.Lock()
@@ -168,10 +167,6 @@ func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, state
 	}
 
 	instance := inst // make a copy
-	//TODO simplify InstanceStateNew
-	if state == InstanceStateNew {
-		state = InstanceStateRunning
-	}
 
 	instance.State = state
 	worker.Functions[functionID][inst.InstanceID] = &instance
@@ -182,6 +177,32 @@ func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, state
 	}
 
 	return nil
+}
+
+func (w *Workers) CountInstancesInState(workerID WorkerID, functionID FunctionID, instanceState InstanceState) (int, error) {
+	w.mu.RLock()
+	worker, exists := w.Workers[workerID]
+	w.mu.RUnlock()
+	if !exists {
+		return 0, &WorkerNotFoundError{WorkerID: workerID}
+	}
+
+	worker.mutex.RLock()
+	defer worker.mutex.RUnlock()
+
+	instances, ok := worker.Functions[functionID]
+	if !ok {
+		return 0, &FunctionNotAssignedError{FunctionID: functionID}
+	}
+
+	count := 0
+	for _, inst := range instances {
+		if inst.State == instanceState {
+			count++
+		}
+	}
+
+	return count, nil
 }
 
 func (w *Workers) DebugPrint() {
@@ -212,10 +233,10 @@ func (w *Workers) DebugPrint() {
 
 func InstanceStateToString(state InstanceState) string {
 	return []string{
-		InstanceStateRunning: "Running",
-		InstanceStateIdle:    "Idle",
-		InstanceStateNew:     "New",
-		InstanceStateDown:    "Down",
-		InstanceStateTimeout: "Timeout",
+		InstanceStateRunning:  "Running",
+		InstanceStateIdle:     "Idle",
+		InstanceStateStarting: "Starting",
+		InstanceStateDown:     "Down",
+		InstanceStateTimeout:  "Timeout",
 	}[state]
 }

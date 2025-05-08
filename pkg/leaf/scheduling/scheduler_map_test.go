@@ -61,22 +61,22 @@ func AddTestInstances(scheduler Scheduler) Scheduler {
 	scheduler.CreateFunction("worker1", "func2")
 	scheduler.CreateFunction("worker2", "func3")
 	// Create instances for worker1
-	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker1", "func1", "instance2", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker1", "func1", "instance3", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker1", "func1", "instance4", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker1", "func1", "instance5", state.InstanceStateNew)
+	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker1", "func1", "instance2", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker1", "func1", "instance3", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker1", "func1", "instance4", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker1", "func1", "instance5", state.InstanceStateRunning)
 
-	scheduler.UpdateInstanceState("worker1", "func2", "instance6", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker1", "func2", "instance7", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker1", "func2", "instance8", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker1", "func2", "instance9", state.InstanceStateNew)
+	scheduler.UpdateInstanceState("worker1", "func2", "instance6", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker1", "func2", "instance7", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker1", "func2", "instance8", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker1", "func2", "instance9", state.InstanceStateRunning)
 
 	// Create instances for worker2
-	scheduler.UpdateInstanceState("worker2", "func3", "instance10", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker2", "func3", "instance11", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker2", "func3", "instance12", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker2", "func3", "instance13", state.InstanceStateNew)
+	scheduler.UpdateInstanceState("worker2", "func3", "instance10", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker2", "func3", "instance11", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker2", "func3", "instance12", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker2", "func3", "instance13", state.InstanceStateRunning)
 
 	// Set some instances to idle for worker1
 	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateIdle)
@@ -166,8 +166,8 @@ func TestSyncMapSchedulerDeleteInstance(t *testing.T) {
 	// Set up initial state
 	scheduler.UpdateWorkerState("worker1", state.WorkerStateUp)
 	scheduler.CreateFunction("worker1", "func1")
-	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateNew)
-	scheduler.UpdateInstanceState("worker1", "func1", "instance2", state.InstanceStateNew)
+	scheduler.UpdateInstanceState("worker1", "func1", "instance1", state.InstanceStateRunning)
+	scheduler.UpdateInstanceState("worker1", "func1", "instance2", state.InstanceStateRunning)
 
 	// Verify initial state
 	assert.Len(t, scheduler.workers.GetInstances("worker1", "func1", state.InstanceStateRunning), 2)

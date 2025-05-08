@@ -21,6 +21,9 @@ const (
 	RequestedCPUPeriod = 100000
 	RequestedCPUQuota  = 50000
 	SQLITE_DB_PATH     = "metrics.db"
+	TIMEOUT            = 10 * time.Second
+	DURATION           = 20 * time.Second
+	RPS                = 1500
 )
 
 func main() {
@@ -51,7 +54,7 @@ func main() {
 	//testSequentialCalls(client, createFunctionResp.FunctionID)
 
 	// Concurrent calls for duration
-	testConcurrentCallsForDuration(client, functionIDs[0], 60, 60*time.Second)
+	testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {
@@ -98,23 +101,60 @@ func testConcurrentCalls(client pb.LeafClient, functionID *common.FunctionID, nu
 
 	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d, AvgLatency: %v\n", successCount, failureCount, avgLatency)
 }
-func testConcurrentCallsForDuration(client pb.LeafClient, functionID *common.FunctionID, rps int, duration time.Duration) {
-	ticker := time.NewTicker(time.Second / time.Duration(rps))
-	done := make(chan bool)
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				go testConcurrentCalls(client, functionID, rps)
-			case <-done:
-				return
-			}
-		}
-	}()
-	time.Sleep(duration)
-	ticker.Stop()
-	done <- true
 
+func testConcurrentCallsForDurationOLD(client pb.LeafClient, functionID *common.FunctionID, rps int, duration time.Duration) {
+	var wg sync.WaitGroup
+	seconds := int(duration.Seconds())
+
+	for i := 0; i < seconds; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			testConcurrentCalls(client, functionID, rps)
+		}()
+		time.Sleep(1 * time.Second)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	wg.Wait()
+}
+
+func testConcurrentCallsForDuration(client pb.LeafClient, functionID *common.FunctionID, rps int, duration time.Duration) {
+	var wg sync.WaitGroup
+	seconds := int(duration.Seconds())
+
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), duration+3*time.Second)
+	defer cancel()
+
+	for i := 0; i < seconds; i++ {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				testConcurrentCalls(client, functionID, rps)
+			}()
+			time.Sleep(1 * time.Second)
+		}
+	}
+
+	// Use a timeout on the WaitGroup
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Println("All calls completed successfully")
+	case <-time.After(10 * time.Second):
+		fmt.Println("Timed out waiting for all calls to complete")
+	}
 }
 
 func sendCall(client pb.LeafClient, functionID *common.FunctionID) (time.Duration, error) {
@@ -124,9 +164,15 @@ func sendCall(client pb.LeafClient, functionID *common.FunctionID) (time.Duratio
 		Data:       []byte(""),
 	}
 	//ctx := context.WithValue(context.Background(), "RequestID", uuid.New().String())
+	ctx, cancel := context.WithTimeout(context.Background(), TIMEOUT)
+	defer cancel()
 	start := time.Now()
-	_, err := client.ScheduleCall(context.Background(), startReq)
+	_, err := client.ScheduleCall(ctx, startReq)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			fmt.Printf("Timeout error: %v\n", ctx.Err())
+			return 0, fmt.Errorf("timeout error: %v", ctx.Err())
+		}
 		fmt.Printf("Failed to schedule call: %v\n", err)
 		return 0, fmt.Errorf("failed to schedule call: %v", err)
 	}

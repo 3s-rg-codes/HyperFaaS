@@ -24,10 +24,14 @@ import (
 
 type LeafServer struct {
 	leaf.UnimplementedLeafServer
-	scheduler       scheduling.Scheduler
-	database        kv.FunctionMetadataStore
-	functionIdCache map[string]kv.FunctionData
-	poolManager     PoolManager
+	scheduler                       scheduling.Scheduler
+	database                        kv.FunctionMetadataStore
+	functionIdCache                 map[string]kv.FunctionData
+	poolManager                     PoolManager
+	coordinator                     *InstanceCoordinator
+	maxStartingInstancesPerFunction int
+	startingInstanceWaitTimeout     time.Duration
+	maxRunningInstancesPerFunction  int
 }
 
 // CreateFunction should only create the function, e.g. save its Config and image tag in local cache
@@ -49,7 +53,7 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 
 }
 
-func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
+/* func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
 
 	//Check if the functionID is cached, if not get it from database
 	if _, ok := s.functionIdCache[req.FunctionID.Id]; !ok {
@@ -67,7 +71,6 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 		}
 	}
 
-	//data := s.functionIdCache[req.FunctionID.Id]
 	functionId := state.FunctionID(req.FunctionID.Id)
 
 	workerID, instanceID, err := s.scheduler.Schedule(ctx, functionId)
@@ -77,12 +80,25 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 
 	if instanceID == "" {
 		// There is no idle instance available
-		instanceID, err = s.startInstance(ctx, workerID, functionId)
+
+		// Check if the worker has already to many instances starting or running
+		backpressured, err := s.IsFunctionBackpressured(ctx, workerID, functionId)
 		if err != nil {
 			return nil, err
+		} else if backpressured {
+			workerID, instanceID, err = s.ScheduleWithBackoff(ctx, functionId)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			instanceID, err = s.startInstance(ctx, workerID, functionId)
+			if err != nil {
+				return nil, err
+			}
+			log.Printf("Started new instance for function %s on worker %s, instanceID: %s", functionId, workerID, instanceID)
+			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateStarting)
 		}
-		log.Printf("Started new instance for function %s on worker %s, instanceID: %s", functionId, workerID, instanceID)
-		s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateNew)
+
 	} else {
 		// An Idle instance was found
 		s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateRunning)
@@ -108,20 +124,87 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateIdle)
 
 	return resp, nil
+} */
+
+// ScheduleCall places a call to a function on a worker and returns the response
+func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
+	// Cache check remains the same
+	if _, ok := s.functionIdCache[req.FunctionID.Id]; !ok {
+		ImageTag, Config, err := s.database.Get(req.FunctionID)
+		if err != nil {
+			if errors.As(err, &kv.NoSuchKeyError{}) {
+				return nil, status.Errorf(codes.NotFound, "failed to get function from database: %s", req.FunctionID.Id)
+			}
+			return nil, fmt.Errorf("failed to get function from database: %w", err)
+		}
+
+		s.functionIdCache[req.FunctionID.Id] = kv.FunctionData{
+			Config:   Config,
+			ImageTag: ImageTag,
+		}
+	}
+
+	functionId := state.FunctionID(req.FunctionID.Id)
+
+	// Use the coordinator to handle instance creation with synchronization
+	workerID, instanceID, err := s.coordinator.CoordinateInstanceCreation(
+		ctx,
+		functionId,
+		s.IsFunctionBackpressured,
+		s.scheduler.Schedule,
+		s.startInstance,
+		func(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, state state.InstanceState) {
+			s.scheduler.UpdateInstanceState(workerID, functionID, instanceID, state)
+		},
+		s.startingInstanceWaitTimeout,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := s.callWorker(ctx, workerID, functionId, instanceID, req)
+	if err != nil {
+		switch err.(type) {
+		case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
+			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
+			return nil, err
+		case *WorkerDownError:
+			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
+			s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
+			return nil, err
+		default:
+			return nil, err
+		}
+	}
+
+	//log.Printf("Received response from worker %s, instanceID: %s", workerID, instanceID)
+	s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateIdle)
+
+	return resp, nil
 }
 
-func NewLeafServer(scheduler scheduling.Scheduler, httpClient kv.FunctionMetadataStore) *LeafServer {
+func NewLeafServer(
+	scheduler scheduling.Scheduler,
+	httpClient kv.FunctionMetadataStore,
+	maxStartingInstancesPerFunction int,
+	startingInstanceWaitTimeout time.Duration,
+	maxRunningInstancesPerFunction int,
+	coordinatorBackoff time.Duration,
+	coordinatorBackoffIncrease time.Duration,
+	coordinatorMaxBackoff time.Duration,
+) *LeafServer {
 	return &LeafServer{
-		scheduler:       scheduler,
-		database:        httpClient,
-		functionIdCache: make(map[string]kv.FunctionData),
-		poolManager:     *NewPoolManager(1, 100, 120*time.Second),
+		scheduler:                       scheduler,
+		database:                        httpClient,
+		functionIdCache:                 make(map[string]kv.FunctionData),
+		poolManager:                     *NewPoolManager(1, 100, 120*time.Second),
+		coordinator:                     NewInstanceCoordinator(coordinatorBackoff, coordinatorBackoffIncrease, coordinatorMaxBackoff),
+		maxStartingInstancesPerFunction: maxStartingInstancesPerFunction,
+		startingInstanceWaitTimeout:     startingInstanceWaitTimeout,
+		maxRunningInstancesPerFunction:  maxRunningInstancesPerFunction,
 	}
 }
 
-// TODO: refactor this to use a pool of connections.
-// https://promisefemi.vercel.app/blog/grpc-client-connection-pooling
-// https://github.com/processout/grpc-go-pool/blob/master/pool.go
 func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
 	pool, err := s.poolManager.GetPool(string(workerID), func() (*grpc.ClientConn, error) {
 		conn, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))

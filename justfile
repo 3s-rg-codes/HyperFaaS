@@ -70,13 +70,17 @@ d:
 # generates proto, builds binary, builds docker go and runs the workser
 dev: build start
 
+run-local-database:
+    @echo "Running local database"
+    go run cmd/database/main.go --address=0.0.0.0:8080
+
 run-local-worker:
     @echo "Running local worker"
-    go run cmd/worker/main.go --address=0.0.0.0:50051 --runtime=docker --log-level=debug --log-format=dev --auto-remove=true --containerized=false --caller-server-address=127.0.0.1:50052
+    go run cmd/worker/main.go --address=0.0.0.0:50051 --runtime=fake --log-level=info --log-format=dev --auto-remove=true --containerized=false --caller-server-address=127.0.0.1:50052 --database-type=http
 
 run-local-leaf:
     @echo "Running local leaf"
-    go run cmd/leaf/main.go --address=0.0.0.0:50050 --log-level=debug --log-format=dev --worker-ids=127.0.0.1:50051 --scheduler-type=mru
+    go run cmd/leaf/main.go --address=0.0.0.0:50050 --log-level=info --log-format=dev --worker-ids=127.0.0.1:50051 --scheduler-type=mru --database-address=http://localhost:8080
 
 
 ############################
@@ -114,7 +118,7 @@ metrics-client:
     go run ./cmd/metrics-client
 
 metrics-test:
-    go run ./tests/metrics/main.go
+    go run -race ./tests/metrics/main.go
 
 metrics-analyse:
     cd benchmarks && uv run analyse.py
@@ -123,6 +127,21 @@ metrics-analyse:
 # Misc. Stuff
 ############################
 # Remove all docker containers/images, and all logs
+delete-logs:
+    rm -rf log/*
+
+# Print the last 100 lines of the worker log
+worker-log:
+    docker logs $(docker ps -a | grep worker | awk '{print $1}') --tail 100
+pprof-worker:
+    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
+
+memory-worker:
+    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/heap
+trace-worker:
+    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool trace http://localhost:6060/debug/pprof/trace?seconds=60
+block-worker:
+    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/block
 clean:
     rm -rf functions/logs/*
     docker ps -a | grep hyperfaas- | awk '{print $1}' | xargs docker rm -f

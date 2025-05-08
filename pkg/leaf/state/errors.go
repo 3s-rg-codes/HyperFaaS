@@ -17,3 +17,11 @@ type NoIdleInstanceError struct {
 func (e *NoIdleInstanceError) Error() string {
 	return fmt.Sprintf("no idle instance found for function %s", e.FunctionID)
 }
+
+type WorkerNotFoundError struct {
+	WorkerID WorkerID
+}
+
+func (e *WorkerNotFoundError) Error() string {
+	return fmt.Sprintf("worker %s not found", e.WorkerID)
+}

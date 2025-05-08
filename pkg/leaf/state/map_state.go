@@ -94,7 +94,7 @@ func (w *WorkersSyncMap) UpdateInstance(workerID WorkerID, functionID FunctionID
 	w.logger.Debug("Updating instance", "workerID", workerID, "functionID", functionID, "instanceState", instanceState, "instance", instance)
 	// Todo maybe make this cleaner and update the timestamps.
 	switch instanceState {
-	case InstanceStateNew:
+	case InstanceStateStarting:
 		instanceStateMap.Store(InstanceStateRunning, append(w.GetInstances(workerID, functionID, InstanceStateRunning), instance))
 	case InstanceStateIdle:
 		// Insert into Idle slice
@@ -220,6 +220,26 @@ func (w *WorkersSyncMap) FindIdleInstance(functionID FunctionID) (WorkerID, Inst
 		return "", "", &FunctionNotAssignedError{FunctionID: functionID}
 	} //TODO would be more like FunctionNotAssigned since Assigning != Creating
 	return "", "", &NoIdleInstanceError{FunctionID: functionID}
+}
+
+// Add this method to both WorkersSyncMap and Workers
+func (w *WorkersSyncMap) CountInstancesInState(workerID WorkerID, functionID FunctionID, instanceState InstanceState) (int, error) {
+	count := 0
+	w.data.Range(func(key, value interface{}) bool {
+		worker := value.(*sync.Map)
+		if instances, ok := worker.Load(functionID); ok {
+			instanceMap := instances.(*sync.Map)
+			instanceMap.Range(func(_, v interface{}) bool {
+				instance := v.(Instance)
+				if instance.State == instanceState {
+					count++
+				}
+				return true
+			})
+		}
+		return true
+	})
+	return count, nil
 }
 
 func (w *WorkersSyncMap) DebugPrint() {
