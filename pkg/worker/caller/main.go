@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	BUFFER_SIZE = 1000
+	BUFFER_SIZE = 100000
 )
 
 type CallerServer struct {
@@ -24,6 +24,7 @@ type CallerServer struct {
 	FunctionResponses InstanceResponses
 	StatsManager      *stats.StatsManager
 	logger            *slog.Logger
+	mu                sync.RWMutex
 }
 
 type InstanceCalls struct {
@@ -48,7 +49,7 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 	// Pass payload to the functionResponses channel IF it exists
 	if !payload.FirstExecution {
 		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.InstanceId)
-		go s.QueueInstanceResponse(payload.InstanceId.Id, payload.Data)
+		s.QueueInstanceResponse(payload.InstanceId.Id, payload.Data)
 		// TODO: Generate event of response
 	} else {
 		// To measure cold start time
@@ -98,13 +99,14 @@ func (s *CallerServer) Start() {
 
 // RegisterFunctionInstance adds message channels for the given function ID
 func (s *CallerServer) RegisterFunctionInstance(id string) {
-	s.FunctionCalls.FcMap.Store(id, make(chan []byte, BUFFER_SIZE))
-	s.FunctionResponses.FrMap.Store(id, make(chan []byte, BUFFER_SIZE))
+	s.FunctionCalls.FcMap.Store(id, make(chan []byte))
+	s.FunctionResponses.FrMap.Store(id, make(chan []byte))
 }
 
 // UnregisterFunctionInstance closes and removes message channels for the given function ID
 func (s *CallerServer) UnregisterFunctionInstance(id string) {
-	// Close the channels before deleting
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if ch, ok := s.FunctionCalls.FcMap.Load(id); ok {
 		close(ch.(chan []byte))
 		s.FunctionCalls.FcMap.Delete(id)
@@ -141,6 +143,8 @@ func (s *CallerServer) GetInstanceResponse(id string) chan []byte {
 }
 
 func (s *CallerServer) QueueInstanceResponse(id string, response []byte) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if ch, ok := s.FunctionResponses.FrMap.Load(id); ok {
 		ch.(chan []byte) <- response
 	} else {

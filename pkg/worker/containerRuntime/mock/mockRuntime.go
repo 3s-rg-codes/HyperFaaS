@@ -148,14 +148,19 @@ func (m *MockRuntime) ContainerExists(ctx context.Context, instanceID string) bo
 }
 
 func fakeEchoFunction(payload *pb.Payload, ctx context.Context, callerRef *caller.CallerServer, logger *slog.Logger) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	parentCtx := ctx
 	for {
+		// Create new timeout context for each iteration
+		ctx, cancel := context.WithTimeout(parentCtx, 10*time.Second)
+
 		select {
-		case <-ctx.Done():
+		case <-parentCtx.Done():
+			cancel()
 			return
 		default:
 			call, err := callerRef.Ready(ctx, payload)
+			cancel()
+
 			if errors.Is(err, context.Canceled) {
 				logger.Debug("Context was canceled and function shut down")
 			}
@@ -168,7 +173,14 @@ func fakeEchoFunction(payload *pb.Payload, ctx context.Context, callerRef *calle
 				logger.Warn("Calling ready failed", "error", err)
 				return
 			}
-
+			if ctx.Err() == context.DeadlineExceeded {
+				// Timeout occurred, don't try to send response
+				logger.Debug("Ready call timed out, stopping function")
+				return
+			}
+			if call.Data == nil {
+				return
+			}
 			data := call.Data
 
 			payload = &pb.Payload{
@@ -184,16 +196,21 @@ func fakeEchoFunction(payload *pb.Payload, ctx context.Context, callerRef *calle
 }
 
 func fakeHelloFunction(payload *pb.Payload, ctx context.Context, callerRef *caller.CallerServer, logger *slog.Logger) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	parentCtx := ctx
 	for {
+		// Create new timeout context for each iteration
+		ctx, cancel := context.WithTimeout(parentCtx, 10*time.Second)
+
 		select {
-		case <-ctx.Done():
+		case <-parentCtx.Done():
+			cancel()
 			return
 		default:
 			_, err := callerRef.Ready(ctx, payload)
+			cancel()
 			if errors.Is(err, context.Canceled) {
 				logger.Debug("Context was canceled and function shut down")
+				return
 			}
 			st, _ := status.FromError(err)
 			if st.Code() == codes.NotFound || st.Code() == codes.Unavailable {
@@ -204,6 +221,11 @@ func fakeHelloFunction(payload *pb.Payload, ctx context.Context, callerRef *call
 				logger.Warn("Calling ready failed", "error", err)
 				return
 			}
+			if ctx.Err() == context.DeadlineExceeded {
+				// Timeout occurred, don't try to send response
+				logger.Debug("Ready call timed out, stopping function")
+				return
+			}
 
 			payload = &pb.Payload{
 				Data:           []byte("HELLO WORLD!"),
@@ -212,9 +234,9 @@ func fakeHelloFunction(payload *pb.Payload, ctx context.Context, callerRef *call
 				Error:          nil,
 				FirstExecution: false,
 			}
+
 		}
 	}
-
 }
 
 func deleteFromList(list []RunningInstance, item string) []RunningInstance {

@@ -118,12 +118,8 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 	s.logger.Debug("Passing call with payload", "payload", req.Data, "instance ID", req.InstanceId.Id)
 
-	go func() {
-		// Pass the call to the channel based on the instance ID
-		s.CallerServer.QueueInstanceCall(req.InstanceId.Id, req.Data)
-		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Call().Success())
-
-	}()
+	s.CallerServer.QueueInstanceCall(req.InstanceId.Id, req.Data)
+	s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Call().Success())
 
 	responseChan := s.CallerServer.GetInstanceResponse(req.InstanceId.Id)
 
