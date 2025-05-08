@@ -91,7 +91,7 @@ func main() {
 	logger.Debug(config.Workloads[0].FunctionID)
 
 	//Dependency Injection :O
-	statsManager := stats.NewStatsManager(logger, time.Duration(config.Config.ListenerTimeout)*time.Second)
+	statsManager := stats.NewStatsManager(logger, time.Duration(config.Config.ListenerTimeout)*time.Second, 1.0, 100000)
 
 	callerServer := caller.NewCallerServer(config.Config.CallerServerAddress, logger, statsManager)
 
