@@ -8,23 +8,25 @@ import (
 )
 
 type StatsManager struct {
-	Updates         chan StatusUpdate
-	sampleRate      float64
-	listeners       map[string]chan StatusUpdate
-	toBeTerminated  map[string]chan bool
-	mu              sync.RWMutex
-	logger          *slog.Logger
-	listenerTimeout time.Duration
+	Updates          chan StatusUpdate
+	UpdateBufferSize int64
+	sampleRate       float64
+	listeners        map[string]chan StatusUpdate
+	toBeTerminated   map[string]chan bool
+	mu               sync.RWMutex
+	logger           *slog.Logger
+	listenerTimeout  time.Duration
 }
 
-func NewStatsManager(logger *slog.Logger, listenerTimeout time.Duration, sampleRate float64) *StatsManager {
+func NewStatsManager(logger *slog.Logger, listenerTimeout time.Duration, sampleRate float64, updateBufferSize int64) *StatsManager {
 	return &StatsManager{
-		Updates:         make(chan StatusUpdate),
-		listeners:       make(map[string]chan StatusUpdate),
-		toBeTerminated:  make(map[string]chan bool),
-		logger:          logger,
-		listenerTimeout: listenerTimeout,
-		sampleRate:      sampleRate,
+		Updates:          make(chan StatusUpdate, updateBufferSize),
+		UpdateBufferSize: updateBufferSize,
+		listeners:        make(map[string]chan StatusUpdate),
+		toBeTerminated:   make(map[string]chan bool),
+		logger:           logger,
+		listenerTimeout:  listenerTimeout,
+		sampleRate:       sampleRate,
 	}
 }
 

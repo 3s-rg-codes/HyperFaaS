@@ -38,6 +38,9 @@ type WorkerConfig struct {
 		Format   string `env:"LOG_FORMAT"`
 		FilePath string `env:"LOG_FILE"`
 	}
+	Stats struct {
+		UpdateBufferSize int64 `env:"UPDATE_BUFFER_SIZE"`
+	}
 }
 
 func parseArgs() (wc WorkerConfig) {
@@ -51,7 +54,7 @@ func parseArgs() (wc WorkerConfig) {
 	flag.StringVar(&(wc.Log.Format), "log-format", "text", "Log format (json or text) (Env: LOG_FORMAT)")
 	flag.StringVar(&(wc.Log.FilePath), "log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
 	flag.BoolVar(&(wc.Runtime.Containerized), "containerized", false, "Use socket to connect to Docker. (Env: RUNTIME_CONTAINERIZED)")
-
+	flag.Int64Var(&(wc.Stats.UpdateBufferSize), "update-buffer-size", 10000, "Update buffer size. (Env: UPDATE_BUFFER_SIZE)")
 	flag.Parse()
 	return
 }
@@ -117,7 +120,7 @@ func main() {
 
 	var runtime cr.ContainerRuntime
 
-	statsManager := stats.NewStatsManager(logger, time.Duration(wc.General.ListenerTimeout)*time.Second, 1.0)
+	statsManager := stats.NewStatsManager(logger, time.Duration(wc.General.ListenerTimeout)*time.Second, 1.0, wc.Stats.UpdateBufferSize)
 
 	callerServer := caller.NewCallerServer(wc.General.CallerServerAddress, logger, statsManager)
 
@@ -127,7 +130,7 @@ func main() {
 	if wc.Runtime.Containerized {
 		dbAddress = "http://database:8080/" //needs to have this format for http to work
 	} else {
-		dbAddress = "localhost:8080"
+		dbAddress = "http://localhost:8080"
 	}
 
 	switch wc.General.DatabaseType {
