@@ -1,11 +1,13 @@
 export function buildScenarios(functionName, payloads) {
     const scenarios = {};
+
     let currentStartTime = 0;
+    let currentScenario = 1;
 
     payloads.forEach((entry) => {
         const { seconds, rps, vus } = entry;
 
-        const scenarioName = `${functionName}_t${seconds}`;
+        const scenarioName = `${functionName}_t${currentScenario}`;
 
         scenarios[scenarioName] = {
             // general options
@@ -21,6 +23,7 @@ export function buildScenarios(functionName, payloads) {
         };
 
         currentStartTime += seconds;
+        currentScenario += 1;
     });
 
     return scenarios;

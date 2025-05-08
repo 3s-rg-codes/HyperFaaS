@@ -1,41 +1,23 @@
 import fs from 'fs';
 
 import { loadConfig } from './pkg/loadConfig.js';
-import { buildScenarios } from './pkg/scenarioBuilder.js';
-import { createExecFunction } from './pkg/generateExecFunction.js';
+import { buildScenarios } from './pkg/buildScenarios.js';
 
 // Load config
 const { config, payloads } = loadConfig();
 
-// Create scenarios
+// Create k6 scenarios
 const scenarios = buildScenarios(config.function.name, payloads);
 
-// Generate K6-script as string
-const execFunctionCode = createExecFunction(config.function.name, config.function.serviceFn);
+// Generate the k6 script by reading the template and replacing the placeholders with correct values
+const template = fs.readFileSync('./template/k6-script-template.js', 'utf8');
 
-// Script-Body
-const script = `import grpc from 'k6/net/grpc';
-import { check, sleep } from 'k6';
-import exec from 'k6/execution';
-
-// K6 Options
-export const options = {
-    scenarios: ${JSON.stringify(scenarios, null, 2)}
-};
-
-// K6 GRPC client
-const client = new grpc.Client();
-client.load(['../config'], 'service.proto');
-
-const payloads = ${JSON.stringify(payloads, null, 2)};
-
-${execFunctionCode}
-
-// K6 main function
-export default function () {
-    ${config.function.name}_exec();
-}
-`;
+const script = template
+    .replace('__SCENARIOS__', JSON.stringify(scenarios, null, 2))
+    .replace('__PROTO_FILE__', config.metaData.protoFile)
+    .replace('__PAYLOADS__', JSON.stringify(payloads, null, 2))
+    .replace('__FUNCTION_NAME__', config.function.name)
+    .replace('__SERVICE_FN__', config.function.serviceFn);
 
 // Write the script to a file
 const outDir = './generated';

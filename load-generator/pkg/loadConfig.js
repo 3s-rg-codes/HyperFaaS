@@ -3,7 +3,7 @@ import papaparse from 'papaparse';
 
 export function loadConfig() {
     const config = JSON.parse(fs.readFileSync('./config/config.json', 'utf8'));
-    const parsedCSV = papaparse.parse(fs.readFileSync('./config/config.csv', 'utf8'), { header: true }).data;
+    const parsedCSV = papaparse.parse(fs.readFileSync(`./config/${config.metaData.paramFile}`, 'utf8'), { header: true }).data;
 
     const payloads = parsedCSV.map((row) => {
         const payload = {};

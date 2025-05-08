@@ -1,4 +1,8 @@
 {
+    "metaData": {
+        "paramFile": "params.csv",
+        "protoFile": "definitions.proto"
+    },
     "function": {
         "name": "MyFunction",
         "serviceFn": "test.MyService/MyFunction",
