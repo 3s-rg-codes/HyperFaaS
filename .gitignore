@@ -94,7 +94,7 @@ atlassian-ide-plugin.xml
 .idea/replstate.xml
 
 #logs
-log/
+log/*.log
 # SonarLint plugin
 .idea/sonarlint/
 
