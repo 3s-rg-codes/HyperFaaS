@@ -44,7 +44,7 @@ func TestQueueAndGetInstanceCall(t *testing.T) {
 	server.RegisterFunctionInstance(instanceID)
 
 	callData := []byte("test-call-data")
-	server.QueueInstanceCall(instanceID, callData)
+	server.QueueInstanceCall(instanceID, Request{Context: context.Background(), Payload: callData})
 
 	callChan := server.GetInstanceCall(instanceID)
 	require.NotNil(t, callChan)
@@ -65,7 +65,7 @@ func TestQueueAndGetInstanceResponse(t *testing.T) {
 	server.RegisterFunctionInstance(instanceID)
 
 	responseData := []byte("test-response-data")
-	server.QueueInstanceResponse(instanceID, responseData)
+	server.QueueInstanceResponse(instanceID, Request{Context: context.Background(), Payload: responseData})
 
 	responseChan := server.GetInstanceResponse(instanceID)
 	require.NotNil(t, responseChan)
@@ -90,7 +90,7 @@ func TestReady(t *testing.T) {
 
 	go func() {
 		time.Sleep(10 * time.Millisecond)
-		server.QueueInstanceCall(instanceID, callData)
+		server.QueueInstanceCall(instanceID, Request{Context: context.Background(), Payload: callData})
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -183,7 +183,7 @@ func TestConcurrentOperations(t *testing.T) {
 					select {
 					case resp := <-respChan:
 						mu.Lock()
-						responsesReceived[id] = append(responsesReceived[id], resp)
+						responsesReceived[id] = append(responsesReceived[id], resp.Payload)
 						mu.Unlock()
 					case <-done:
 						return
@@ -197,7 +197,7 @@ func TestConcurrentOperations(t *testing.T) {
 				response := responses[j]
 
 				// Queue the call — this simulates the client sending a request
-				server.QueueInstanceCall(id, call)
+				server.QueueInstanceCall(id, Request{Context: context.Background(), Payload: call})
 
 				// Simulate the instance being ready
 				receivedCallChan := server.GetInstanceCall(id)
@@ -209,7 +209,7 @@ func TestConcurrentOperations(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 
 				// Queue the response — this should wake up the original caller
-				server.QueueInstanceResponse(id, response)
+				server.QueueInstanceResponse(id, Request{Context: context.Background(), Payload: response})
 			}
 
 			time.Sleep(200 * time.Millisecond) // allow response delivery
@@ -247,8 +247,8 @@ func TestQueueToUnregisteredInstance(t *testing.T) {
 	server := setupTestServer()
 	instanceID := "nonexistent-instance"
 
-	server.QueueInstanceCall(instanceID, []byte("test-data"))
-	server.QueueInstanceResponse(instanceID, []byte("test-data"))
+	server.QueueInstanceCall(instanceID, Request{Context: context.Background(), Payload: []byte("test-data")})
+	server.QueueInstanceResponse(instanceID, Request{Context: context.Background(), Payload: []byte("test-data")})
 
 	assert.Nil(t, server.GetInstanceCall(instanceID))
 	assert.Nil(t, server.GetInstanceResponse(instanceID))
@@ -265,7 +265,7 @@ func TestReadyNonFirstExecution(t *testing.T) {
 
 	go func() {
 		time.Sleep(10 * time.Millisecond)
-		server.QueueInstanceCall(instanceID, callData)
+		server.QueueInstanceCall(instanceID, Request{Context: context.Background(), Payload: callData})
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -355,7 +355,7 @@ func TestConcurrentOperations2(t *testing.T) {
 					select {
 					case resp := <-responseChan:
 						mu.Lock()
-						responsesReceived[id] = append(responsesReceived[id], resp)
+						responsesReceived[id] = append(responsesReceived[id], resp.Payload)
 						mu.Unlock()
 					case <-time.After(10 * time.Second): // Increased timeout for processing delay
 						t.Errorf("Timeout waiting for response %d for instance %s", j, id)
@@ -368,7 +368,7 @@ func TestConcurrentOperations2(t *testing.T) {
 			for _, callData := range callsData {
 				// Small random delay to simulate concurrent queueing
 				time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
-				server.QueueInstanceCall(id, callData)
+				server.QueueInstanceCall(id, Request{Context: context.Background(), Payload: callData})
 			}
 
 			// Wait for all responses to be received
@@ -412,7 +412,7 @@ func SimulateInstance(instanceID string, server *CallerServer, wg *sync.WaitGrou
 			time.Sleep(10 * time.Millisecond)
 
 			// Queue the response
-			server.QueueInstanceResponse(instanceID, make([]byte, 0))
+			server.QueueInstanceResponse(instanceID, Request{Context: context.Background(), Payload: []byte{}})
 		case <-time.After(10 * time.Second):
 			return
 		}

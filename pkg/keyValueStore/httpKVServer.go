@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"net/http"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Store struct {
@@ -48,7 +49,7 @@ func (t *Store) Start() {
 	})
 
 	server := http.Server{
-		Addr:    ":8080",
+		Addr:    ":8999",
 		Handler: nil,
 	}
 
@@ -56,7 +57,7 @@ func (t *Store) Start() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		fmt.Println("Server starting on :8080")
+		fmt.Println("Server starting on :8999")
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Printf("Server error: %v\n", err)
 		}

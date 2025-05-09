@@ -72,7 +72,7 @@ dev: build start
 
 run-local-database:
     @echo "Running local database"
-    go run cmd/database/main.go --address=0.0.0.0:8080
+    go run cmd/database/main.go --address=0.0.0.0:8999
 
 run-local-worker:
     @echo "Running local worker"
@@ -80,7 +80,7 @@ run-local-worker:
 
 run-local-leaf:
     @echo "Running local leaf"
-    go run cmd/leaf/main.go --address=0.0.0.0:50050 --log-level=info --log-format=dev --worker-ids=127.0.0.1:50051 --scheduler-type=mru --database-address=http://localhost:8080
+    go run cmd/leaf/main.go --address=0.0.0.0:50050 --log-level=info --log-format=dev --worker-ids=127.0.0.1:50051 --scheduler-type=mru --database-address=http://localhost:8999
 
 
 ############################

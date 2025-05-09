@@ -2,7 +2,7 @@
   "test_config_defaults":{
     "server_address": "localhost:50051",
     "caller_server_address": "localhost:50052",
-    "database_server_address": "http://localhost:8080/",
+    "database_server_address": "http://localhost:8999/",
     "requested_runtime": "docker",
     "log_level": "info",
     "auto_remove": true,

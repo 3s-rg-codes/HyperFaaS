@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -32,6 +33,11 @@ type LeafServer struct {
 	maxStartingInstancesPerFunction int
 	startingInstanceWaitTimeout     time.Duration
 	maxRunningInstancesPerFunction  int
+}
+
+type CallMetadata struct {
+	CallQueuedTimestamp  string
+	GotResponseTimestamp string
 }
 
 // CreateFunction should only create the function, e.g. save its Config and image tag in local cache
@@ -162,7 +168,7 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 		return nil, err
 	}
 
-	resp, err := s.callWorker(ctx, workerID, functionId, instanceID, req)
+	resp, callMetadata, err := s.callWorker(ctx, workerID, functionId, instanceID, req)
 	if err != nil {
 		switch err.(type) {
 		case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
@@ -179,6 +185,13 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 
 	//log.Printf("Received response from worker %s, instanceID: %s", workerID, instanceID)
 	s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateIdle)
+
+	// Add metadata to trailers
+	trailer := metadata.New(map[string]string{
+		"callQueuedTimestamp":  callMetadata.CallQueuedTimestamp,
+		"gotResponseTimestamp": callMetadata.GotResponseTimestamp,
+	})
+	grpc.SetTrailer(ctx, trailer)
 
 	return resp, nil
 }
@@ -205,7 +218,7 @@ func NewLeafServer(
 	}
 }
 
-func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
+func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, *CallMetadata, error) {
 	pool, err := s.poolManager.GetPool(string(workerID), func() (*grpc.ClientConn, error) {
 		conn, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
@@ -215,16 +228,17 @@ func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, fu
 	})
 	if err != nil {
 		log.Printf("[callWorker] Failed to get connection pool for worker %s: %v", workerID, err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	conn, err := pool.Get(ctx)
 	if err != nil {
 		log.Printf("Failed to get connection from pool for worker %s: %v", workerID, err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	var resp *common.CallResponse
+	var trailer metadata.MD
 	err = func() error {
 		defer conn.Close() // Returns connection to pool
 		client := controllerPB.NewControllerClient(conn)
@@ -236,7 +250,9 @@ func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, fu
 		}
 
 		var err error
-		resp, err = client.Call(ctx, callReq)
+		// Extract timestamps from the trailer
+
+		resp, err = client.Call(ctx, callReq, grpc.Trailer(&trailer))
 		if err != nil {
 			st, ok := status.FromError(err)
 			if ok && st.Code() == codes.Unavailable {
@@ -248,10 +264,15 @@ func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, fu
 	}()
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return &leaf.ScheduleCallResponse{Data: resp.Data, Error: resp.Error}, nil
+	callMetadata := &CallMetadata{
+		CallQueuedTimestamp:  trailer.Get("callQueuedTimestamp")[0],
+		GotResponseTimestamp: trailer.Get("gotResponseTimestamp")[0],
+	}
+
+	return &leaf.ScheduleCallResponse{Data: resp.Data, Error: resp.Error}, callMetadata, nil
 }
 
 func (s *LeafServer) startInstance(ctx context.Context, workerID state.WorkerID, functionId state.FunctionID) (state.InstanceID, error) {
