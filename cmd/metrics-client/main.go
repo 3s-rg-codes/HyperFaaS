@@ -13,8 +13,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	DB_PATH = "./benchmarks/metrics.db"
+)
+
 var (
-	dbPath = flag.String("db-path", "metrics.db", "Path to SQLite database file")
+	dbPath = flag.String("db-path", DB_PATH, "Path to SQLite database file")
 )
 
 func initDB(db *sql.DB) error {
@@ -26,8 +30,17 @@ func initDB(db *sql.DB) error {
 			event INTEGER NOT NULL,
 			status INTEGER NOT NULL,
 			function_id TEXT NOT NULL,
-			timestamp DATETIME NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			timestamp DATETIME NOT NULL
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS function_images (
+			function_id TEXT PRIMARY KEY,
+			image_tag TEXT NOT NULL
 		)
 	`)
 	return err

@@ -14,6 +14,7 @@ type Scheduler interface {
 	Schedule(ctx context.Context, functionID state.FunctionID) (state.WorkerID, state.InstanceID, error)
 	UpdateWorkerState(workerID state.WorkerID, newState state.WorkerState) error
 	UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error
+	GetInstanceCount(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState) (int, error)
 	CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error
 }
 
@@ -42,6 +43,15 @@ func NewSyncMapScheduler(workerIDs []state.WorkerID, logger *slog.Logger) *syncM
 	for _, workerID := range workerIDs {
 		workers.CreateWorker(workerID)
 	}
+	r := NewReconciler(workerIDs, workers, logger)
+	go r.Run(context.Background())
+
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			workers.DebugPrint()
+		}
+	}()
 	return &syncMapScheduler{workers: *workers, workerIDs: workerIDs, logger: logger}
 }
 
@@ -80,12 +90,13 @@ func (s *syncMapScheduler) UpdateWorkerState(workerID state.WorkerID, newState s
 
 func (s *syncMapScheduler) UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error {
 	switch newState {
+	//TODO handle errors
 	case state.InstanceStateRunning:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID})
 	case state.InstanceStateIdle:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
-	case state.InstanceStateNew:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateNew, state.Instance{InstanceID: instanceID, LastWorked: time.Now(), Created: time.Now()})
+	case state.InstanceStateStarting:
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateStarting, state.Instance{InstanceID: instanceID, Created: time.Now()})
 	case state.InstanceStateDown:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
 	}
@@ -93,9 +104,12 @@ func (s *syncMapScheduler) UpdateInstanceState(workerID state.WorkerID, function
 }
 
 func (s *syncMapScheduler) CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error {
-	//Why does this exist?
 	s.workers.AssignFunction(workerID, functionID)
 	return nil
+}
+
+func (s *syncMapScheduler) GetInstanceCount(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState) (int, error) {
+	return s.workers.CountInstancesInState(workerID, functionID, instanceState)
 }
 
 type mruScheduler struct {
@@ -133,7 +147,6 @@ func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID
 		case *state.FunctionNotAssignedError:
 			s.logger.Info("Function not registered, creating on random worker", "functionID", functionID, "workerID", workerID)
 			s.workers.AssignFunction(workerID, functionID)
-			s.workers.DebugPrint()
 		case *state.NoIdleInstanceError:
 			s.logger.Info("No idle instance found, scheduling to random worker", "functionID", functionID, "workerID", workerID)
 		default:
@@ -142,6 +155,8 @@ func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID
 		return workerID, "", nil
 	}
 	s.logger.Debug("Found idle instance", "functionID", functionID, "workerID", workerID, "instanceID", instanceID)
+	// UpdateInstance to running
+	s.UpdateInstanceState(workerID, functionID, instanceID, state.InstanceStateRunning)
 	return workerID, instanceID, nil
 }
 
@@ -161,8 +176,8 @@ func (s *mruScheduler) UpdateInstanceState(workerID state.WorkerID, functionID s
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID})
 	case state.InstanceStateIdle:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
-	case state.InstanceStateNew:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateNew, state.Instance{InstanceID: instanceID, LastWorked: time.Now(), Created: time.Now()})
+	case state.InstanceStateStarting:
+		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateStarting, state.Instance{InstanceID: instanceID, Created: time.Now()})
 	case state.InstanceStateDown:
 		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
 	}
@@ -170,6 +185,10 @@ func (s *mruScheduler) UpdateInstanceState(workerID state.WorkerID, functionID s
 }
 
 func (s *mruScheduler) CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error {
-	s.workers.AssignFunction(workerID, functionID) //see above
+	s.workers.AssignFunction(workerID, functionID)
 	return nil
+}
+
+func (s *mruScheduler) GetInstanceCount(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState) (int, error) {
+	return s.workers.CountInstancesInState(workerID, functionID, instanceState)
 }

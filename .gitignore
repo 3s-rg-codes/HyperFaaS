@@ -93,6 +93,8 @@ atlassian-ide-plugin.xml
 # Cursive Clojure plugin
 .idea/replstate.xml
 
+#logs
+log/*.log
 # SonarLint plugin
 .idea/sonarlint/
 

@@ -274,7 +274,6 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 func (d *DockerRuntime) getCallerServerAddress() string {
 	// Containerized mode uses docker network dns to resolve the caller server address, hence we need to replace the localhost/127.0.0.1/0.0.0.0 with worker
 	if d.containerized {
-		d.logger.Info("CallerServerAddress is ", "address", d.callerServerAddress)
 		address := d.callerServerAddress
 		address = strings.Replace(address, "localhost", "worker", 1)
 		address = strings.Replace(address, "127.0.0.1", "worker", 1)

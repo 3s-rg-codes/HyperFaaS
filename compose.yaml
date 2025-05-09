@@ -6,30 +6,41 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - function-logs:/root/functions/logs
+      - ./log/:/root/log/
     ports:
       - "50051:50051"
     networks:
       - hyperfaas-network
-    command: ["./main", "-address=0.0.0.0:50051", "-runtime=docker", "-log-level=info", "-log-format=text", "--auto-remove=true", "-containerized=true", "-caller-server-address=0.0.0.0:50052", "-database-type=http"]
+    command: ["./main", "-address=0.0.0.0:50051", "-runtime=fake", "-log-level=info", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-caller-server-address=0.0.0.0:50052", "-database-type=http", "-update-buffer-size=100000"]
     develop:
       watch:
         - action: rebuild
           path: .
           target: .
+    healthcheck:
+      test: ["CMD", "sleep", "5"]
+      interval: 6s
+      timeout: 6s
+      retries: 1
   leaf:
     build:
       context: .
       dockerfile: leaf.Dockerfile
+    volumes:
+      - ./log/:/root/log/
     ports:
       - "50050:50050"
     networks:
         - hyperfaas-network
-    command: ["./leaf", "--address=0.0.0.0:50050", "--log-level=debug", "--log-format=dev", "--worker-ids=worker:50051", "--scheduler-type=mru", "--database-address=http://database:8080"]
+    command: ["./leaf", "--address=0.0.0.0:50050", "--log-level=info", "--log-format=text", "--log-file=/root/log/leaf.log", "--worker-ids=worker:50051", "--scheduler-type=mru", "--database-address=http://database:8080"]
     develop:
         watch:
             - action: rebuild
               path: .
               target: .
+    depends_on:
+      worker:
+        condition: service_healthy
   database:
     build:
       context: .

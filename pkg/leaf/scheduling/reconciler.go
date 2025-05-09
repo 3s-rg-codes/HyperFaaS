@@ -22,11 +22,16 @@ const (
 // The most common case is that instances time out when waiting for more calls.
 type Reconciler struct {
 	workerIDs []state.WorkerID
-	workers   *state.Workers
+	workers   WorkerData
 	logger    *slog.Logger
 }
 
-func NewReconciler(workerIDs []state.WorkerID, workers *state.Workers, logger *slog.Logger) *Reconciler {
+// We accept any type that implements the UpdateInstance method
+type WorkerData interface {
+	UpdateInstance(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState, instance state.Instance) error
+}
+
+func NewReconciler(workerIDs []state.WorkerID, workers WorkerData, logger *slog.Logger) *Reconciler {
 	return &Reconciler{
 		workerIDs: workerIDs,
 		workers:   workers,
