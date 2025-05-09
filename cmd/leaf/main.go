@@ -4,11 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	"log/slog"
 	"net"
 	"os"
 	"time"
+
+	"github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/api"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
@@ -37,7 +38,13 @@ func main() {
 	logFilePath := flag.String("log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
 	databaseType := flag.String("database-type", "http", "\"database\" used for managing the functionID -> config relationship")
 	databaseAddress := flag.String("database-address", "http://localhost:8080/", "address of the database server")
-	schedulerType := flag.String("scheduler-type", "naive", "The type of scheduler to use (mru or map)")
+	schedulerType := flag.String("scheduler-type", "mru", "The type of scheduler to use (mru or map)")
+	maxStartingInstancesPerFunction := flag.Int("max-starting-instances-per-function", 10, "The maximum number of instances starting at once per function")
+	startingInstanceWaitTimeout := flag.Duration("starting-instance-wait-timeout", time.Second*5, "The timeout for waiting for an instance to start")
+	maxRunningInstancesPerFunction := flag.Int("max-running-instances-per-function", 10, "The maximum number of instances running at once per function")
+	coordinatorBackoff := flag.Duration("coordinator-backoff", time.Millisecond*10, "The startingbackoff time for the coordinator")
+	coordinatorBackoffIncrease := flag.Duration("coordinator-backoff-increase", time.Millisecond*10, "The backoff increase for the coordinator")
+	coordinatorMaxBackoff := flag.Duration("coordinator-max-backoff", time.Second*1, "The maximum backoff for the coordinator")
 	flag.Var(&workerIDs, "worker-ids", "The IDs of the workers to manage")
 	flag.Parse()
 
@@ -46,6 +53,9 @@ func main() {
 	}
 
 	logger := setupLogger(*logLevel, *logFormat, *logFilePath)
+
+	// Print configuration
+	logger.Info("Configuration", "address", *address, "logLevel", *logLevel, "logFormat", *logFormat, "logFilePath", *logFilePath, "databaseType", *databaseType, "databaseAddress", *databaseAddress, "schedulerType", *schedulerType, "workerIDs", workerIDs)
 
 	var ids []state.WorkerID
 	logger.Debug("Setting worker IDs", "workerIDs", workerIDs, "len", len(workerIDs))
@@ -69,8 +79,15 @@ func main() {
 
 	scheduler := scheduling.New(*schedulerType, workerState, ids, logger)
 
-	server := api.NewLeafServer(scheduler, dbClient)
-
+	server := api.NewLeafServer(scheduler,
+		dbClient,
+		*maxStartingInstancesPerFunction,
+		*startingInstanceWaitTimeout,
+		*maxRunningInstancesPerFunction,
+		*coordinatorBackoff,
+		*coordinatorBackoffIncrease,
+		*coordinatorMaxBackoff,
+	)
 	listener, err := net.Listen("tcp", *address)
 	if err != nil {
 		logger.Error("failed to listen", "error", err)

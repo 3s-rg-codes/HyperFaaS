@@ -2,35 +2,57 @@ package stats
 
 import (
 	"log/slog"
+	"math/rand/v2"
 	"sync"
 	"time"
 )
 
 type StatsManager struct {
-	Updates         chan StatusUpdate
-	listeners       map[string]chan StatusUpdate
-	toBeTerminated  map[string]chan bool
-	mu              sync.RWMutex
-	logger          *slog.Logger
-	listenerTimeout time.Duration
+	Updates          chan StatusUpdate
+	UpdateBufferSize int64
+	sampleRate       float64
+	listeners        map[string]chan StatusUpdate
+	toBeTerminated   map[string]chan bool
+	mu               sync.RWMutex
+	logger           *slog.Logger
+	listenerTimeout  time.Duration
 }
 
-func NewStatsManager(logger *slog.Logger, listenerTimeout time.Duration) *StatsManager {
+func NewStatsManager(logger *slog.Logger, listenerTimeout time.Duration, sampleRate float64, updateBufferSize int64) *StatsManager {
 	return &StatsManager{
-		Updates:         make(chan StatusUpdate, 1000),
-		listeners:       make(map[string]chan StatusUpdate),
-		toBeTerminated:  make(map[string]chan bool),
-		logger:          logger,
-		listenerTimeout: listenerTimeout,
+		Updates:          make(chan StatusUpdate, updateBufferSize),
+		UpdateBufferSize: updateBufferSize,
+		listeners:        make(map[string]chan StatusUpdate),
+		toBeTerminated:   make(map[string]chan bool),
+		logger:           logger,
+		listenerTimeout:  listenerTimeout,
+		sampleRate:       sampleRate,
 	}
 }
 
 func (s *StatsManager) Enqueue(su *StatusUpdate) {
-	select {
-	case s.Updates <- *su:
-	default:
-		s.logger.Warn("Updates channel is full, dropping update")
+
+	// If its a timeout or a crash, we must always send the update
+	if su.Event == EventTimeout || su.Event == EventDown {
+		select {
+		case s.Updates <- *su:
+			return
+		default:
+			s.logger.Warn("Updates channel is full, dropping update")
+			return
+		}
 	}
+	// For all other cases, we only send the update if the random number is less than the sample rate
+	if rand.Float64() < s.sampleRate {
+		select {
+		case s.Updates <- *su:
+		default:
+			s.logger.Warn("Updates channel is full, dropping update")
+		}
+	}
+	/* go func() {
+		s.Updates <- *su
+	}() */
 }
 
 func (s *StatsManager) AddListener(nodeID string, listener chan StatusUpdate) {

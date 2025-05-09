@@ -70,7 +70,7 @@ func runBenchmark(b *testing.B, scheduler Scheduler) {
 
 			if instanceID == "" {
 				// There is no idle instance available
-				scheduler.UpdateInstanceState(workerID, state.FunctionID(randFunctionID), instanceID, state.InstanceStateNew)
+				scheduler.UpdateInstanceState(workerID, state.FunctionID(randFunctionID), instanceID, state.InstanceStateStarting)
 			} else {
 				// An Idle instance was found
 				scheduler.UpdateInstanceState(workerID, state.FunctionID(randFunctionID), instanceID, state.InstanceStateRunning)

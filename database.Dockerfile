@@ -6,11 +6,11 @@ FROM golang:${GO_VERSION}-alpine AS builder
 WORKDIR /app
 
 COPY . .
-COPY cmd/database/databaseServer.go .
+COPY cmd/database/main.go .
 
 RUN go mod tidy && go mod download
 
-RUN GOOS=linux go build -o main databaseServer.go
+RUN GOOS=linux go build -o main main.go
 
 FROM alpine:${ALPINE_VERSION}
 

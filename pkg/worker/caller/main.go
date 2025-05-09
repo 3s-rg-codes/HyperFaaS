@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	BUFFER_SIZE = 1000
+	BUFFER_SIZE = 100000
 )
 
 type CallerServer struct {
@@ -24,38 +24,32 @@ type CallerServer struct {
 	FunctionResponses InstanceResponses
 	StatsManager      *stats.StatsManager
 	logger            *slog.Logger
+	mu                sync.RWMutex
 }
 
 type InstanceCalls struct {
-	FcMap map[string]chan []byte
-	mu    sync.RWMutex
+	FcMap sync.Map
 }
 
 type InstanceResponses struct {
-	FrMap map[string]chan []byte
-	mu    sync.RWMutex
+	FrMap sync.Map
 }
 
 func NewCallerServer(address string, logger *slog.Logger, statsManager *stats.StatsManager) *CallerServer {
 	return &CallerServer{
-		Address:      address,
-		logger:       logger,
-		StatsManager: statsManager,
-		FunctionCalls: InstanceCalls{
-			FcMap: make(map[string]chan []byte),
-		},
-		FunctionResponses: InstanceResponses{
-			FrMap: make(map[string]chan []byte),
-		},
+		Address:           address,
+		logger:            logger,
+		StatsManager:      statsManager,
+		FunctionCalls:     InstanceCalls{},
+		FunctionResponses: InstanceResponses{},
 	}
 }
 
 func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call, error) {
-
 	// Pass payload to the functionResponses channel IF it exists
 	if !payload.FirstExecution {
 		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.InstanceId)
-		go s.QueueInstanceResponse(payload.InstanceId.Id, payload.Data)
+		s.QueueInstanceResponse(payload.InstanceId.Id, payload.Data)
 		// TODO: Generate event of response
 	} else {
 		// To measure cold start time
@@ -105,77 +99,55 @@ func (s *CallerServer) Start() {
 
 // RegisterFunctionInstance adds message channels for the given function ID
 func (s *CallerServer) RegisterFunctionInstance(id string) {
-	s.FunctionCalls.mu.Lock()
-	s.FunctionCalls.FcMap[id] = make(chan []byte, BUFFER_SIZE)
-	s.FunctionCalls.mu.Unlock()
-
-	s.FunctionResponses.mu.Lock()
-	s.FunctionResponses.FrMap[id] = make(chan []byte, BUFFER_SIZE)
-	s.FunctionResponses.mu.Unlock()
+	s.FunctionCalls.FcMap.Store(id, make(chan []byte))
+	s.FunctionResponses.FrMap.Store(id, make(chan []byte))
 }
 
 // UnregisterFunctionInstance closes and removes message channels for the given function ID
 func (s *CallerServer) UnregisterFunctionInstance(id string) {
-	s.FunctionCalls.mu.Lock()
-	if _, ok := s.FunctionCalls.FcMap[id]; ok {
-		close(s.FunctionCalls.FcMap[id])
-		delete(s.FunctionCalls.FcMap, id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ch, ok := s.FunctionCalls.FcMap.Load(id); ok {
+		close(ch.(chan []byte))
+		s.FunctionCalls.FcMap.Delete(id)
 	}
-	s.FunctionCalls.mu.Unlock()
 
-	s.FunctionResponses.mu.Lock()
-	if _, ok := s.FunctionResponses.FrMap[id]; ok {
-		close(s.FunctionResponses.FrMap[id])
-		delete(s.FunctionResponses.FrMap, id)
+	if ch, ok := s.FunctionResponses.FrMap.Load(id); ok {
+		close(ch.(chan []byte))
+		s.FunctionResponses.FrMap.Delete(id)
 	}
-	s.FunctionResponses.mu.Unlock()
 }
 
 func (s *CallerServer) QueueInstanceCall(id string, call []byte) {
-	s.FunctionCalls.mu.RLock() // Use Read Lock to find the channel
-	ch, ok := s.FunctionCalls.FcMap[id]
-	if ok {
+	if ch, ok := s.FunctionCalls.FcMap.Load(id); ok {
 		s.logger.Debug("Queueing call data", "instance ID", id)
-		ch <- call
+		ch.(chan []byte) <- call
 		s.logger.Debug("Finished queueing call data", "instance ID", id)
 	} else {
 		s.logger.Warn("Attempted to queue call for unregistered/removed instance", "instanceId", id)
 	}
-	s.FunctionCalls.mu.RUnlock()
-
 }
 
 func (s *CallerServer) GetInstanceCall(id string) chan []byte {
-	s.FunctionCalls.mu.RLock()
-	ch, ok := s.FunctionCalls.FcMap[id]
-	s.FunctionCalls.mu.RUnlock()
-
-	if ok {
-		return ch
+	if ch, ok := s.FunctionCalls.FcMap.Load(id); ok {
+		return ch.(chan []byte)
 	}
 	return nil
 }
 
 func (s *CallerServer) GetInstanceResponse(id string) chan []byte {
-	s.FunctionResponses.mu.RLock()
-	ch, ok := s.FunctionResponses.FrMap[id]
-	s.FunctionResponses.mu.RUnlock()
-	if ok {
-		return ch
+	if ch, ok := s.FunctionResponses.FrMap.Load(id); ok {
+		return ch.(chan []byte)
 	}
 	return nil
 }
 
 func (s *CallerServer) QueueInstanceResponse(id string, response []byte) {
-	s.FunctionResponses.mu.RLock()
-	ch, ok := s.FunctionResponses.FrMap[id]
-	if ok {
-		s.logger.Debug("Queueing response data", "instance ID", id)
-		ch <- response
-		s.logger.Debug("Finished queueing response data", "instance ID", id)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if ch, ok := s.FunctionResponses.FrMap.Load(id); ok {
+		ch.(chan []byte) <- response
 	} else {
 		s.logger.Warn("Attempted to queue response for unregistered/removed instance", "instanceId", id)
 	}
-	s.FunctionResponses.mu.RUnlock()
-
 }

@@ -78,30 +78,43 @@ func (f *Function) Ready(handler handler) {
 	defer logger.Info("Closing connection.")
 	first := true
 
+	parentCtx := context.Background()
+
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(f.timeout)*time.Second)
-
-		//We ask for a new request whilst sending the response of the previous one
-		p, err := c.Ready(ctx, &pb.Payload{Data: f.response.Data, InstanceId: &common.InstanceID{Id: f.response.Id}, FunctionId: &common.FunctionID{Id: f.functionId}, FirstExecution: first, Error: &common.Error{Message: f.response.Error}})
-
-		cancel()
-
-		first = false
-		if err != nil {
-			logger.Error("failed to call", "error", err)
+		// Create new timeout context for each iteration
+		ctx, cancel := context.WithTimeout(parentCtx, time.Duration(f.timeout)*time.Second)
+		select {
+		case <-parentCtx.Done():
+			logger.Info("Context was canceled and function shut down")
+			cancel()
 			return
-		}
-		logger.Debug("Received request", "data", p.Data)
+		default:
+			//We ask for a new request whilst sending the response of the previous one
+			p, err := c.Ready(ctx, &pb.Payload{
+				Data:           f.response.Data,
+				InstanceId:     &common.InstanceID{Id: f.response.Id},
+				FunctionId:     &common.FunctionID{Id: f.functionId},
+				FirstExecution: first,
+				Error:          &common.Error{Message: f.response.Error},
+			})
+			cancel()
+			first = false
+			if err != nil {
+				logger.Error("failed to call", "error", err)
+				return
+			}
+			if ctx.Err() == context.DeadlineExceeded {
+				// Timeout occurred, don't try to send response
+				logger.Debug("Ready call timed out, stopping function")
+				return
+			}
+			logger.Info("Received request", "data", p.Data)
 
-		f.request = &Request{p.Data, p.InstanceId.Id}
+			f.request = &Request{p.Data, p.InstanceId.Id}
 
-		f.response = handler(ctx, f.request)
+			f.response = handler(ctx, f.request)
 
-		logger.Debug("Function handler called and generated response", "response", f.response.Data)
-
-		if err != nil {
-			logger.Error("Function failed", "error", err)
-			return
+			logger.Debug("Function handler called and generated response", "response", f.response.Data)
 		}
 
 	}

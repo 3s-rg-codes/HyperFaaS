@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,12 +36,17 @@ type Controller struct {
 	address         string
 	dbClient        kv.FunctionMetadataStore
 	functionIDCache map[string]kv.FunctionData
+	mu              sync.RWMutex
 }
 
 func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common.InstanceID, error) {
 
 	//Check if we have config and image for ID cached and if not get it from db
-	if _, ok := s.functionIDCache[req.Id]; !ok {
+	s.mu.RLock()
+	_, ok := s.functionIDCache[req.Id]
+	s.mu.RUnlock()
+
+	if !ok {
 		s.logger.Debug("FunctionData not available locally, fetching from server", "functionID", req.Id)
 		imageTag, config, err := s.dbClient.Get(req)
 		if err != nil {
@@ -52,7 +58,9 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 			ImageTag: imageTag,
 		}
 
+		s.mu.Lock()
 		s.functionIDCache[req.Id] = d
+		s.mu.Unlock()
 	}
 
 	functionData := s.functionIDCache[req.Id]
@@ -84,13 +92,13 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 // runtime.Call is also called to check for errors
 func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 
-	if _, ok := s.CallerServer.FunctionCalls.FcMap[req.InstanceId.Id]; !ok {
+	if _, ok := s.CallerServer.FunctionCalls.FcMap.Load(req.InstanceId.Id); !ok {
 		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
 		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
 		return nil, status.Errorf(codes.NotFound, err.Error())
 	}
 
-	if _, ok := s.CallerServer.FunctionResponses.FrMap[req.InstanceId.Id]; !ok {
+	if _, ok := s.CallerServer.FunctionResponses.FrMap.Load(req.InstanceId.Id); !ok {
 		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
 		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
 		return nil, status.Errorf(codes.NotFound, err.Error())
@@ -110,12 +118,8 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 	s.logger.Debug("Passing call with payload", "payload", req.Data, "instance ID", req.InstanceId.Id)
 
-	go func() {
-		// Pass the call to the channel based on the instance ID
-		s.CallerServer.QueueInstanceCall(req.InstanceId.Id, req.Data)
-		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Call().Success())
-
-	}()
+	s.CallerServer.QueueInstanceCall(req.InstanceId.Id, req.Data)
+	s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Call().Success())
 
 	responseChan := s.CallerServer.GetInstanceResponse(req.InstanceId.Id)
 
@@ -130,7 +134,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 	case err := <-crashChan:
 
 		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Down())
-		s.logger.Error("Container crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
+		s.logger.Error("Container timed out or crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
 
 		return nil, &ContainerCrashError{InstanceID: req.InstanceId.Id, ContainerError: err.Error()}
 
@@ -162,45 +166,6 @@ func (s *Controller) Stop(ctx context.Context, req *common.InstanceID) (*common.
 // Streams the status updates to a client.
 // Using a channel to listen to the stats manager for status updates
 // Status Updates are defined in pkg/stats/statusUpdate.go
-/* func (s *Controller) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
-
-	//If a node is re-hitting the status endpoint, use the existing channel
-	statsChannel := s.StatsManager.GetListenerByID(req.NodeID)
-
-	if statsChannel != nil {
-		s.logger.Debug("Node is re-hitting the status endpoint", "node_id", req.NodeID)
-	} else {
-		statsChannel = make(chan stats.StatusUpdate, 10000)
-		s.StatsManager.AddListener(req.NodeID, statsChannel)
-	}
-	for data := range statsChannel {
-		// Check if the stream is closed
-		if stream.Context().Err() == nil {
-			if err := stream.Send(
-				&controller.StatusUpdate{
-					InstanceId: &common.InstanceID{Id: data.InstanceID},
-					FunctionId: &common.FunctionID{Id: data.FunctionID},
-					Timestamp:  timestamppb.New(data.Timestamp),
-					Type:       controller.VirtualizationType(data.Type),
-					Event:      controller.Event(data.Event),
-					Status:     controller.Status(data.Status),
-				}); err != nil {
-				s.logger.Error("Error streaming data", "error", err, "node_id", req.NodeID)
-				return err
-			}
-			s.logger.Debug("Sent status update", "node_id", req.NodeID, "event", data.Event, "status", data.Status)
-		} else {
-			s.logger.Debug("Stream closed", "node_id", req.NodeID)
-			// re buffer the data
-			statsChannel <- data
-			s.StatsManager.RemoveListenerAfterTimeout(req.NodeID)
-			return stream.Context().Err()
-		}
-	}
-
-	return nil
-} */
-
 func (s *Controller) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
 	ctx := stream.Context()
 	nodeID := req.NodeID

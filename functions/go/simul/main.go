@@ -16,8 +16,8 @@ func main() {
 }
 
 func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functionRuntimeInterface.Response {
-	// Simulate workload between 100ms ans 2 seconds
-	time.Sleep(time.Duration(rand.Intn(1900)+100) * time.Millisecond)
+	// Simulate workload between 100ms and 200ms
+	time.Sleep(time.Duration(rand.Intn(100)+100) * time.Millisecond)
 	resp := &functionRuntimeInterface.Response{
 		Data: []byte(""),
 		Id:   in.Id,

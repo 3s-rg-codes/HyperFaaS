@@ -29,11 +29,13 @@ def get_cold_start_times(db_path: str) -> pd.DataFrame:
     SELECT 
         s.function_id,
         s.instance_id,
+        fi.image_tag,
         s.start_time,
         r.running_time,
         (julianday(r.running_time) - julianday(s.start_time)) * 24 * 60 * 60 * 1000 as cold_start_ms
     FROM start_events s
     JOIN running_events r ON s.instance_id = r.instance_id
+    JOIN function_images fi ON s.function_id = fi.function_id
     ORDER BY s.function_id, s.instance_id
     """
     
@@ -71,7 +73,7 @@ def print_function_summary(db_path: str):
 
 def main():
     parser = argparse.ArgumentParser(description='Analyze function metrics from SQLite database')
-    parser.add_argument('--db-path', default='../metrics.db', help='Path to SQLite database')
+    parser.add_argument('--db-path', default='metrics.db', help='Path to SQLite database')
     args = parser.parse_args()
 
     try:
