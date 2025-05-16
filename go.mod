@@ -15,6 +15,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/image v0.27.0
 	golang.org/x/sync v0.14.0
+	gonum.org/v1/gonum v0.16.0
 	google.golang.org/grpc v1.64.0
 	google.golang.org/protobuf v1.35.2
 )

@@ -41,6 +41,7 @@ func main() {
 		"hyperfaas-echo:latest",
 		"hyperfaas-simul:latest",
 		"hyperfaas-thumbnailer:latest",
+		"hyperfaas-bfs:latest",
 	}
 
 	functionIDs := make([]*common.FunctionID, len(imageTags))
@@ -64,6 +65,9 @@ func main() {
 
 	// Send thumbnail request
 	sendThumbnailRequest(client, functionIDs[3])
+
+	// Send BFS request
+	testBFS(client, functionIDs[4])
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {
@@ -261,7 +265,7 @@ func sendThumbnailRequest(client pb.LeafClient, functionID *common.FunctionID) (
 		Height int
 	}{
 		Image:  imageBytes,
-		Width:  100, // Resize to 100x100
+		Width:  100,
 		Height: 100,
 	}
 
@@ -279,7 +283,6 @@ func sendThumbnailRequest(client pb.LeafClient, functionID *common.FunctionID) (
 	if err != nil {
 		return 0, fmt.Errorf("failed to schedule call: %v", err)
 	}
-	log.Printf("Received response from thumbnailer: %v", r)
 
 	// Save resized image
 	err = os.WriteFile("resized_100x100.jpg", r.Data, 0644)
@@ -288,4 +291,42 @@ func sendThumbnailRequest(client pb.LeafClient, functionID *common.FunctionID) (
 	}
 
 	return time.Since(start), nil
+}
+
+func testBFS(client pb.LeafClient, functionID *common.FunctionID) {
+	input := struct {
+		Size int
+		Seed int
+	}{
+		Size: 1000,
+		Seed: 100,
+	}
+
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(input); err != nil {
+		log.Fatalf("failed to encode input: %v", err)
+	}
+
+	r, err := client.ScheduleCall(context.Background(), &pb.ScheduleCallRequest{
+		FunctionID: functionID,
+		Data:       buf.Bytes(),
+	})
+	if err != nil {
+		log.Fatalf("failed to schedule call: %v", err)
+	}
+	// decode response
+	type OutputData struct {
+		Result      []int64
+		Measurement struct {
+			GraphGeneratingTime int64
+			ComputeTime         int64
+		}
+	}
+
+	var output OutputData
+	if err := gob.NewDecoder(bytes.NewReader(r.Data)).Decode(&output); err != nil {
+		log.Fatalf("failed to decode output: %v", err)
+	}
+
+	log.Printf("Received response from BFS: %v", output)
 }
