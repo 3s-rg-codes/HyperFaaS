@@ -37,7 +37,7 @@ func main() {
 	logFormat := flag.String("log-format", "text", "Log format (json, text or dev) (Env: LOG_FORMAT)")
 	logFilePath := flag.String("log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
 	databaseType := flag.String("database-type", "http", "\"database\" used for managing the functionID -> config relationship")
-	databaseAddress := flag.String("database-address", "http://localhost:8080/", "address of the database server")
+	databaseAddress := flag.String("database-address", "http://localhost:8999/", "address of the database server")
 	schedulerType := flag.String("scheduler-type", "mru", "The type of scheduler to use (mru or map)")
 	maxStartingInstancesPerFunction := flag.Int("max-starting-instances-per-function", 10, "The maximum number of instances starting at once per function")
 	startingInstanceWaitTimeout := flag.Duration("starting-instance-wait-timeout", time.Second*5, "The timeout for waiting for an instance to start")

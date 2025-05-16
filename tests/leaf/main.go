@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -35,6 +39,7 @@ func main() {
 		"hyperfaas-hello:latest",
 		"hyperfaas-echo:latest",
 		"hyperfaas-simul:latest",
+		"hyperfaas-thumbnailer:latest",
 	}
 
 	functionIDs := make([]*common.FunctionID, len(imageTags))
@@ -54,7 +59,10 @@ func main() {
 	//testSequentialCalls(client, createFunctionResp.FunctionID)
 
 	// Concurrent calls for duration
-	testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
+	//testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
+
+	// Send thumbnail request
+	sendThumbnailRequest(client, functionIDs[3])
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {
@@ -225,4 +233,45 @@ func createFunction(imageTag string, client *pb.LeafClient) (*common.FunctionID,
 	}
 
 	return createFunctionResp.FunctionID, nil
+}
+
+func sendThumbnailRequest(client pb.LeafClient, functionID *common.FunctionID) (time.Duration, error) {
+	resp, err := http.Get("https://picsum.photos/200/300")
+	if err != nil {
+		return 0, fmt.Errorf("failed to get image: %v", err)
+	}
+	defer resp.Body.Close()
+
+	imageBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read image bytes: %v", err)
+	}
+
+	// Create input data matching InputData struct from thumbnailer
+	input := struct {
+		Image  []byte
+		Width  int
+		Height int
+	}{
+		Image:  imageBytes,
+		Width:  100, // Resize to 100x100
+		Height: 100,
+	}
+
+	// Encode input data
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(input); err != nil {
+		return 0, fmt.Errorf("failed to encode input: %v", err)
+	}
+
+	start := time.Now()
+	_, err = client.ScheduleCall(context.Background(), &pb.ScheduleCallRequest{
+		FunctionID: functionID,
+		Data:       buf.Bytes(),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to schedule call: %v", err)
+	}
+
+	return time.Since(start), nil
 }

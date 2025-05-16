@@ -128,9 +128,9 @@ func main() {
 	var dbClient kv.FunctionMetadataStore
 
 	if wc.Runtime.Containerized {
-		dbAddress = "http://database:8080/" //needs to have this format for http to work
+		dbAddress = "http://database:8999/" //needs to have this format for http to work
 	} else {
-		dbAddress = "http://localhost:8080"
+		dbAddress = "http://localhost:8999"
 	}
 
 	switch wc.General.DatabaseType {
