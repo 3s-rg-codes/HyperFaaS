@@ -11,7 +11,7 @@ services:
       - "50051:50051"
     networks:
       - hyperfaas-network
-    command: ["./main", "-address=0.0.0.0:50051", "-runtime=fake", "-log-level=info", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-caller-server-address=0.0.0.0:50052", "-database-type=http", "-update-buffer-size=100000"]
+    command: ["./main", "-address=0.0.0.0:50051", "-runtime=docker", "-log-level=info", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-caller-server-address=0.0.0.0:50052", "-database-type=http", "-update-buffer-size=100000"]
     develop:
       watch:
         - action: rebuild
@@ -32,7 +32,7 @@ services:
       - "50050:50050"
     networks:
         - hyperfaas-network
-    command: ["./leaf", "--address=0.0.0.0:50050", "--log-level=info", "--log-format=text", "--log-file=/root/log/leaf.log", "--worker-ids=worker:50051", "--scheduler-type=mru", "--database-address=http://database:8080"]
+    command: ["./leaf", "--address=0.0.0.0:50050", "--log-level=info", "--log-format=text", "--log-file=/root/log/leaf.log", "--worker-ids=worker:50051", "--scheduler-type=mru", "--database-address=http://database:8999"]
     develop:
         watch:
             - action: rebuild
@@ -46,7 +46,7 @@ services:
       context: .
       dockerfile: database.Dockerfile
     ports:
-      - "8080:8080"
+      - "8999:8999"
     networks:
       - hyperfaas-network
 
