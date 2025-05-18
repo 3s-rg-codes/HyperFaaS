@@ -11,7 +11,7 @@ services:
       - "50051:50051"
     networks:
       - hyperfaas-network
-    command: ["./main", "-address=0.0.0.0:50051", "-runtime=fake", "-log-level=info", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-caller-server-address=0.0.0.0:50052", "-database-type=http", "-update-buffer-size=100000"]
+    command: ["./main", "-address=0.0.0.0:50051", "-runtime=docker", "-log-level=info", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-caller-server-address=0.0.0.0:50052", "-database-type=http", "-update-buffer-size=100000"]
     develop:
       watch:
         - action: rebuild

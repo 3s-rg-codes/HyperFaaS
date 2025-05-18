@@ -12,7 +12,13 @@
 *.so
 *.dylib
 .vscode/
-
+# images
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
 #main binary
 main
 bin/

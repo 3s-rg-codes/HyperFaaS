@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -43,6 +48,8 @@ func main() {
 		"hyperfaas-hello:latest",
 		"hyperfaas-echo:latest",
 		"hyperfaas-simul:latest",
+		"hyperfaas-thumbnailer:latest",
+		"hyperfaas-bfs:latest",
 	}
 
 	functionIDs := make([]*common.FunctionID, len(imageTags))
@@ -69,6 +76,12 @@ func main() {
 
 	// Concurrent calls for duration
 	testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
+
+	// Send thumbnail request
+	sendThumbnailRequest(client, functionIDs[3])
+
+	// Send BFS request
+	testBFS(client, functionIDs[4])
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {
@@ -247,4 +260,95 @@ func saveFunctionId(functionID *common.FunctionID, imageTag string) error {
 		return fmt.Errorf("failed to insert function id: %v", err)
 	}
 	return nil
+}
+
+func sendThumbnailRequest(client pb.LeafClient, functionID *common.FunctionID) (time.Duration, error) {
+	resp, err := http.Get("https://picsum.photos/200/300")
+	if err != nil {
+		return 0, fmt.Errorf("failed to get image: %v", err)
+	}
+	defer resp.Body.Close()
+
+	imageBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read image bytes: %v", err)
+	}
+
+	// Save original image
+	err = os.WriteFile("original_200x300.jpg", imageBytes, 0644)
+	if err != nil {
+		return 0, fmt.Errorf("failed to save original image: %v", err)
+	}
+
+	// Create input data matching InputData struct from thumbnailer
+	input := struct {
+		Image  []byte
+		Width  int
+		Height int
+	}{
+		Image:  imageBytes,
+		Width:  100,
+		Height: 100,
+	}
+
+	// Encode input data
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(input); err != nil {
+		return 0, fmt.Errorf("failed to encode input: %v", err)
+	}
+
+	start := time.Now()
+	r, err := client.ScheduleCall(context.Background(), &pb.ScheduleCallRequest{
+		FunctionID: functionID,
+		Data:       buf.Bytes(),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to schedule call: %v", err)
+	}
+
+	// Save resized image
+	err = os.WriteFile("resized_100x100.jpg", r.Data, 0644)
+	if err != nil {
+		return 0, fmt.Errorf("failed to save resized image: %v", err)
+	}
+
+	return time.Since(start), nil
+}
+
+func testBFS(client pb.LeafClient, functionID *common.FunctionID) {
+	input := struct {
+		Size int
+		Seed int
+	}{
+		Size: 1000,
+		Seed: 100,
+	}
+
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(input); err != nil {
+		log.Fatalf("failed to encode input: %v", err)
+	}
+
+	r, err := client.ScheduleCall(context.Background(), &pb.ScheduleCallRequest{
+		FunctionID: functionID,
+		Data:       buf.Bytes(),
+	})
+	if err != nil {
+		log.Fatalf("failed to schedule call: %v", err)
+	}
+	// decode response
+	type OutputData struct {
+		Result      []int64
+		Measurement struct {
+			GraphGeneratingTime int64
+			ComputeTime         int64
+		}
+	}
+
+	var output OutputData
+	if err := gob.NewDecoder(bytes.NewReader(r.Data)).Decode(&output); err != nil {
+		log.Fatalf("failed to decode output: %v", err)
+	}
+
+	log.Printf("Received response from BFS: %v", output)
 }

@@ -117,8 +117,8 @@ test-integration-local-all runtime loglevel:
 metrics-client:
     go run ./cmd/metrics-client
 
-metrics-test:
-    go run -race ./tests/metrics/main.go
+load-test:
+    go run ./tests/leaf/main.go
 
 metrics-analyse:
     cd benchmarks && uv run analyse.py
