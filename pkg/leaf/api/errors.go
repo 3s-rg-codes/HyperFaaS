@@ -11,6 +11,6 @@ type WorkerDownError struct {
 	err      error
 }
 
-func (e *WorkerDownError) Error() string {
+func (e WorkerDownError) Error() string {
 	return fmt.Sprintf("worker %s is down, error: %v", e.WorkerID, e.err)
 }
