@@ -138,7 +138,8 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	if _, ok := s.functionIdCache[req.FunctionID.Id]; !ok {
 		ImageTag, Config, err := s.database.Get(req.FunctionID)
 		if err != nil {
-			if errors.As(err, &kv.NoSuchKeyError{}) {
+			var noSuchKeyError kv.NoSuchKeyError
+			if errors.As(err, &noSuchKeyError) {
 				return nil, status.Errorf(codes.NotFound, "failed to get function from database: %s", req.FunctionID.Id)
 			}
 			return nil, fmt.Errorf("failed to get function from database: %w", err)
@@ -190,6 +191,7 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	trailer := metadata.New(map[string]string{
 		"callQueuedTimestamp":  callMetadata.CallQueuedTimestamp,
 		"gotResponseTimestamp": callMetadata.GotResponseTimestamp,
+		"instanceID":           string(instanceID),
 	})
 	grpc.SetTrailer(ctx, trailer)
 
