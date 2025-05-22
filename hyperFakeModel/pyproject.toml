@@ -1,0 +1,14 @@
+[project]
+name = "hyperfakeworker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.2.1",
+    "jupyterlab>=4.4.2",
+    "polars>=1.30.0",
+    "seaborn>=0.13.2",
+    "torch>=2.7.0",
+    "tqdm>=4.67.1",
+]
