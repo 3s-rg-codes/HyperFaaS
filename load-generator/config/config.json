@@ -1,7 +1,10 @@
 {
     "metaData": {
         "paramFile": "params.csv",
-        "protoFile": "definitions.proto"
+        "protoFiles": [
+            "definitions.proto",
+            "common.proto"
+        ]
     },
     "function": {
         "name": "MyFunction",

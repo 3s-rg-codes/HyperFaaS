@@ -106,3 +106,34 @@ Remove all Docker containers/images and logs:
 ```
 just clean
 ```
+
+
+## Benchmarks and Metrics
+
+To generate preliminary data and test metric generation, you can do the following:
+
+```
+# Build all images if you haven't already
+just build
+
+# Start HyperFaaS
+just start
+
+# Start the metrics client
+just metrics-client
+
+# Run preliminary load generation
+cd load-generator
+# Configure the load generation via environment variables in the justfile
+just run-seeded
+
+# When the load generation is done, you can stop the metrics client
+# Export the metrics
+just export
+
+# Analyse metrics
+cd ..
+just metrics-analyse
+```
+
+

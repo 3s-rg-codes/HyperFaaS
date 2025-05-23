@@ -19,7 +19,12 @@
 *.gif
 *.bmp
 *.tiff
-#main binary
+node_modules/
+# generated_scenarios.json
+generated_scenarios.json
+test_results.csv
+metrics.db
+# main binary
 main
 bin/
 

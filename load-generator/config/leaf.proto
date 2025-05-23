@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/leaf";
+import "common.proto";
+
+package leaf;
+
+/*
+* ScheduleCallRequest represents a request to the Leaf Node Server to schedule a call to a worker with a given function ID.
+*/
+message ScheduleCallRequest {
+    // The unique identifier of the function to invoke.
+    common.FunctionID functionID = 1;
+    // The data to pass to the function.
+    bytes data = 2;
+}
+message ScheduleCallResponse {
+    // The result data from the scheduled function call.
+    bytes data = 1;
+    common.Error error = 2;
+}
+
+message CreateFunctionRequest {
+    common.ImageTag image_tag = 1;
+    common.Config config = 2;
+}
+
+message CreateFunctionResponse {
+    common.FunctionID functionID = 1;
+}
+
+service Leaf {
+    // Schedules a function call on the worker identified by the provided function ID.
+    rpc ScheduleCall(ScheduleCallRequest) returns (ScheduleCallResponse);
+    //Creates a function on the LeafLeader (e.g. writes it to the cache, which is currently not purged)
+    rpc CreateFunction(CreateFunctionRequest) returns (CreateFunctionResponse);
+}
+

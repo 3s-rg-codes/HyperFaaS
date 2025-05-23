@@ -14,7 +14,7 @@ const template = fs.readFileSync('./template/k6-script-template.js', 'utf8');
 
 const script = template
     .replace('__SCENARIOS__', JSON.stringify(scenarios, null, 2))
-    .replace('__PROTO_FILE__', config.metaData.protoFile)
+    .replace('__PROTO_FILE__', JSON.stringify(config.metaData.protoFiles))
     .replace('__PAYLOADS__', JSON.stringify(payloads, null, 2))
     .replace('__FUNCTION_NAME__', config.function.name)
     .replace('__SERVICE_FN__', config.function.serviceFn);
