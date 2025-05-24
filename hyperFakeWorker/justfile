@@ -1,0 +1,13 @@
+set dotenv-load
+set export
+set windows-shell := ["powershell"]
+set shell := ["bash", "-c"]
+
+default:
+  @just --list --unsorted
+
+proto:
+    @echo "Generating proto files"
+    uv run python -m grpc_tools.protoc -I../proto "../proto/common/common.proto" --python_out=./worker/grpc --pyi_out=./worker/grpc --grpc_python_out=./worker/grpc
+    uv run python -m grpc_tools.protoc -I../proto "../proto/controller/controller.proto" --python_out=./worker/grpc --pyi_out=./worker/grpc --grpc_python_out=./worker/grpc
+    uv run python -m grpc_tools.protoc -I../proto "../proto/function/function.proto" --python_out=./worker/grpc --pyi_out=./worker/grpc --grpc_python_out=./worker/grpc
