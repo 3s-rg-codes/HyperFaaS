@@ -1,0 +1,40 @@
+{
+  "name": "PolynomialRegression",
+  "config": {
+    "type": "regression",
+    "hyperparameters": {
+      "degree": 2,
+      "fit_intercept": true
+    }
+  },
+  "is_trained": true,
+  "feature_names": [
+    "hyperfaas-thumbnailer-json:latest_active_calls",
+    "hyperfaas-bfs-json:latest_active_calls",
+    "hyperfaas-echo:latest_active_calls"
+  ],
+  "target_names": [
+    "cpu_usage",
+    "memory_usage"
+  ],
+  "training_history": {
+    "train_mse": [
+      642.6441731825108
+    ],
+    "train_mae": [
+      15.162037665069354
+    ],
+    "train_r2": [
+      0.18646678887692336
+    ],
+    "val_mse": [
+      718.2993486306915
+    ],
+    "val_mae": [
+      16.35155297073422
+    ],
+    "val_r2": [
+      0.07960456450017278
+    ]
+  }
+}
