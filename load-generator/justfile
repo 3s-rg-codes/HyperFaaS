@@ -1,27 +1,16 @@
 default:
 	@just --list
 
-build:
-	node build.js
-
-run:
-	k6 run generated/k6-script.js
-
-clean: 
-	rm -rf generated
-
-run-with-output:
-	k6 run  --out csv=test_results.csv script.js
 
 export:
 	uv run ../benchmarks/import.py --csv test_results.csv --db ../benchmarks/metrics.db
 
 # run a seeded load generation with parameters
-run-seeded:
+run seed="12345":
 	k6 run \
 	--quiet \
 	--out csv=test_results.csv \
-	-e WORKLOAD_SEED=21020 \
+	-e WORKLOAD_SEED={{seed}} \
 	-e PERSIST_GENERATION=true \
 	-e TOTAL_TEST_DURATION="15m" \
 	-e MIN_PREALLOCATED_VUS=10 \

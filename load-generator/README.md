@@ -1,39 +1,62 @@
-# k6 Load Generator Configuration Guide
+# Load Generator
 
-Thanks to ChatGPT for helping me with this README.
+This directory contains a k6-based load generator for testing the HyperFaaS platform. It allows for dynamic scenario generation and supports multiple, configurable serverless functions.
 
-## JSON Configuration for Function Parameters
-The JSON configuration in `config/config.json` defines the function that will be executed in the k6 script, its associated service, the parameters that will be passed to it, and some metadata. 
-Here's the base format:
+## How to Use
 
-```json
-{
-    "metaData": {
-        "paramFile": "yourCSVFile.csv",
-        "protoFile": "yourProtoFile.proto",
-    },
-    "function": {
-        "name": "MyFunction",
-        "serviceFn": "test.MyService/MyFunction",
-        "params": [
-            "param1",
-            "param2",
-            "..."
-        ]
-    }
-}
-```
+1.  **Define Environment Variables**: The load generator is configured using environment variables. These control global test parameters (e.g., `TOTAL_TEST_DURATION`, `WORKLOAD_SEED`) and function-specific parameters (e.g., `BFS_MIN_SCENARIOS`, `ECHO_CONSTANT_RATE_MAX`). Refer to `script.js` for a full list of global configurations and individual function files (e.g., `functions/bfs.js`) for function-specific configurations.
+2.  **Run the script**: Use the provided `justfile` for common operations.
+    *   `just run`: Executes a test run with a predefined set of environment variables (see `justfile` for details). This command also persists the generated scenario configuration and extracted function IDs to `generated_scenarios.json`.
+    *   `just export`: Imports the `test_results.csv` into a SQLite database (`../benchmarks/metrics.db`) using `../benchmarks/import.py`.
 
-## Defining Test Scenarios With Custom Values
+## Adding a New Function
 
-The next part of the configuration involves defining the test scenarios in `config/config.csv`. This is where you set the values for `seconds`, `vus` (Virtual Users), `rps` (Requests Per Second), and your function parameters. Here's the format:
-```csv
-seconds,vus,rps,param1,param2,...
-1,50,10,x,y
-2,30,20,z,a
-3,70,30,b,c
-```
+To add a new function to the load generator:
 
-## Run
+1.  **Create a Function File**:
+    *   In the `functions/` directory, create a new JavaScript file (e.g., `newFunction.js`).
+    *   This file must export three main components:
+        *   `newFunctionConfig`: An object containing the default configuration for this function. These configurations are typically read from environment variables prefixed with the function's name (e.g., `NEWFUNCTION_MIN_SCENARIOS`).
+        *   `newFunctionSetup`: An asynchronous function that takes the gRPC `client` as an argument. This function is responsible for creating the serverless function in HyperFaaS (e.g., using `client.invoke('leaf.Leaf/CreateFunction', ...)`). It should return any data needed by the execution function (e.g., the function ID). The returned value will be passed to the `newFunctionFunction`. **VERY Important**: Log the function ID to `console.log` in the format `newFunctionNameFunctionId= <id>` to allow the `run-seeded` command to extract it.
+        *   `newFunctionFunction`: The actual k6 executor function that will be called to invoke your serverless function. It takes `setupData` as an argument, which contains the results from all setup functions. It should connect the gRPC client, prepare input data, call `client.invoke('leaf.Leaf/ScheduleCall', ...)`, record any relevant metrics using the `k6/metrics` module (see `metrics.js`) and close the gRPC client.
 
-To run your configured test, use `just`.
+2.  **Register in `script.js`**:
+    *   Import the config, setup, and executor functions from your new file at the top of `script.js`.
+    *   Add your function to the `functionsToProcess` array. This object should include:
+        *   `name`: A string identifier for your function (e.g., `'newFunction'`).
+        *   `setup`: The setup function you imported (e.g., `newFunctionSetup`).
+        *   `execFunction`: The executor function you imported (e.g., `newFunctionFunction`).
+        *   `config`: The configuration object you imported (e.g., `newFunctionConfig`).
+        *   `exec`: A string matching the name of the exported executor function (e.g., `'newFunctionFunction'`).
+        *   `configPrefix`: A string prefix used for environment variable overrides (e.g., `'NEWFUNCTION'`).
+        *   `imageTag`: The Docker image tag for the new function. Make sure to build it first :).
+    *   Explicitly export your new executor function (e.g., `export { newFunctionFunction };`).
+
+3.  **Update `justfile` (Optional but Recommended for `run`):**
+    *   If you want the `run` command to automatically extract and save the function ID for your new function, you'll need to modify the `jq` command. Add a new argument to `jq` similar to the existing ones, for example:
+        `--arg newFunc "$(grep -o "newFunctionNameFunctionId= [^\"]*" stderr_output.txt | sed 's/functionId= //' | awk '{print $2}')"`
+    *   Then, update the `jq` expression to include this new function ID in the metadata:
+        `.metadata += {newFunctionId: $newFunc}`
+    *   Add default environment variables for your new function to the `run` command in the `justfile` for easier testing.
+
+## Generated Outputs
+
+*   **`generated_scenarios.json`**: (Generated by `just run`)
+    *   Contains the exact scenarios that were generated and run by k6.
+    *   Includes a `metadata` section with:
+        *   `seed`: The workload seed used for the run.
+        *   `totalDuration`: The total duration of the test.
+        *   `generatedAt`: Timestamp of when the scenarios were generated.
+        *   `configuration`: The full configuration object used for the run (global and function-specific).
+        *   `bfsFunctionId`, `echoFunctionId`, `thumbnailerFunctionId` (and IDs for any new functions if `justfile` is updated): The IDs of the functions as created during the `setup` phase.
+    *   Includes a `scenarios` section detailing the generated execution plan.
+*   **`test_results.csv`**: (Generated by `just run`)
+    *   Raw CSV output from k6 containing detailed metrics for each request.
+    *   This file can be imported into a database for analysis using `just export`.
+*   **`stderr_output.txt`**: (Temporary file during `just run`)
+    *   Captures standard error output during the k6 run, primarily used to extract function IDs. It is deleted after successful extraction.
+*   **`metrics.js`**: This file defines custom k6 metrics:
+    *   `callQueuedTimestampKey`: Timestamp when a function call was queued by the worker.
+    *   `gotResponseTimestampKey`: Timestamp when the callerServer of the worker received the response for a function call.
+    *   `instanceIdKey`: Captures the ID of the instance that executed the function. Its not ideal but there is no other way to easily get the instance ID for each request into the output.
+    These metrics are added to requests via gRPC trailers and are useful for detailed performance analysis.
