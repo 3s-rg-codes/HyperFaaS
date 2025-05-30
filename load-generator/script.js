@@ -33,7 +33,7 @@ const functionsToProcess = [
     config: bfsConfig,
     exec: 'bfsFunction',
     configPrefix: 'BFS',
-    imageTag: config.BFS_IMAGE_TAG
+    imageTag: bfsConfig.BFS_IMAGE_TAG
   },
   {
     name: 'echo',
@@ -42,7 +42,7 @@ const functionsToProcess = [
     config: echoConfig,
     exec: 'echoFunction',
     configPrefix: 'ECHO',
-    imageTag: config.ECHO_IMAGE_TAG
+    imageTag: echoConfig.ECHO_IMAGE_TAG
   },
   {
     name: 'thumbnailer',
@@ -51,7 +51,7 @@ const functionsToProcess = [
     config: thumbnailerConfig,
     exec: 'thumbnailerFunction',
     configPrefix: 'THUMBNAILER',
-    imageTag: config.THUMBNAILER_IMAGE_TAG
+    imageTag: thumbnailerConfig.THUMBNAILER_IMAGE_TAG
   }
 ];
 

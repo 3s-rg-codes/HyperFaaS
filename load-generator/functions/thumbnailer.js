@@ -4,7 +4,11 @@ import {
   instanceIdMetric,
   callQueuedTimestampKey,
   gotResponseTimestampKey,
-  instanceIdKey
+  instanceIdKey,
+  leafGotRequestTimestamp,
+  leafScheduledCallTimestamp,
+  leafGotRequestTimestampKey,
+  leafScheduledCallTimestampKey
 } from '../metrics.js';
 import { getRandomInt, isoToMs } from '../utils.js'
 
@@ -82,6 +86,7 @@ export function thumbnailerFunction(setupData) {
   callQueuedTimestamp.add(isoToMs(response.trailers[callQueuedTimestampKey]));
   gotResponseTimestamp.add(isoToMs(response.trailers[gotResponseTimestampKey]));
   instanceIdMetric.add(0, { instanceId: response.trailers[instanceIdKey][0] });
-
+  leafGotRequestTimestamp.add(isoToMs(response.trailers[leafGotRequestTimestampKey]));
+  leafScheduledCallTimestamp.add(isoToMs(response.trailers[leafScheduledCallTimestampKey]));
   client.close();
 }

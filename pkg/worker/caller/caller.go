@@ -49,7 +49,7 @@ func (s *CallerServer) Ready(ctx context.Context, payload *pb.Payload) (*pb.Call
 	// Pass payload to the functionResponses channel IF it exists
 	if !payload.FirstExecution {
 		s.logger.Debug("Passing response", "response", payload.Data, "instance ID", payload.InstanceId)
-		gotResponseTimestamp := time.Now().UTC().Truncate(time.Nanosecond)
+		gotResponseTimestamp := time.Now()
 
 		s.QueueInstanceResponse(payload.InstanceId.Id, Request{Context: context.WithValue(ctx, "gotResponseTimestamp", gotResponseTimestamp), Payload: payload.Data})
 	} else {

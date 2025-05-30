@@ -5,9 +5,16 @@ export function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// Function to convert ISO date strings to milliseconds
-export function isoToMs(isoString) {
-  return new Date(isoString).getTime();
+// Function to convert Unix nanosecond timestamp strings to nanoseconds
+// Only supports nanosecond Unix timestamps from Go's UnixNano()
+export function unixNanoToNs(timestampString) {
+  // Parse the nanosecond timestamp string and return as number
+  return parseInt(timestampString);
+}
+
+// Legacy alias for backward compatibility - but now preserves nanosecond precision
+export function isoToMs(timestampString) {
+  return unixNanoToNs(timestampString);
 }
 
 // Function to convert duration strings like "60s", "1m30s", "2h15m" to seconds

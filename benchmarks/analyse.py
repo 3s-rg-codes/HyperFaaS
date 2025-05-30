@@ -4,6 +4,7 @@ from tabulate import tabulate
 import numpy as np
 import argparse
 import sys
+from plot import *
 
 metrics = None
 
@@ -192,12 +193,17 @@ def main():
     try:
         print_request_latency(args.db_path)
         print_data_transfer(args.db_path)
-        print_cold_start_metrics(args.db_path)
+        #print_cold_start_metrics(args.db_path)
+        plot_requests_processed_per_second(metrics)
+        plot_throughput_vs_latency_over_time(metrics)
+        plot_decomposed_latency(metrics)
     except sqlite3.OperationalError as e:
         print(f"Error accessing database: {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"Error during analysis: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         sys.exit(1)
 
 
