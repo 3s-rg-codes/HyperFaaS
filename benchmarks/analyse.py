@@ -1,9 +1,9 @@
 import sqlite3
 import pandas as pd
 from tabulate import tabulate
-import numpy as np
 import argparse
 import sys
+import json
 from plot import *
 
 metrics = None
@@ -62,9 +62,37 @@ def get_metrics(db_path: str) -> pd.DataFrame:
     
     df = pd.read_sql_query(query, conn)
     conn.close()
+    df['callqueuedtimestamp'] = pd.to_datetime(df['callqueuedtimestamp'], unit='ns')
+    df['leafgotrequesttimestamp'] = pd.to_datetime(df['leafgotrequesttimestamp'], unit='ns')
+    df['leafscheduledcalltimestamp'] = pd.to_datetime(df['leafscheduledcalltimestamp'], unit='ns')
+    df['gotresponsetimestamp'] = pd.to_datetime(df['gotresponsetimestamp'], unit='ns')
+    
+    # Manual workaround for pandas datetime conversion bug with NaN values
+    #https://github.com/pandas-dev/pandas/pull/61022
+    #https://github.com/pandas-dev/pandas/issues/58419
+    # Convert timeout column
+    timeout_series = df['timeout']
+    timeout_valid_mask = timeout_series.notna()
+    timeout_result = pd.Series(index=timeout_series.index, dtype='datetime64[ns]')
+    if timeout_valid_mask.any():
+        timeout_result.loc[timeout_valid_mask] = pd.to_datetime(timeout_series[timeout_valid_mask], unit='ms')
+    df['timeout'] = timeout_result
+    
+    # Convert error column  
+    error_series = df['error']
+    error_valid_mask = error_series.notna()
+    error_result = pd.Series(index=error_series.index, dtype='datetime64[ns]')
+    if error_valid_mask.any():
+        error_result.loc[error_valid_mask] = pd.to_datetime(error_series[error_valid_mask], unit='ms')
+    df['error'] = error_result
+    
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+    # Add latency
+    df['scheduling_latency_ms'] = (df['leafscheduledcalltimestamp'] - df['leafgotrequesttimestamp']).dt.total_seconds() * 1000
+    df['leaf_to_worker_latency_ms'] = (df['callqueuedtimestamp'] - df['leafscheduledcalltimestamp']).dt.total_seconds() * 1000
+    df['function_processing_latency_ms'] = (df['gotresponsetimestamp'] - df['callqueuedtimestamp']).dt.total_seconds() * 1000
     metrics = df
     return df
-    
     
 def get_function_summary(db_path: str) -> pd.DataFrame:
     """Get summary statistics for each function."""
@@ -87,11 +115,29 @@ def get_function_summary(db_path: str) -> pd.DataFrame:
 def print_request_latency(db_path: str):
     """ print request latency for each function and other metrics"""
     metrics = get_metrics(db_path)
+    print("Total requests: \n")
+    print(metrics['request_id'].nunique())
+    print("\n")
+    
+    print("Total requests served successfully: \n")
+    print(metrics['grpc_req_duration'].count())
+    print("\n")
+    
     print("Request Latency by Image Tag: \n")
     request_latency = aggregate_and_round(metrics.groupby(['image_tag']), 'grpc_req_duration')
-
     print(request_latency)
     print("\n")
+
+    print("Total timeout requests by image tag: \n")
+    print(metrics.groupby(['image_tag'])['timeout'].count())
+    print("Total timeouts:")
+    print(metrics['timeout'].count())
+
+    print("Total errors by image tag: \n")
+    print("Note: these errors are LeafNode/Worker errors, not function errors")
+    print(metrics.groupby(['image_tag'])['error'].count())
+    print("Total errors:")
+    print(metrics['error'].count())
 
     print("Request Latency by Scenario and Image Tag: \n")
     # Filter for grpc_req_duration metrics and calculate latency percentiles
@@ -155,14 +201,10 @@ def print_cold_start_metrics(db_path: str):
     print("\n Total Request latency for those cold starts: \n")
     print(total_request_latency)
 
-
-    
-
 def print_cold_start_times(db_path: str):
     df = get_cold_start_times(db_path)
     print("\nCold Start Times by Instance:")
     print(tabulate(df, headers='keys', tablefmt='psql', showindex=False))
-
 
 def print_function_summary(db_path: str):
     df = get_function_summary(db_path)
@@ -181,22 +223,125 @@ def aggregate_and_round(df: pd.DataFrame,col: str) -> pd.DataFrame:
     r.columns =  ['count','mean', 'min', 'max', 'p50', 'p75', 'p95', 'p99']
     return r
 
-
+# Calculates RPS per image tag for generated scenarios.
+# Assumes a single stage per scenario
+def analyze_k6_scenarios(scenarios_path: str) -> pd.DataFrame:
+    """Parse k6 scenarios JSON and create a timeline dataframe of expected RPS."""
+    with open(scenarios_path, 'r') as f:
+        data = json.load(f)
+    
+    scenarios = data['scenarios']
+    
+    total_duration_str = data['metadata']['totalDuration']
+    if total_duration_str.endswith('m'):
+        total_duration_seconds = int(total_duration_str.rstrip('m')) * 60
+    elif total_duration_str.endswith('s'):
+        total_duration_seconds = int(total_duration_str.rstrip('s'))
+    else:
+        raise ValueError(f"Invalid total duration: {total_duration_str}")
+    
+    timeline_data = []
+    
+    # we need to calculate the expected rps for each second
+    for second in range(total_duration_seconds):
+        rps_by_image = {}
+        
+        for scenario_name, scenario in scenarios.items():
+            image_tag = scenario['tags']['image_tag']
+            
+            start_time_str = scenario['startTime']
+            start_time = int(start_time_str.rstrip('s'))
+            
+            #  duration
+            if scenario['executor'] == 'constant-arrival-rate':
+                duration = int(scenario['duration'].rstrip('s'))
+                end_time = start_time + duration
+                
+                # Check if this second falls within the scenario duration
+                if start_time <= second < end_time:
+                    rate = scenario['rate']
+                    if image_tag not in rps_by_image:
+                        rps_by_image[image_tag] = 0
+                    rps_by_image[image_tag] += rate
+                    
+            elif scenario['executor'] == 'ramping-arrival-rate':
+                # we need to calculate the rate for this specific second
+                start_rate = scenario['startRate']
+                stage = scenario['stages'][0]  # Important: we assume a single stage !
+                target_rate = stage['target']
+                stage_duration = int(stage['duration'].rstrip('s'))
+                end_time = start_time + stage_duration
+                
+                # Check if this second falls within the scenario duration
+                if start_time <= second < end_time:
+                    progress = (second - start_time) / stage_duration
+                    current_rate = start_rate + (target_rate - start_rate) * progress
+                    
+                    if image_tag not in rps_by_image:
+                        rps_by_image[image_tag] = 0
+                    rps_by_image[image_tag] += current_rate
+        
+        # Add entries for each image tag at this second
+        for image_tag, rps in rps_by_image.items():
+            timeline_data.append({
+                'second': second,
+                'image_tag': image_tag,
+                'expected_rps': rps
+            })
+        
+        # If no scenarios are active for any image at this second, add zero entries
+        if not rps_by_image:
+            # Get all unique image tags from scenarios
+            all_image_tags = set(scenario['tags']['image_tag'] for scenario in scenarios.values())
+            for image_tag in all_image_tags:
+                timeline_data.append({
+                    'second': second,
+                    'image_tag': image_tag,
+                    'expected_rps': 0
+                })
+    
+    df = pd.DataFrame(timeline_data)
+    
+    # Fill missing combinations with 0
+    if not df.empty:
+        all_seconds = range(total_duration_seconds)
+        all_image_tags = df['image_tag'].unique()
+        
+        # Create complete index
+        complete_index = pd.MultiIndex.from_product([all_seconds, all_image_tags], 
+                                                   names=['second', 'image_tag'])
+        complete_df = pd.DataFrame(index=complete_index).reset_index()
+        
+        # Merge with actual data
+        df = complete_df.merge(df, on=['second', 'image_tag'], how='left')
+        df['expected_rps'] = df['expected_rps'].fillna(0)
+    
+    return df
 
 def main():
     parser = argparse.ArgumentParser(
         description='Analyze function metrics from SQLite database')
     parser.add_argument('--db-path', default='metrics.db',
                         help='Path to SQLite database')
+    parser.add_argument('--scenarios-path', 
+                        help='Path to k6 scenarios JSON file (optional)')
+    parser.add_argument('--plot', help='Plot the metrics', default=False)
     args = parser.parse_args()
 
     try:
         print_request_latency(args.db_path)
         print_data_transfer(args.db_path)
         #print_cold_start_metrics(args.db_path)
-        plot_requests_processed_per_second(metrics)
-        plot_throughput_vs_latency_over_time(metrics)
-        plot_decomposed_latency(metrics)
+        if args.plot:
+            plot_throughput_leaf_node(metrics)
+            #plot_requests_processed_per_second(metrics)
+            #plot_throughput_vs_latency_over_time(metrics)
+            plot_decomposed_latency(metrics)
+        
+            if args.scenarios_path:
+                    scenarios_df = analyze_k6_scenarios(args.scenarios_path)
+                    plot_expected_rps(scenarios_df, args.scenarios_path)
+            
     except sqlite3.OperationalError as e:
         print(f"Error accessing database: {e}", file=sys.stderr)
         sys.exit(1)

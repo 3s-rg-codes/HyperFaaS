@@ -1,6 +1,5 @@
 import grpc from 'k6/net/grpc';
 import { randomSeed } from 'k6';
-import { Trend } from 'k6/metrics';
 import { bfsConfig, bfsSetup, bfsFunction } from './functions/bfs.js';
 import { echoConfig, echoSetup, echoFunction } from './functions/echo.js';
 import { thumbnailerConfig, thumbnailerSetup, thumbnailerFunction } from './functions/thumbnailer.js';
@@ -17,6 +16,7 @@ const config = {
   maxMaxVus: parseInt(__ENV.MAX_MAX_VUS) || 100,
   rampingStartRateMin: parseInt(__ENV.RAMPING_START_RATE_MIN) || 1,
   rampingStartRateMax: parseInt(__ENV.RAMPING_START_RATE_MAX) || 5,
+  functionTimeoutSeconds: __ENV.FUNCTION_TIMEOUT_SECONDS + "s",
 }
 
 // Load executor functions for each function
@@ -74,6 +74,7 @@ export function setup() {
 
   const setupResults = {
     client: client,
+    timeout: config.functionTimeoutSeconds
   };
 
   for (const func of functionsToProcess) {
@@ -168,9 +169,7 @@ const persistenceData = {
     totalDuration: config.totalTestDuration,
     generatedAt: new Date().toISOString(),
     configuration: config,
-    /* bfsFunctionId: "bfsFunctionId",
-    echoFunctionId: echoFunctionId,
-    thumbnailerFunctionId: thumbnailerFunctionId */
+    functionTimeoutSeconds: config.functionTimeoutSeconds
   },
   scenarios: generatedScenarios
 };

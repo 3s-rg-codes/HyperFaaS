@@ -11,7 +11,7 @@ def create_tables(conn):
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS metrics (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp INTEGER,
+        timestamp INTEGER, -- timestamp of the logging of the request
         scenario TEXT,
         service TEXT,
         image_tag TEXT,
@@ -25,6 +25,8 @@ def create_tables(conn):
         functionprocessingtime REAL,
         leafgotrequesttimestamp REAL,
         leafscheduledcalltimestamp REAL,
+        timeout REAL, -- timestamp of the timeout of the request
+        error REAL, -- timestamp of the error of the request
         
         -- Data metrics
         data_sent REAL,
@@ -168,7 +170,10 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
                 requests[request_key]['leafgotrequesttimestamp'] = row['metric_value']
             elif row['metric_name'] == 'leafscheduledcalltimestamp':
                 requests[request_key]['leafscheduledcalltimestamp'] = row['metric_value']
-    
+            elif row['metric_name'] == 'timeout':
+                requests[request_key]['timeout'] = row['metric_value']
+            elif row['metric_name'] == 'error':
+                requests[request_key]['error'] = row['metric_value']
     # insert collected requests into the database
     for request_key, data in requests.items():
             
@@ -178,8 +183,8 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
             grpc_req_duration, callqueuedtimestamp, gotresponsetimestamp, functionprocessingtime,
             leafgotrequesttimestamp, leafscheduledcalltimestamp,
             data_sent, data_received, iteration_duration,
-            proto, subproto, group_name, extra_tags
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            proto, subproto, group_name, extra_tags, timeout, error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('timestamp'),
             data.get('scenario'),
@@ -200,6 +205,8 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
             data.get('subproto'),
             data.get('group_name'),
             data.get('extra_tags'),
+            data.get('timeout'),
+            data.get('error'),
         ))
     
     conn.commit()

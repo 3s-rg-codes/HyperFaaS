@@ -8,10 +8,11 @@ import {
   leafGotRequestTimestamp,
   leafScheduledCallTimestamp,
   leafGotRequestTimestampKey,
-  leafScheduledCallTimestampKey
+  leafScheduledCallTimestampKey,
+  timeout,
+  error
 } from '../metrics.js';
 import { getRandomInt, isoToMs } from '../utils.js'
-
 import grpc from 'k6/net/grpc';
 import { check } from 'k6';
 import { randomBytes } from 'k6/crypto';
@@ -62,10 +63,18 @@ export function echoFunction(setupData) {
   const data = encoding.b64encode(randomBytes(getRandomInt(512, 2048)));
   const response = client.invoke('leaf.Leaf/ScheduleCall', {
     functionID: { id: echoFunctionId },
-    data: data
-  });
+    data: data,
+  },
+  {
+    timeout: setupData.timeout
+  }
+);
+  if (response.status === grpc.StatusDeadlineExceeded) {
+    timeout.add(Date.now());
+    return;
+  }
   if (response.error) {
-    console.log('Error scheduling Echo function:', response.error);
+    error.add(Date.now());
     return;
   }
   callQueuedTimestamp.add(isoToMs(response.trailers[callQueuedTimestampKey]));
