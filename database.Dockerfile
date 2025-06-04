@@ -8,7 +8,7 @@ WORKDIR /app
 COPY . .
 COPY cmd/database/main.go .
 
-RUN go mod tidy && go mod download
+RUN go mod download
 
 RUN GOOS=linux go build -o main main.go
 

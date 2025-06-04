@@ -2,6 +2,7 @@ package scheduling
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math/rand"
 	"time"
@@ -11,105 +12,38 @@ import (
 
 type Scheduler interface {
 	// Schedule returns a worker and instance ID for a function where it can be scheduled.
-	Schedule(ctx context.Context, functionID state.FunctionID) (state.WorkerID, state.InstanceID, error)
+	// TODO find a cleaner way to pass maxConcurrency or other variables. maybe another struct?
+	// the only problem i have with that is that we already have the Function struct in state.go
+	Schedule(ctx context.Context, functionID state.FunctionID, maxConcurrency int32) (Decision, error)
 	UpdateWorkerState(workerID state.WorkerID, newState state.WorkerState) error
-	UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error
+	ReduceInstanceConcurrency(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID)
 	GetInstanceCount(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState) (int, error)
-	CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error
+	CreateFunction(workerID state.WorkerID, functionID state.FunctionID, maxConcurrency int32) error
+	AddInstance(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) error
+	UpdateStartingInstancesCounter(workerID state.WorkerID, functionID state.FunctionID, delta int32) error
 }
+type Decision struct {
+	WorkerID   state.WorkerID
+	InstanceID state.InstanceID
+	Decision   SchedulingDecision
+}
+type SchedulingDecision int
+
+const (
+	Schedule SchedulingDecision = iota
+	StartInstance
+	TooManyRequests
+	TooManyStartingInstances
+)
 
 // New creates a new scheduler based on the strategy
 func New(strategy string, workerState *state.Workers, workerIDs []state.WorkerID, logger *slog.Logger) Scheduler {
 	switch strategy {
-	case "map":
-		return NewSyncMapScheduler(workerIDs, logger)
 	case "mru":
 		return NewMRUScheduler(workerState, workerIDs, logger)
 	default:
 		return nil
 	}
-}
-
-// syncMapScheduler uses a nested sync.Map to store the worker state
-type syncMapScheduler struct {
-	workers   state.WorkersSyncMap
-	workerIDs []state.WorkerID
-	logger    *slog.Logger
-}
-
-func NewSyncMapScheduler(workerIDs []state.WorkerID, logger *slog.Logger) *syncMapScheduler {
-	//TODO find a way to pass in a starting state...
-	workers := state.NewWorkersSyncMap(logger)
-	for _, workerID := range workerIDs {
-		workers.CreateWorker(workerID)
-	}
-	r := NewReconciler(workerIDs, workers, logger)
-	go r.Run(context.Background())
-
-	go func() {
-		for {
-			time.Sleep(10 * time.Second)
-			workers.DebugPrint()
-		}
-	}()
-	return &syncMapScheduler{workers: *workers, workerIDs: workerIDs, logger: logger}
-}
-
-// Schedule finds an idle instance in a worker for a function.
-// If one is found, state is updated to running internally.
-func (s *syncMapScheduler) Schedule(ctx context.Context, functionID state.FunctionID) (state.WorkerID, state.InstanceID, error) {
-	workerID, instanceID, err := s.workers.FindIdleInstance(functionID)
-	if err != nil {
-		// TODO: pick worker with lowest load
-		workerID = s.workerIDs[rand.Intn(len(s.workerIDs))]
-
-		switch e := err.(type) {
-		case *state.FunctionNotAssignedError:
-			s.logger.Info("Function not assigned to any worker, creating on random worker", "functionID", functionID, "workerID", workerID)
-			s.workers.AssignFunction(workerID, functionID) //Before s.CreateFunction(workerID, functionID) where we only call s.workers.CreateFunction (which is now AssignFunction) cause we had CreateFunction three times
-		case *state.NoIdleInstanceError:
-			s.logger.Info("No idle instance found, scheduling to random worker", "functionID", functionID, "workerID", workerID)
-		default:
-			s.logger.Error("Unexpected error type", "error", e)
-		}
-		return workerID, "", nil
-	}
-	s.logger.Debug("Found idle instance", "functionID", functionID, "workerID", workerID, "instanceID", instanceID)
-	return workerID, instanceID, nil
-}
-
-func (s *syncMapScheduler) UpdateWorkerState(workerID state.WorkerID, newState state.WorkerState) error {
-	switch newState {
-	case state.WorkerStateUp:
-		s.workers.CreateWorker(workerID)
-	case state.WorkerStateDown:
-		s.workers.DeleteWorker(workerID)
-	}
-	return nil
-}
-
-func (s *syncMapScheduler) UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error {
-	switch newState {
-	//TODO handle errors
-	case state.InstanceStateRunning:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID})
-	case state.InstanceStateIdle:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
-	case state.InstanceStateStarting:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateStarting, state.Instance{InstanceID: instanceID, Created: time.Now()})
-	case state.InstanceStateDown:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
-	}
-	return nil
-}
-
-func (s *syncMapScheduler) CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error {
-	s.workers.AssignFunction(workerID, functionID)
-	return nil
-}
-
-func (s *syncMapScheduler) GetInstanceCount(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState) (int, error) {
-	return s.workers.CountInstancesInState(workerID, functionID, instanceState)
 }
 
 type mruScheduler struct {
@@ -136,9 +70,13 @@ func NewMRUScheduler(workers *state.Workers, workerIDs []state.WorkerID, logger 
 
 }
 
-// Schedule returns a worker and the most recently used instance ID for a function where it can be scheduled.
-func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID) (state.WorkerID, state.InstanceID, error) {
-	workerID, instanceID, err := s.workers.FindIdleInstance(functionID)
+// Schedule returns a decision based on the current state of the workers. It can be:
+// Schedule: a worker and instance ID for a function where it can be scheduled.
+// StartInstance: a worker and instance ID for a function where a new instance should be started.
+// TooManyRequests: the function has too many requests.
+// TooManyStartingInstances: the function has too many starting instances.
+func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID, maxConcurrency int32) (Decision, error) {
+	workerID, instanceID, err := s.workers.FindMRUInstance(functionID)
 	if err != nil {
 		// TODO: pick worker with lowest load
 		workerID = s.workerIDs[rand.Intn(len(s.workerIDs))]
@@ -146,18 +84,24 @@ func (s *mruScheduler) Schedule(ctx context.Context, functionID state.FunctionID
 		switch e := err.(type) {
 		case *state.FunctionNotAssignedError:
 			s.logger.Info("Function not registered, creating on random worker", "functionID", functionID, "workerID", workerID)
-			s.workers.AssignFunction(workerID, functionID)
+			// TODO: get max concurrency from database
+			// The check here is because we could have a race condition where many req arrive at once, and they all try to create the function.
+			err = s.CreateFunction(workerID, functionID, maxConcurrency)
+			if errors.Is(err, &state.FunctionAlreadyAssignedError{}) {
+				// WARNING this could go wrong quickly xD
+				return s.Schedule(ctx, functionID, maxConcurrency)
+			}
 		case *state.NoIdleInstanceError:
-			s.logger.Info("No idle instance found, scheduling to random worker", "functionID", functionID, "workerID", workerID)
+			s.logger.Info("No idle instance found", "functionID", functionID, "workerID", workerID)
+		case *state.TooManyStartingInstancesError:
+			return Decision{WorkerID: workerID, InstanceID: "", Decision: TooManyStartingInstances}, nil
 		default:
 			s.logger.Error("Unexpected error type", "error", e)
 		}
-		return workerID, "", nil
+		return Decision{WorkerID: workerID, InstanceID: "", Decision: StartInstance}, nil
 	}
 	s.logger.Debug("Found idle instance", "functionID", functionID, "workerID", workerID, "instanceID", instanceID)
-	// UpdateInstance to running
-	s.UpdateInstanceState(workerID, functionID, instanceID, state.InstanceStateRunning)
-	return workerID, instanceID, nil
+	return Decision{WorkerID: workerID, InstanceID: instanceID, Decision: Schedule}, nil
 }
 
 func (s *mruScheduler) UpdateWorkerState(workerID state.WorkerID, newState state.WorkerState) error {
@@ -170,25 +114,23 @@ func (s *mruScheduler) UpdateWorkerState(workerID state.WorkerID, newState state
 	return nil
 }
 
-func (s *mruScheduler) UpdateInstanceState(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, newState state.InstanceState) error {
-	switch newState {
-	case state.InstanceStateRunning:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateRunning, state.Instance{InstanceID: instanceID})
-	case state.InstanceStateIdle:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateIdle, state.Instance{InstanceID: instanceID, LastWorked: time.Now()})
-	case state.InstanceStateStarting:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateStarting, state.Instance{InstanceID: instanceID, Created: time.Now()})
-	case state.InstanceStateDown:
-		s.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
-	}
-	return nil
+func (s *mruScheduler) ReduceInstanceConcurrency(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) {
+	s.workers.ReduceInstanceConcurrency(workerID, functionID, instanceID)
 }
 
-func (s *mruScheduler) CreateFunction(workerID state.WorkerID, functionID state.FunctionID) error {
-	s.workers.AssignFunction(workerID, functionID)
-	return nil
+func (s *mruScheduler) CreateFunction(workerID state.WorkerID, functionID state.FunctionID, maxConcurrency int32) error {
+	return s.workers.AssignFunction(workerID, functionID, maxConcurrency)
 }
 
 func (s *mruScheduler) GetInstanceCount(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState) (int, error) {
 	return s.workers.CountInstancesInState(workerID, functionID, instanceState)
+}
+
+func (s *mruScheduler) AddInstance(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) error {
+	return s.workers.AddInstance(workerID, functionID, instanceID)
+}
+
+func (s *mruScheduler) UpdateStartingInstancesCounter(workerID state.WorkerID, functionID state.FunctionID, delta int32) error {
+	s.workers.UpdateStartingInstancesCounter(workerID, functionID, delta)
+	return nil
 }

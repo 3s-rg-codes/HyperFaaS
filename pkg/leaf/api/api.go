@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -28,10 +29,13 @@ type LeafServer struct {
 	database                        kv.FunctionMetadataStore
 	functionIdCache                 map[string]kv.FunctionData
 	poolManager                     PoolManager
-	coordinator                     *InstanceCoordinator
 	maxStartingInstancesPerFunction int
 	startingInstanceWaitTimeout     time.Duration
 	maxRunningInstancesPerFunction  int
+	logger                          *slog.Logger
+	panicBackoff                    time.Duration
+	panicBackoffIncrease            time.Duration
+	panicMaxBackoff                 time.Duration
 }
 
 // CreateFunction should only create the function, e.g. save its Config and image tag in local cache
@@ -53,83 +57,11 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 
 }
 
-/* func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
-
-	//Check if the functionID is cached, if not get it from database
-	if _, ok := s.functionIdCache[req.FunctionID.Id]; !ok {
-		ImageTag, Config, err := s.database.Get(req.FunctionID)
-		if err != nil {
-			if errors.As(err, &kv.NoSuchKeyError{}) {
-				return nil, status.Errorf(codes.NotFound, "failed to get function from database: %s", req.FunctionID.Id)
-			}
-			return nil, fmt.Errorf("failed to get function from database: %w", err)
-		}
-
-		s.functionIdCache[req.FunctionID.Id] = kv.FunctionData{
-			Config:   Config,
-			ImageTag: ImageTag,
-		}
-	}
-
-	functionId := state.FunctionID(req.FunctionID.Id)
-
-	workerID, instanceID, err := s.scheduler.Schedule(ctx, functionId)
-	if err != nil {
-		return nil, err
-	}
-
-	if instanceID == "" {
-		// There is no idle instance available
-
-		// Check if the worker has already to many instances starting or running
-		backpressured, err := s.IsFunctionBackpressured(ctx, workerID, functionId)
-		if err != nil {
-			return nil, err
-		} else if backpressured {
-			workerID, instanceID, err = s.ScheduleWithBackoff(ctx, functionId)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			instanceID, err = s.startInstance(ctx, workerID, functionId)
-			if err != nil {
-				return nil, err
-			}
-			log.Printf("Started new instance for function %s on worker %s, instanceID: %s", functionId, workerID, instanceID)
-			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateStarting)
-		}
-
-	} else {
-		// An Idle instance was found
-		s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateRunning)
-	}
-
-	resp, err := s.callWorker(ctx, workerID, functionId, instanceID, req)
-	if err != nil {
-		switch err.(type) {
-		case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
-			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
-			// TODO: handle this and dont return.
-			return nil, err
-		case *WorkerDownError:
-			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
-			s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
-			return nil, err
-		default:
-			return nil, err
-		}
-	}
-	log.Printf("Recieved response from worker %s, instanceID: %s, response: %v", workerID, instanceID, resp)
-	// The instance is no longer running
-	s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateIdle)
-
-	return resp, nil
-} */
-
 // ScheduleCall places a call to a function on a worker and returns the response
 func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
-	// Cache check remains the same
-	if _, ok := s.functionIdCache[req.FunctionID.Id]; !ok {
+	// Cache check
+	functionData, ok := s.functionIdCache[req.FunctionID.Id]
+	if !ok {
 		ImageTag, Config, err := s.database.Get(req.FunctionID)
 		if err != nil {
 			var noSuchKeyError kv.NoSuchKeyError
@@ -147,40 +79,87 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 
 	functionId := state.FunctionID(req.FunctionID.Id)
 
-	// Use the coordinator to handle instance creation with synchronization
-	workerID, instanceID, err := s.coordinator.CoordinateInstanceCreation(
-		ctx,
-		functionId,
-		s.IsFunctionBackpressured,
-		s.scheduler.Schedule,
-		s.startInstance,
-		func(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, state state.InstanceState) {
-			s.scheduler.UpdateInstanceState(workerID, functionID, instanceID, state)
-		},
-		s.startingInstanceWaitTimeout,
-	)
+	decision, err := s.scheduler.Schedule(ctx, functionId, functionData.Config.MaxConcurrency)
 	if err != nil {
 		return nil, err
 	}
-
-	resp, err := s.callWorker(ctx, workerID, functionId, instanceID, req)
-	if err != nil {
-		switch err.(type) {
-		case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
-			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
-			return nil, err
-		case *WorkerDownError:
-			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
-			s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
-			return nil, err
-		default:
+	var resp *leaf.ScheduleCallResponse
+	instanceID := decision.InstanceID
+	workerID := decision.WorkerID
+	switch decision.Decision {
+	case scheduling.StartInstance:
+		s.logger.Info("Starting new instance", "functionID", functionId, "workerID", workerID)
+		s.scheduler.UpdateStartingInstancesCounter(workerID, functionId, 1)
+		instanceID, err = s.startInstance(ctx, workerID, functionId)
+		if err != nil {
 			return nil, err
 		}
+		err = s.scheduler.AddInstance(workerID, functionId, instanceID)
+		if err != nil {
+			return nil, err
+		}
+		resp, err = s.callWorker(ctx, workerID, functionId, instanceID, req)
+		if err != nil {
+			switch err.(type) {
+			case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
+				return nil, err
+			case *WorkerDownError:
+				s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
+				return nil, err
+			default:
+				return nil, err
+			}
+		}
+		s.scheduler.UpdateStartingInstancesCounter(workerID, functionId, -1)
+		s.scheduler.ReduceInstanceConcurrency(workerID, functionId, instanceID)
+
+	case scheduling.Schedule:
+		resp, err = s.callWorker(ctx, workerID, functionId, instanceID, req)
+		if err != nil {
+			switch err.(type) {
+			case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
+				return nil, err
+			case *WorkerDownError:
+				s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
+				return nil, err
+			default:
+				return nil, err
+			}
+		}
+		s.scheduler.ReduceInstanceConcurrency(workerID, functionId, instanceID)
+	case scheduling.TooManyRequests:
+		s.logger.Error("Too many requests", "functionID", functionId, "workerID", workerID)
+		return nil, status.Errorf(codes.ResourceExhausted, "too many requests")
+	case scheduling.TooManyStartingInstances:
+		s.logger.Info("Too many starting instances, backoff triggered", "functionID", functionId, "workerID", workerID)
+		for {
+			time.Sleep(s.panicBackoff)
+			s.panicBackoff = s.panicBackoff + s.panicBackoffIncrease
+			if s.panicBackoff > s.panicMaxBackoff {
+				s.panicBackoff = s.panicMaxBackoff
+			}
+			decision, err = s.scheduler.Schedule(ctx, functionId, functionData.Config.MaxConcurrency)
+			if err != nil {
+				return nil, err
+			}
+			if decision.Decision == scheduling.Schedule {
+				resp, err = s.callWorker(ctx, decision.WorkerID, functionId, decision.InstanceID, req)
+				if err != nil {
+					switch err.(type) {
+					case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
+						return nil, err
+					case *WorkerDownError:
+						s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
+						return nil, err
+					default:
+						return nil, err
+					}
+				}
+				s.scheduler.ReduceInstanceConcurrency(decision.WorkerID, functionId, decision.InstanceID)
+				break
+			}
+		}
 	}
-
-	//log.Printf("Received response from worker %s, instanceID: %s", workerID, instanceID)
-	s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateIdle)
-
 	return resp, nil
 }
 
@@ -190,19 +169,23 @@ func NewLeafServer(
 	maxStartingInstancesPerFunction int,
 	startingInstanceWaitTimeout time.Duration,
 	maxRunningInstancesPerFunction int,
-	coordinatorBackoff time.Duration,
-	coordinatorBackoffIncrease time.Duration,
-	coordinatorMaxBackoff time.Duration,
+	panicBackoff time.Duration,
+	panicBackoffIncrease time.Duration,
+	panicMaxBackoff time.Duration,
+	logger *slog.Logger,
 ) *LeafServer {
 	return &LeafServer{
 		scheduler:                       scheduler,
 		database:                        httpClient,
 		functionIdCache:                 make(map[string]kv.FunctionData),
 		poolManager:                     *NewPoolManager(1, 100, 120*time.Second),
-		coordinator:                     NewInstanceCoordinator(coordinatorBackoff, coordinatorBackoffIncrease, coordinatorMaxBackoff),
 		maxStartingInstancesPerFunction: maxStartingInstancesPerFunction,
 		startingInstanceWaitTimeout:     startingInstanceWaitTimeout,
 		maxRunningInstancesPerFunction:  maxRunningInstancesPerFunction,
+		logger:                          logger,
+		panicBackoff:                    panicBackoff,
+		panicBackoffIncrease:            panicBackoffIncrease,
+		panicMaxBackoff:                 panicMaxBackoff,
 	}
 }
 
@@ -278,12 +261,12 @@ func (s *LeafServer) startInstance(ctx context.Context, workerID state.WorkerID,
 	defer conn.Close()
 	client := controllerPB.NewControllerClient(conn)
 
-	instanceID, err := client.Start(ctx, &common.FunctionID{Id: string(functionId)})
+	resp, err := client.Start(ctx, &common.FunctionID{Id: string(functionId)})
 	if err != nil {
 		return "", err
 	}
 
-	return state.InstanceID(instanceID.Id), nil
+	return state.InstanceID(resp.InstanceId.Id), nil
 }
 
 type PoolManager struct {

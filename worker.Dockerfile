@@ -8,7 +8,6 @@ WORKDIR /root/
 COPY . .
 COPY ./cmd/worker/main.go .
 
-RUN go mod tidy
 RUN go mod download
 
 #Copy main function

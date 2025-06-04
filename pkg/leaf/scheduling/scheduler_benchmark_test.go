@@ -84,12 +84,6 @@ func runBenchmark(b *testing.B, scheduler Scheduler) {
 	wg.Wait()
 }
 
-func BenchmarkSyncMapScheduler(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-	scheduler := NewSyncMapScheduler([]state.WorkerID{"worker1", "worker2"}, logger)
-	runBenchmark(b, scheduler)
-}
-
 func BenchmarkMRUScheduler(b *testing.B) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	scheduler := NewMRUScheduler(state.NewWorkers(logger), []state.WorkerID{"worker1", "worker2"}, logger)

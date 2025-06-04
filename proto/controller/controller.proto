@@ -46,8 +46,10 @@ message MetricsUpdate{
   repeated double cpu_percent_percpu = 2;
 }
 
-message StateRequest {
-  string node_id = 1;
+message InstanceStateRequest {
+  common.FunctionID function_id = 1;
+  common.InstanceID instance_id = 2;
+  Event event = 3;
 }
 
 message InstanceState {
@@ -64,17 +66,22 @@ message FunctionState {
   repeated InstanceState idle = 3;
 }
 
-message StateResponse {
+message InstanceStateResponse {
   // List of function states for this worker
   repeated FunctionState functions = 1;
+}
+message StartResponse {
+  common.InstanceID instance_id = 1;
+  string instance_ip = 2;
+  string instance_name = 3;
 }
 
 
 service Controller {
-  rpc Start (common.FunctionID) returns (common.InstanceID);
+  rpc Start (common.FunctionID) returns (StartResponse);
   rpc Call (common.CallRequest) returns (common.CallResponse);
   rpc Stop (common.InstanceID) returns (common.InstanceID);
   rpc Status (StatusRequest) returns (stream StatusUpdate);
   rpc Metrics (MetricsRequest) returns (MetricsUpdate);
-  rpc State (StateRequest) returns (StateResponse);
+  //rpc InstanceState (InstanceStateRequest) returns (InstanceStateResponse);
 }

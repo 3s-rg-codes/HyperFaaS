@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -29,33 +30,45 @@ const (
 )
 
 type Instance struct {
-	InstanceID InstanceID
-	State      InstanceState
-	LastWorked time.Time
-	Created    time.Time
+	InstanceID       InstanceID
+	State            InstanceState
+	MaxConcurrency   int32
+	ConcurrencyLevel atomic.Int32
+	LastWorked       time.Time
+	Created          time.Time
 }
 
 // --- Worker and Workers ---
+type Function struct {
+	FunctionID               FunctionID
+	MaxConcurrency           int32
+	Instances                map[InstanceID]*Instance
+	CurrentStartingInstances atomic.Int32
+	ConcurrencyLevel         atomic.Int32
+	mutex                    sync.RWMutex
+}
 
 type Worker struct {
 	ID        WorkerID
 	state     WorkerState
-	Functions map[FunctionID]map[InstanceID]*Instance
+	Functions map[FunctionID]*Function
 	mutex     sync.RWMutex
 }
 
 type Workers struct {
-	mu                sync.RWMutex
-	Workers           map[WorkerID]*Worker
-	functionToWorkers map[FunctionID]map[WorkerID]struct{}
-	logger            *slog.Logger
+	mu                   sync.RWMutex
+	Workers              map[WorkerID]*Worker
+	functionToWorkers    map[FunctionID]map[WorkerID]struct{}
+	logger               *slog.Logger
+	maxStartingInstances int32
 }
 
-func NewWorkers(logger *slog.Logger) *Workers {
+func NewWorkers(logger *slog.Logger, maxStartingInstances int32) *Workers {
 	return &Workers{
-		Workers:           make(map[WorkerID]*Worker),
-		functionToWorkers: make(map[FunctionID]map[WorkerID]struct{}),
-		logger:            logger,
+		Workers:              make(map[WorkerID]*Worker),
+		functionToWorkers:    make(map[FunctionID]map[WorkerID]struct{}),
+		logger:               logger,
+		maxStartingInstances: maxStartingInstances,
 	}
 }
 
@@ -67,31 +80,39 @@ func (w *Workers) CreateWorker(workerID WorkerID) {
 		w.Workers[workerID] = &Worker{
 			ID:        workerID,
 			state:     WorkerStateUp,
-			Functions: make(map[FunctionID]map[InstanceID]*Instance),
+			Functions: make(map[FunctionID]*Function),
 		}
 	}
 }
 
-func (w *Workers) AssignFunction(workerID WorkerID, functionID FunctionID) {
+func (w *Workers) AssignFunction(workerID WorkerID, functionID FunctionID, maxConcurrency int32) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	worker, exists := w.Workers[workerID]
 	if !exists {
-		return
+		return &WorkerNotFoundError{WorkerID: workerID}
 	}
 
 	worker.mutex.Lock()
 	defer worker.mutex.Unlock()
 
-	if _, ok := worker.Functions[functionID]; !ok {
-		worker.Functions[functionID] = make(map[InstanceID]*Instance)
+	_, exists = worker.Functions[functionID]
+	if exists {
+		return &FunctionAlreadyAssignedError{FunctionID: functionID}
+	} else {
+		worker.Functions[functionID] = &Function{
+			FunctionID:     functionID,
+			MaxConcurrency: maxConcurrency,
+			Instances:      make(map[InstanceID]*Instance),
+		}
 	}
 
 	if _, ok := w.functionToWorkers[functionID]; !ok {
 		w.functionToWorkers[functionID] = make(map[WorkerID]struct{})
 	}
 	w.functionToWorkers[functionID][workerID] = struct{}{}
+	return nil
 }
 
 func (w *Workers) DeleteWorker(workerID WorkerID) {
@@ -115,68 +136,94 @@ func (w *Workers) DeleteWorker(workerID WorkerID) {
 	delete(w.Workers, workerID)
 }
 
-func (w *Workers) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID, error) {
+func (w *Workers) FindMRUInstance(functionID FunctionID) (WorkerID, InstanceID, error) {
 	w.mu.RLock()
-	defer w.mu.RUnlock()
-
 	workers, ok := w.functionToWorkers[functionID]
+	w.mu.RUnlock()
 	if !ok {
 		return "", "", &FunctionNotAssignedError{FunctionID: functionID}
 	}
 
 	var bestInstance *Instance
 	var selectedWorker WorkerID
-
+	var functionCurrentStartingInstances int32
 	for wid := range workers {
 		worker := w.Workers[wid]
 		worker.mutex.RLock()
-		instances := worker.Functions[functionID]
+		function := worker.Functions[functionID]
+		worker.mutex.RUnlock()
+		function.mutex.RLock()
+		for _, inst := range function.Instances {
+			if inst.ConcurrencyLevel.Load() >= function.MaxConcurrency {
+				w.logger.Debug("Instance concurrency level exceeds max concurrency", "instanceID", inst.InstanceID, "workerID", wid, "concurrencyLevel", inst.ConcurrencyLevel.Load(), "maxConcurrency", function.MaxConcurrency)
+				continue
+			}
 
-		for _, inst := range instances {
-			if inst.State == InstanceStateIdle {
-				if bestInstance == nil || inst.LastWorked.After(bestInstance.LastWorked) {
-					temp := *inst
-					bestInstance = &temp
-					selectedWorker = wid
-				}
+			if bestInstance == nil || inst.LastWorked.After(bestInstance.LastWorked) {
+				bestInstance = inst
+				selectedWorker = wid
 			}
 		}
-		worker.mutex.RUnlock()
+		if bestInstance != nil {
+			w.logger.Debug("Selected instance", "instanceID", bestInstance.InstanceID, "workerID", selectedWorker, "concurrencyLevel", bestInstance.ConcurrencyLevel.Load())
+			bestInstance.ConcurrencyLevel.Add(1)
+			bestInstance.LastWorked = time.Now()
+		}
+		functionCurrentStartingInstances = function.CurrentStartingInstances.Load()
+		function.mutex.RUnlock()
 	}
 
-	if bestInstance == nil {
+	if bestInstance == nil && functionCurrentStartingInstances < w.maxStartingInstances {
 		return "", "", &NoIdleInstanceError{FunctionID: functionID}
+	} else if bestInstance == nil && functionCurrentStartingInstances >= w.maxStartingInstances {
+		return "", "", &TooManyStartingInstancesError{FunctionID: functionID}
 	}
 
 	return selectedWorker, bestInstance.InstanceID, nil
 }
 
-func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, state InstanceState, inst Instance) error {
+func (w *Workers) UpdateStartingInstancesCounter(workerID WorkerID, functionID FunctionID, delta int32) {
 	w.mu.RLock()
 	worker, exists := w.Workers[workerID]
 	w.mu.RUnlock()
 	if !exists {
-		return &WorkerNotFoundError{WorkerID: workerID}
+		return
 	}
 
-	worker.mutex.Lock()
-	defer worker.mutex.Unlock()
-
-	if _, ok := worker.Functions[functionID]; !ok {
-		worker.Functions[functionID] = make(map[InstanceID]*Instance)
+	worker.mutex.RLock()
+	function, exists := worker.Functions[functionID]
+	worker.mutex.RUnlock()
+	if !exists {
+		return
 	}
 
-	instance := inst // make a copy
+	function.mutex.RLock()
+	function.CurrentStartingInstances.Add(delta)
+	function.mutex.RUnlock()
+}
 
-	instance.State = state
-	worker.Functions[functionID][inst.InstanceID] = &instance
-
-	// If the instance has timed out or is down, remove it from the worker's functions
-	if state == InstanceStateTimeout || state == InstanceStateDown {
-		delete(worker.Functions[functionID], inst.InstanceID)
+func (w *Workers) ReduceInstanceConcurrency(workerID WorkerID, functionID FunctionID, instanceID InstanceID) {
+	w.mu.RLock()
+	worker, exists := w.Workers[workerID]
+	w.mu.RUnlock()
+	if !exists {
+		return
 	}
 
-	return nil
+	worker.mutex.RLock()
+	function, exists := worker.Functions[functionID]
+	worker.mutex.RUnlock()
+	if !exists {
+		return
+	}
+
+	function.mutex.RLock()
+	instance, exists := function.Instances[instanceID]
+	function.mutex.RUnlock()
+	if !exists {
+		return
+	}
+	instance.ConcurrencyLevel.Add(-1)
 }
 
 func (w *Workers) CountInstancesInState(workerID WorkerID, functionID FunctionID, instanceState InstanceState) (int, error) {
@@ -190,19 +237,76 @@ func (w *Workers) CountInstancesInState(workerID WorkerID, functionID FunctionID
 	worker.mutex.RLock()
 	defer worker.mutex.RUnlock()
 
-	instances, ok := worker.Functions[functionID]
+	function, ok := worker.Functions[functionID]
 	if !ok {
 		return 0, &FunctionNotAssignedError{FunctionID: functionID}
 	}
 
 	count := 0
-	for _, inst := range instances {
+	for _, inst := range function.Instances {
 		if inst.State == instanceState {
 			count++
 		}
 	}
 
 	return count, nil
+}
+
+func (w *Workers) AddInstance(workerID WorkerID, functionID FunctionID, instanceID InstanceID) error {
+	w.mu.RLock()
+	worker, exists := w.Workers[workerID]
+	w.mu.RUnlock()
+	if !exists {
+		return &WorkerNotFoundError{WorkerID: workerID}
+	}
+
+	worker.mutex.RLock()
+	function, exists := worker.Functions[functionID]
+	worker.mutex.RUnlock()
+	if !exists {
+		return &FunctionNotAssignedError{FunctionID: functionID}
+	}
+
+	function.mutex.Lock()
+	function.Instances[instanceID] = &Instance{
+		InstanceID:       instanceID,
+		State:            InstanceStateIdle,
+		MaxConcurrency:   function.MaxConcurrency,
+		ConcurrencyLevel: atomic.Int32{},
+		LastWorked:       time.Now(),
+		Created:          time.Now(),
+	}
+	function.mutex.Unlock()
+
+	return nil
+}
+
+func (w *Workers) RemoveInstance(workerID WorkerID, functionID FunctionID, instanceID InstanceID) error {
+	w.mu.RLock()
+	worker, exists := w.Workers[workerID]
+	w.mu.RUnlock()
+	if !exists {
+		return &WorkerNotFoundError{WorkerID: workerID}
+	}
+
+	worker.mutex.RLock()
+	function, exists := worker.Functions[functionID]
+	worker.mutex.RUnlock()
+	if !exists {
+		return &FunctionNotAssignedError{FunctionID: functionID}
+	}
+
+	function.mutex.RLock()
+	_, exists = function.Instances[instanceID]
+	function.mutex.RUnlock()
+	if !exists {
+		return &InstanceNotFoundError{InstanceID: instanceID}
+	}
+	function.mutex.Lock()
+	delete(function.Instances, instanceID)
+	function.mutex.Unlock()
+
+	return nil
 }
 
 func (w *Workers) DebugPrint() {
@@ -213,10 +317,10 @@ func (w *Workers) DebugPrint() {
 	for wid, worker := range w.Workers {
 		fmt.Printf("Worker %s (%v):\n", wid, worker.state)
 		worker.mutex.RLock()
-		for fid, instances := range worker.Functions {
+		for fid, function := range worker.Functions {
 			fmt.Printf("  Function %s:\n", fid)
 			var sorted []*Instance
-			for _, inst := range instances {
+			for _, inst := range function.Instances {
 				sorted = append(sorted, inst)
 			}
 			sort.Slice(sorted, func(i, j int) bool {

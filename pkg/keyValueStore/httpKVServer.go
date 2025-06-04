@@ -31,9 +31,11 @@ type PostResponse struct {
 }
 
 type Config struct {
-	MemLimit  int `json:"mem_limit"`
-	CpuQuota  int `json:"cpu_quota"`
-	CpuPeriod int `json:"cpu_period"`
+	MemLimit       int   `json:"mem_limit"`
+	CpuQuota       int   `json:"cpu_quota"`
+	CpuPeriod      int   `json:"cpu_period"`
+	Timeout        int32 `json:"timeout"`
+	MaxConcurrency int32 `json:"max_concurrency"`
 }
 
 func (t *Store) Start() {

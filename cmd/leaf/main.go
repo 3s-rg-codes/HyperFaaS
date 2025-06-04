@@ -75,7 +75,7 @@ func main() {
 		dbClient = keyValueStore.NewHttpClient(*databaseAddress, logger)
 	}
 
-	workerState := state.NewWorkers(logger)
+	workerState := state.NewWorkers(logger, int32(*maxStartingInstancesPerFunction))
 
 	scheduler := scheduling.New(*schedulerType, workerState, ids, logger)
 
@@ -87,6 +87,7 @@ func main() {
 		*coordinatorBackoff,
 		*coordinatorBackoffIncrease,
 		*coordinatorMaxBackoff,
+		logger,
 	)
 	listener, err := net.Listen("tcp", *address)
 	if err != nil {

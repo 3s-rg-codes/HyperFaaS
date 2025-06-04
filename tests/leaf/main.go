@@ -27,8 +27,8 @@ const (
 	RequestedCPUQuota  = 50000
 	SQLITE_DB_PATH     = "metrics.db"
 	TIMEOUT            = 10 * time.Second
-	DURATION           = 20 * time.Second
-	RPS                = 1500
+	DURATION           = 10 * time.Second
+	RPS                = 500
 )
 
 func main() {
@@ -58,16 +58,16 @@ func main() {
 	//Concurrent calls
 	//testConcurrentCalls(client, functionIDs[0], 10)
 	// Sequential calls
-	//testSequentialCalls(client, createFunctionResp.FunctionID)
+	//testSequentialCalls(client, functionIDs[0])
 
 	// Concurrent calls for duration
 	testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
 
 	// Send thumbnail request
-	sendThumbnailRequest(client, functionIDs[3])
+	//sendThumbnailRequest(client, functionIDs[3])
 
 	// Send BFS request
-	testBFS(client, functionIDs[4])
+	//testBFS(client, functionIDs[4])
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {
@@ -194,7 +194,7 @@ func sendCall(client pb.LeafClient, functionID *common.FunctionID) (time.Duratio
 }
 
 func testSequentialCalls(client pb.LeafClient, functionID *common.FunctionID) {
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 100; i++ {
 		req := &pb.ScheduleCallRequest{
 			FunctionID: functionID,
 			Data:       []byte(""),
@@ -229,6 +229,8 @@ func createFunction(imageTag string, client *pb.LeafClient) (*common.FunctionID,
 				Period: RequestedCPUPeriod,
 				Quota:  RequestedCPUQuota,
 			},
+			MaxConcurrency: 500,
+			Timeout:        10,
 		},
 	}
 

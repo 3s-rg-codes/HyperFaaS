@@ -23,7 +23,8 @@ proto:
 # build the worker binary
 build-worker:
     go build -o bin/ cmd/worker/main.go
-
+leaf:
+    docker compose up --build leaf
 # build all go functions
 build-functions-go:
     find ./functions/go/*/ -maxdepth 0 -type d | xargs -I {} bash -c 'just build-function-go $(basename "{}")'

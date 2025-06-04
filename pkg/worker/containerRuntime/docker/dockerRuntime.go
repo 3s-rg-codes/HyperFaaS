@@ -16,6 +16,7 @@ import (
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
@@ -23,18 +24,20 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
 type DockerRuntime struct {
 	cr.ContainerRuntime
-	Cli                 *client.Client
-	autoRemove          bool
-	containerized       bool
-	callerServerAddress string
-	outputFolderAbs     string
-	logger              *slog.Logger
+	Cli               *client.Client
+	autoRemove        bool
+	containerized     bool
+	outputFolderAbs   string
+	logger            *slog.Logger
+	runningContainers *RunningContainers
 }
 
 const (
@@ -48,7 +51,7 @@ var (
 	forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 )
 
-func NewDockerRuntime(containerized bool, autoRemove bool, callerServerAddress string, logger *slog.Logger) *DockerRuntime {
+func NewDockerRuntime(containerized bool, autoRemove bool, address string, logger *slog.Logger) *DockerRuntime {
 	var clientOpt client.Opt
 	if containerized {
 		clientOpt = client.WithHost("unix:///var/run/docker.sock")
@@ -88,18 +91,18 @@ func NewDockerRuntime(containerized bool, autoRemove bool, callerServerAddress s
 		}
 	}
 
-	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized, callerServerAddress: callerServerAddress}
+	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized, runningContainers: NewRunningContainers()}
 }
 
 // Start a container with the given image tag and configuration.
-func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag string, config *common.Config) (string, error) {
+func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag string, config *common.Config) (cr.Container, error) {
 	// Start by checking if the image exists locally already
 	imageListArgs := filters.NewArgs()
 	imageListArgs.Add("reference", imageTag)
 	images, err := d.Cli.ImageList(ctx, image.ListOptions{Filters: imageListArgs})
 
 	if err != nil {
-		return "", fmt.Errorf("could not list Docker images: %v", err)
+		return cr.Container{}, fmt.Errorf("could not list Docker images: %v", err)
 	}
 
 	if len(images) == 0 {
@@ -109,7 +112,7 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 
 		if err != nil {
 			d.logger.Error("Could not pull image", "image", imageTag, "error", err)
-			return "", status.Errorf(codes.NotFound, err.Error())
+			return cr.Container{}, status.Errorf(codes.NotFound, err.Error())
 		}
 
 		_, _ = io.Copy(os.Stdout, reader)
@@ -128,22 +131,47 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 
 	if err != nil {
 		d.logger.Error("Could not create container", "image", imageTag, "error", err)
-		return "", err
+		return cr.Container{}, err
 	}
 
 	d.logger.Debug("Starting container", "id", resp.ID, "warnings", resp.Warnings)
 	if err := d.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		return "", err
+		return cr.Container{}, err
 	}
 
-	return resp.ID, nil
+	addr, err := d.resolveContainerAddr(ctx, resp.ID, containerName)
+	d.logger.Debug("Resolved container address", "id", resp.ID, "address", addr)
+	if err != nil {
+		return cr.Container{}, err
+	}
+	shortID := resp.ID[:12]
+
+	d.runningContainers.SetContainerIp(shortID, addr)
+
+	return cr.Container{InstanceID: shortID, InstanceName: containerName, InstanceIP: addr}, nil
 }
 
 func (d *DockerRuntime) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 
-	//TODO implement container monitoring, if container fails, return error message in call
+	containerIP, err := d.runningContainers.GetContainerIp(req.InstanceId.Id)
+	if err != nil {
+		return nil, err
+	}
 
-	return &common.CallResponse{}, nil
+	conn, err := grpc.NewClient(containerIP, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	d.logger.Debug("Calling container", "id", req.InstanceId.Id, "address", containerIP)
+	functionClient := functionpb.NewFunctionServiceClient(conn)
+
+	response, err := functionClient.Call(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
 
 }
 
@@ -159,6 +187,8 @@ func (d *DockerRuntime) Stop(ctx context.Context, req *common.InstanceID) (*comm
 	if err := d.Cli.ContainerStop(ctx, req.Id, container.StopOptions{}); err != nil {
 		return nil, err
 	}
+
+	d.runningContainers.DeleteContainerIp(req.Id)
 
 	d.logger.Debug("Stopped container", "id", req.Id)
 
@@ -240,7 +270,6 @@ func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string
 			"50052/tcp": struct{}{},
 		},
 		Env: []string{
-			fmt.Sprintf("CALLER_SERVER_ADDRESS=%s", d.getCallerServerAddress()),
 			fmt.Sprintf("FUNCTION_ID=%s", functionID),
 		},
 	}
@@ -271,18 +300,62 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 	}
 }
 
-func (d *DockerRuntime) getCallerServerAddress() string {
-	// Containerized mode uses docker network dns to resolve the caller server address, hence we need to replace the localhost/127.0.0.1/0.0.0.0 with worker
+func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID string, containerName string) (string, error) {
 	if d.containerized {
-		address := d.callerServerAddress
-		address = strings.Replace(address, "localhost", "worker", 1)
-		address = strings.Replace(address, "127.0.0.1", "worker", 1)
-		address = strings.Replace(address, "0.0.0.0", "worker", 1)
-		return address
+		// Use Docker DNS resolution via container name
+		return fmt.Sprintf("%s:%d", containerName, 50052), nil
 	}
-	// Replace localhost/127.0.0.1 with host.docker.internal for non-containerized mode
-	address := d.callerServerAddress
-	address = strings.Replace(address, "localhost", "host.docker.internal", 1)
-	address = strings.Replace(address, "127.0.0.1", "host.docker.internal", 1)
-	return address
+
+	// Use container IP from Docker inspect
+	containerJSON, err := d.Cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return "", err
+	}
+
+	network, ok := containerJSON.NetworkSettings.Networks["hyper-faas"]
+	if !ok {
+		return "", fmt.Errorf("container not connected to hyper-faas network")
+	}
+
+	return fmt.Sprintf("%s:%d", network.IPAddress, 50052), nil
+}
+
+// MonitorContainer monitors a container and returns when it exits
+// Returns nil for timeout, error for crash
+func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId *common.InstanceID, functionId string) error {
+	opt := events.ListOptions{
+		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId.Id}),
+	}
+	eventsChan, errChan := d.Cli.Events(ctx, opt)
+
+	for {
+		select {
+		case event := <-eventsChan:
+			if event.Action == "die" {
+				// Get container exit code to determine if it was timeout or crash
+				containerJSON, err := d.Cli.ContainerInspect(ctx, instanceId.Id)
+				if err != nil {
+					d.logger.Error("Failed to inspect container", "id", instanceId.Id, "error", err)
+					return fmt.Errorf("container died but failed to inspect: %v", err)
+				}
+
+				exitCode := containerJSON.State.ExitCode
+				if exitCode == 0 {
+					// Exit code 0 = graceful shutdown = timeout
+					d.logger.Debug("Container timed out gracefully", "id", instanceId.Id, "exitCode", exitCode)
+					return nil
+				} else {
+					// Non-zero exit code = crash
+					d.logger.Debug("Container crashed", "id", instanceId.Id, "exitCode", exitCode)
+					return fmt.Errorf("container died with exit code %d", exitCode)
+				}
+			}
+		case <-errChan:
+			// Ignore Docker event errors as they're usually not critical
+			continue
+		case <-ctx.Done():
+			d.logger.Debug("Container monitoring context done", "id", instanceId.Id)
+			return nil
+		}
+	}
 }

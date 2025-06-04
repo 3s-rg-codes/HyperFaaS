@@ -11,8 +11,6 @@ import (
 	"time"
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
-
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
@@ -20,17 +18,14 @@ import (
 	cpu "github.com/shirou/gopsutil/v4/cpu"
 	mem "github.com/shirou/gopsutil/v4/mem"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Controller struct {
 	controller.UnimplementedControllerServer
 	runtime         cr.ContainerRuntime
-	CallerServer    *caller.CallerServer
 	StatsManager    *stats.StatsManager
 	logger          *slog.Logger
 	address         string
@@ -39,7 +34,7 @@ type Controller struct {
 	mu              sync.RWMutex
 }
 
-func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common.InstanceID, error) {
+func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*controller.StartResponse, error) {
 
 	//Check if we have config and image for ID cached and if not get it from db
 	s.mu.RLock()
@@ -50,7 +45,7 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 		s.logger.Debug("FunctionData not available locally, fetching from server", "functionID", req.Id)
 		imageTag, config, err := s.dbClient.Get(req)
 		if err != nil {
-			return &common.InstanceID{}, err
+			return &controller.StartResponse{}, err
 		}
 
 		d := kv.FunctionData{
@@ -66,13 +61,13 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 	functionData := s.functionIDCache[req.Id]
 
 	s.logger.Debug("Starting container with params:", "tag", functionData.ImageTag, "memory", functionData.Config.Memory, "quota", functionData.Config.Cpu.Quota, "period", functionData.Config.Cpu.Period)
-	instanceId, err := s.runtime.Start(ctx, req.Id, functionData.ImageTag.Tag, functionData.Config)
+	container, err := s.runtime.Start(ctx, req.Id, functionData.ImageTag.Tag, functionData.Config)
 
 	// Truncate the ID to the first 12 characters to match Docker's short ID format
-	shortID := instanceId
-	if len(instanceId) > 12 {
-		shortID = instanceId[:12]
-		s.logger.Debug("Truncating ID", "id", instanceId, "shortID", shortID)
+	shortID := container.InstanceID
+	if len(container.InstanceID) > 12 {
+		shortID = container.InstanceID[:12]
+		s.logger.Debug("Truncating ID", "id", container.InstanceID, "shortID", shortID)
 	}
 
 	if err != nil {
@@ -83,69 +78,16 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*common
 	// Container has been requested; we actually dont know if its running or not
 	s.StatsManager.Enqueue(stats.Event().Function(req.Id).Container(shortID).Start().Success())
 
-	s.CallerServer.RegisterFunctionInstance(shortID)
+	go s.monitorContainerLifecycle(shortID, req.Id)
 
-	return &common.InstanceID{Id: shortID}, nil
+	return &controller.StartResponse{InstanceId: &common.InstanceID{Id: shortID}, InstanceIp: container.InstanceIP, InstanceName: container.InstanceName}, nil
 }
 
-// Call passes the call through the channel of the instance ID in the FunctionCalls map
-// runtime.Call is also called to check for errors
 func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-
-	if _, ok := s.CallerServer.FunctionCalls.FcMap.Load(req.InstanceId.Id); !ok {
-		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
-		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
-		return nil, status.Errorf(codes.NotFound, err.Error())
-	}
-
-	if _, ok := s.CallerServer.FunctionResponses.FrMap.Load(req.InstanceId.Id); !ok {
-		err := &InstanceNotFoundError{InstanceID: req.InstanceId.Id}
-		s.logger.Error("Passing call with payload", "error", err.Error(), "instance ID", req.InstanceId.Id)
-		return nil, status.Errorf(codes.NotFound, err.Error())
-	}
-
-	// Check if container crashes
-	crashCtx, cancelCrash := context.WithCancel(ctx)
-	defer cancelCrash()
-
-	// Monitor for crashes in a goroutine
-	crashChan := make(chan error, 1)
-	go func() {
-		if err := s.runtime.NotifyCrash(crashCtx, req.InstanceId); err != nil {
-			crashChan <- err
-		}
-	}()
-
-	s.logger.Debug("Passing call with payload", "payload", req.Data, "instance ID", req.InstanceId.Id)
-
-	s.CallerServer.QueueInstanceCall(req.InstanceId.Id, req.Data)
-	s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Call().Success())
-
-	responseChan := s.CallerServer.GetInstanceResponse(req.InstanceId.Id)
-
-	select {
-
-	case data := <-responseChan:
-		cancelCrash()
-		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Response().Success())
-		s.logger.Debug("Extracted response", "response", data, "instance ID", req.InstanceId.Id)
-		return &common.CallResponse{Data: data}, nil
-
-	case err := <-crashChan:
-
-		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Down())
-		s.logger.Error("Container timed out or crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
-
-		return nil, &ContainerCrashError{InstanceID: req.InstanceId.Id, ContainerError: err.Error()}
-
-	}
-
+	return s.runtime.Call(ctx, req)
 }
 
 func (s *Controller) Stop(ctx context.Context, req *common.InstanceID) (*common.InstanceID, error) {
-
-	//unregister the function from the maps
-	s.CallerServer.UnregisterFunctionInstance(req.Id)
 
 	resp, err := s.runtime.Stop(ctx, req)
 
@@ -222,11 +164,10 @@ func (s *Controller) Metrics(ctx context.Context, req *controller.MetricsRequest
 	return &controller.MetricsUpdate{CpuPercentPercpu: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
 }
 
-func NewController(runtime cr.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, address string, client kv.FunctionMetadataStore) *Controller {
+func NewController(runtime cr.ContainerRuntime, statsManager *stats.StatsManager, logger *slog.Logger, address string, client kv.FunctionMetadataStore) *Controller {
 	return &Controller{
 		runtime:         runtime,
 		StatsManager:    statsManager,
-		CallerServer:    callerServer,
 		logger:          logger,
 		address:         address,
 		dbClient:        client,
@@ -240,11 +181,6 @@ func (s *Controller) StartServer() {
 	// TODO pass context to sub servers
 	//ctx, cancel := context.WithCancel(context.Background())
 	//defer cancel()
-
-	//Start the caller server
-	go func() {
-		s.CallerServer.Start()
-	}()
 
 	//Start the stats manager
 
@@ -280,4 +216,25 @@ func (s *Controller) StartServer() {
 		s.logger.Error("Controller Server failed to serve", "error", err)
 	}
 
+}
+
+func (s *Controller) monitorContainerLifecycle(instanceID, functionID string) {
+	s.logger.Debug("Starting container monitoring", "instanceID", instanceID, "functionID", functionID)
+
+	// Use a background context so monitoring continues even after the original request context expires
+	monitorCtx := context.Background()
+
+	err := s.runtime.MonitorContainer(monitorCtx, &common.InstanceID{Id: instanceID}, functionID)
+
+	if err != nil {
+		// Container crashed (non-zero exit code)
+		s.logger.Debug("Container crashed", "instanceID", instanceID, "error", err)
+		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(instanceID).Down().Failed())
+	} else {
+		// Container timed out gracefully (exit code 0)
+		s.logger.Debug("Container timed out gracefully", "instanceID", instanceID)
+		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(instanceID).Timeout().Success())
+	}
+
+	s.logger.Debug("Container monitoring completed", "instanceID", instanceID)
 }
