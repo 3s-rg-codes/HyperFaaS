@@ -27,8 +27,8 @@ const (
 	RequestedCPUQuota  = 50000
 	SQLITE_DB_PATH     = "metrics.db"
 	TIMEOUT            = 10 * time.Second
-	DURATION           = 10 * time.Second
-	RPS                = 500
+	DURATION           = 60 * time.Second
+	RPS                = 1500
 )
 
 func main() {
@@ -61,7 +61,8 @@ func main() {
 	//testSequentialCalls(client, functionIDs[0])
 
 	// Concurrent calls for duration
-	testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
+	//testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
+	testRampingCallsForDuration(client, functionIDs[0], RPS, DURATION, 60*time.Second)
 
 	// Send thumbnail request
 	//sendThumbnailRequest(client, functionIDs[3])
@@ -152,6 +153,51 @@ func testConcurrentCallsForDuration(client pb.LeafClient, functionID *common.Fun
 				testConcurrentCalls(client, functionID, rps)
 			}()
 			time.Sleep(1 * time.Second)
+		}
+	}
+
+	// Use a timeout on the WaitGroup
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Println("All calls completed successfully")
+	case <-time.After(10 * time.Second):
+		fmt.Println("Timed out waiting for all calls to complete")
+	}
+}
+
+func testRampingCallsForDuration(client pb.LeafClient, functionID *common.FunctionID, targetRPS int, duration time.Duration, rampUpTime time.Duration) {
+	var wg sync.WaitGroup
+	//seconds := int(duration.Seconds())
+
+	rampUpSeconds := int(rampUpTime.Seconds())
+
+	ctx, cancel := context.WithTimeout(context.Background(), duration+3*time.Second)
+	defer cancel()
+
+	currentRPS := targetRPS / rampUpSeconds
+
+	for i := 0; i < rampUpSeconds; i++ {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if currentRPS > targetRPS {
+				fmt.Printf("Rampup done\n")
+				return
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				testConcurrentCalls(client, functionID, currentRPS)
+			}()
+			time.Sleep(1 * time.Second)
+			currentRPS += targetRPS / rampUpSeconds
 		}
 	}
 

@@ -39,7 +39,7 @@ func main() {
 	databaseType := flag.String("database-type", "http", "\"database\" used for managing the functionID -> config relationship")
 	databaseAddress := flag.String("database-address", "http://localhost:8999/", "address of the database server")
 	schedulerType := flag.String("scheduler-type", "mru", "The type of scheduler to use (mru or map)")
-	maxStartingInstancesPerFunction := flag.Int("max-starting-instances-per-function", 10, "The maximum number of instances starting at once per function")
+	maxStartingInstancesPerFunction := flag.Int("max-starting-instances-per-function", 2, "The maximum number of instances starting at once per function")
 	startingInstanceWaitTimeout := flag.Duration("starting-instance-wait-timeout", time.Second*5, "The timeout for waiting for an instance to start")
 	maxRunningInstancesPerFunction := flag.Int("max-running-instances-per-function", 10, "The maximum number of instances running at once per function")
 	coordinatorBackoff := flag.Duration("coordinator-backoff", time.Millisecond*10, "The startingbackoff time for the coordinator")
