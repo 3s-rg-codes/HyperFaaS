@@ -12,6 +12,7 @@ import (
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/network"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
@@ -27,6 +28,7 @@ type Controller struct {
 	controller.UnimplementedControllerServer
 	runtime         cr.ContainerRuntime
 	StatsManager    *stats.StatsManager
+	callRouter      *network.CallRouter
 	logger          *slog.Logger
 	address         string
 	dbClient        kv.FunctionMetadataStore
@@ -67,7 +69,6 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*contro
 	shortID := container.InstanceID
 	if len(container.InstanceID) > 12 {
 		shortID = container.InstanceID[:12]
-		s.logger.Debug("Truncating ID", "id", container.InstanceID, "shortID", shortID)
 	}
 
 	if err != nil {
@@ -78,13 +79,20 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*contro
 	// Container has been requested; we actually dont know if its running or not
 	s.StatsManager.Enqueue(stats.Event().Function(req.Id).Container(shortID).Start().Success())
 
-	go s.monitorContainerLifecycle(shortID, req.Id)
+	go s.monitorContainerLifecycle(req.Id, container)
+
+	// We use the functionID as the key for the call router
+	s.callRouter.AddInstance(req.Id, container.InstanceIP)
+
+	s.logger.Debug("Created container", "functionID", req.Id, "instanceID", shortID, "instanceIP", container.InstanceIP)
 
 	return &controller.StartResponse{InstanceId: &common.InstanceID{Id: shortID}, InstanceIp: container.InstanceIP, InstanceName: container.InstanceName}, nil
 }
 
 func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-	return s.runtime.Call(ctx, req)
+	// TODO RENAME TO FUNCTIONID .
+	s.logger.Debug("Calling function", "instanceID", req.InstanceId.Id, "functionID", req.FunctionId.Id)
+	return s.callRouter.CallFunction(req.FunctionId.Id, req)
 }
 
 func (s *Controller) Stop(ctx context.Context, req *common.InstanceID) (*common.InstanceID, error) {
@@ -170,6 +178,7 @@ func NewController(runtime cr.ContainerRuntime, statsManager *stats.StatsManager
 		StatsManager:    statsManager,
 		logger:          logger,
 		address:         address,
+		callRouter:      network.NewCallRouter(logger),
 		dbClient:        client,
 		functionIDCache: make(map[string]kv.FunctionData),
 	}
@@ -218,23 +227,25 @@ func (s *Controller) StartServer() {
 
 }
 
-func (s *Controller) monitorContainerLifecycle(instanceID, functionID string) {
-	s.logger.Debug("Starting container monitoring", "instanceID", instanceID, "functionID", functionID)
+func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container) {
+	s.logger.Debug("Starting container monitoring", "instanceID", c.InstanceID, "functionID", functionID)
 
 	// Use a background context so monitoring continues even after the original request context expires
 	monitorCtx := context.Background()
 
-	err := s.runtime.MonitorContainer(monitorCtx, &common.InstanceID{Id: instanceID}, functionID)
+	err := s.runtime.MonitorContainer(monitorCtx, &common.InstanceID{Id: c.InstanceID}, functionID)
 
 	if err != nil {
 		// Container crashed (non-zero exit code)
-		s.logger.Debug("Container crashed", "instanceID", instanceID, "error", err)
-		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(instanceID).Down().Failed())
+		s.logger.Debug("Container crashed", "instanceID", c.InstanceID, "error", err)
+		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.InstanceID).Down().Failed())
+		s.callRouter.HandleInstanceTimeout(functionID, c.InstanceIP)
 	} else {
 		// Container timed out gracefully (exit code 0)
-		s.logger.Debug("Container timed out gracefully", "instanceID", instanceID)
-		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(instanceID).Timeout().Success())
+		s.logger.Debug("Container timed out gracefully", "instanceID", c.InstanceID)
+		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.InstanceID).Timeout().Success())
+		s.callRouter.HandleInstanceTimeout(functionID, c.InstanceIP)
 	}
 
-	s.logger.Debug("Container monitoring completed", "instanceID", instanceID)
+	s.logger.Debug("Container monitoring completed", "instanceID", c.InstanceID)
 }

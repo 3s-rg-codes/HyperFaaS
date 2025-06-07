@@ -4,8 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"log/slog"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -31,6 +34,9 @@ func (i *workerIDs) Set(value string) error {
 	return nil
 }
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 	workerIDs := workerIDs{}
 	address := flag.String("address", "0.0.0.0:50050", "The address to listen on")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
@@ -81,6 +87,7 @@ func main() {
 
 	server := api.NewLeafServer(scheduler,
 		dbClient,
+		ids,
 		*maxStartingInstancesPerFunction,
 		*startingInstanceWaitTimeout,
 		*maxRunningInstancesPerFunction,

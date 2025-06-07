@@ -9,6 +9,7 @@ services:
       - ./log/:/root/log/
     ports:
       - "50051:50051"
+    #network_mode: host
     networks:
       - hyperfaas-network
     command: ["./main", "-address=0.0.0.0:50051", "-runtime=docker", "-log-level=debug", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-caller-server-address=0.0.0.0:50052", "-database-type=http", "-update-buffer-size=100000"]
@@ -30,8 +31,9 @@ services:
       - ./log/:/root/log/
     ports:
       - "50050:50050"
+    #network_mode: host
     networks:
-        - hyperfaas-network
+      - hyperfaas-network
     command: ["./leaf", "--address=0.0.0.0:50050", "--log-level=debug", "--log-format=text", "--log-file=/root/log/leaf.log", "--worker-ids=worker:50051", "--scheduler-type=mru", "--database-address=http://database:8999"]
     develop:
         watch:
@@ -47,6 +49,7 @@ services:
       dockerfile: database.Dockerfile
     ports:
       - "8999:8999"
+    #network_mode: host
     networks:
       - hyperfaas-network
 

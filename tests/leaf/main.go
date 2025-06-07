@@ -28,7 +28,7 @@ const (
 	SQLITE_DB_PATH     = "metrics.db"
 	TIMEOUT            = 10 * time.Second
 	DURATION           = 60 * time.Second
-	RPS                = 1500
+	RPS                = 600
 )
 
 func main() {
@@ -58,12 +58,14 @@ func main() {
 	//Concurrent calls
 	//testConcurrentCalls(client, functionIDs[0], 10)
 	// Sequential calls
-	//testSequentialCalls(client, functionIDs[0])
+	testSequentialCalls(client, functionIDs[0])
 
 	// Concurrent calls for duration
 	//testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
-	testRampingCallsForDuration(client, functionIDs[0], RPS, DURATION, 60*time.Second)
-
+	go testRampingCallsForDuration(client, functionIDs[0], RPS, DURATION, 60*time.Second)
+	go testRampingCallsForDuration(client, functionIDs[1], RPS, DURATION, 60*time.Second)
+	go testRampingCallsForDuration(client, functionIDs[2], RPS, DURATION, 60*time.Second)
+	time.Sleep(DURATION + 5*time.Second)
 	// Send thumbnail request
 	//sendThumbnailRequest(client, functionIDs[3])
 
@@ -229,10 +231,10 @@ func sendCall(client pb.LeafClient, functionID *common.FunctionID) (time.Duratio
 	_, err := client.ScheduleCall(ctx, startReq)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			fmt.Printf("Timeout error: %v\n", ctx.Err())
+			//fmt.Printf("Timeout error: %v\n", ctx.Err())
 			return 0, fmt.Errorf("timeout error: %v", ctx.Err())
 		}
-		fmt.Printf("Failed to schedule call: %v\n", err)
+		//fmt.Printf("Failed to schedule call: %v\n", err)
 		return 0, fmt.Errorf("failed to schedule call: %v", err)
 	}
 

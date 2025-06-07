@@ -2,17 +2,16 @@ package api
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"log/slog"
+	"math/rand"
 	"sync"
 	"time"
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	controllerPB "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/leaf"
@@ -23,9 +22,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// Here we could have a cache of functions and if they are scale 0 or 1.
+
 type LeafServer struct {
 	leaf.UnimplementedLeafServer
 	scheduler                       scheduling.Scheduler
+	state                           *state.SmallState
+	workerIds                       []state.WorkerID
+	functionMetricChans             map[state.FunctionID]chan struct{}
+	functionMetricChansMutex        sync.RWMutex
 	database                        kv.FunctionMetadataStore
 	functionIdCache                 map[string]kv.FunctionData
 	poolManager                     PoolManager
@@ -51,121 +56,157 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 		ImageTag: req.ImageTag,
 	}
 
+	s.functionMetricChansMutex.Lock()
+	s.functionMetricChans[state.FunctionID(functionID.Id)] = make(chan struct{})
+	s.functionMetricChansMutex.Unlock()
+
+	s.state.AddFunction(state.FunctionID(functionID.Id),
+		s.functionMetricChans[state.FunctionID(functionID.Id)],
+		func(ctx context.Context, functionID state.FunctionID, workerID state.WorkerID) error {
+			_, err := s.startInstance(ctx, workerID, functionID)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+
 	return &leaf.CreateFunctionResponse{
 		FunctionID: functionID,
 	}, nil
 
 }
 
+/*
 // ScheduleCall places a call to a function on a worker and returns the response
-func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
-	// Cache check
-	functionData, ok := s.functionIdCache[req.FunctionID.Id]
-	if !ok {
-		ImageTag, Config, err := s.database.Get(req.FunctionID)
-		if err != nil {
-			var noSuchKeyError kv.NoSuchKeyError
-			if errors.As(err, &noSuchKeyError) {
-				return nil, status.Errorf(codes.NotFound, "failed to get function from database: %s", req.FunctionID.Id)
+
+	func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
+		// Cache check
+		functionData, ok := s.functionIdCache[req.FunctionID.Id]
+		if !ok {
+			ImageTag, Config, err := s.database.Get(req.FunctionID)
+			if err != nil {
+				var noSuchKeyError kv.NoSuchKeyError
+				if errors.As(err, &noSuchKeyError) {
+					return nil, status.Errorf(codes.NotFound, "failed to get function from database: %s", req.FunctionID.Id)
+				}
+				return nil, fmt.Errorf("failed to get function from database: %w", err)
 			}
-			return nil, fmt.Errorf("failed to get function from database: %w", err)
+
+			s.functionIdCache[req.FunctionID.Id] = kv.FunctionData{
+				Config:   Config,
+				ImageTag: ImageTag,
+			}
 		}
 
-		s.functionIdCache[req.FunctionID.Id] = kv.FunctionData{
-			Config:   Config,
-			ImageTag: ImageTag,
-		}
-	}
+		functionId := state.FunctionID(req.FunctionID.Id)
 
-	functionId := state.FunctionID(req.FunctionID.Id)
-
-	decision, err := s.scheduler.Schedule(ctx, functionId, functionData.Config.MaxConcurrency)
-	if err != nil {
-		return nil, err
-	}
-	var resp *leaf.ScheduleCallResponse
-	instanceID := decision.InstanceID
-	workerID := decision.WorkerID
-	switch decision.Decision {
-	case scheduling.StartInstance:
-		s.logger.Info("Starting new instance", "functionID", functionId, "workerID", workerID)
-		s.scheduler.UpdateStartingInstancesCounter(workerID, functionId, 1)
-		instanceID, err = s.startInstance(ctx, workerID, functionId)
+		decision, err := s.scheduler.Schedule(ctx, functionId, functionData.Config.MaxConcurrency)
 		if err != nil {
 			return nil, err
 		}
-		err = s.scheduler.AddInstance(workerID, functionId, instanceID)
-		if err != nil {
-			return nil, err
-		}
-		resp, err = s.callWorker(ctx, workerID, functionId, instanceID, req)
-		if err != nil {
-			switch err.(type) {
-			case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
-				return nil, err
-			case *WorkerDownError:
-				s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
-				return nil, err
-			default:
-				return nil, err
-			}
-		}
-		s.scheduler.UpdateStartingInstancesCounter(workerID, functionId, -1)
-		s.scheduler.ReduceInstanceConcurrency(workerID, functionId, instanceID)
-
-	case scheduling.Schedule:
-		resp, err = s.callWorker(ctx, workerID, functionId, instanceID, req)
-		if err != nil {
-			switch err.(type) {
-			case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
-				return nil, err
-			case *WorkerDownError:
-				s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
-				return nil, err
-			default:
-				return nil, err
-			}
-		}
-		s.scheduler.ReduceInstanceConcurrency(workerID, functionId, instanceID)
-	case scheduling.TooManyRequests:
-		s.logger.Error("Too many requests", "functionID", functionId, "workerID", workerID)
-		return nil, status.Errorf(codes.ResourceExhausted, "too many requests")
-	case scheduling.TooManyStartingInstances:
-		s.logger.Info("Too many starting instances, backoff triggered", "functionID", functionId, "workerID", workerID)
-		for {
-			time.Sleep(s.panicBackoff)
-			s.panicBackoff = s.panicBackoff + s.panicBackoffIncrease
-			if s.panicBackoff > s.panicMaxBackoff {
-				s.panicBackoff = s.panicMaxBackoff
-			}
-			decision, err = s.scheduler.Schedule(ctx, functionId, functionData.Config.MaxConcurrency)
+		var resp *leaf.ScheduleCallResponse
+		instanceID := decision.InstanceID
+		workerID := decision.WorkerID
+		switch decision.Decision {
+		case scheduling.StartInstance:
+			s.logger.Info("Starting new instance", "functionID", functionId, "workerID", workerID)
+			s.scheduler.UpdateStartingInstancesCounter(workerID, functionId, 1)
+			instanceID, err = s.startInstance(ctx, workerID, functionId)
 			if err != nil {
 				return nil, err
 			}
-			if decision.Decision == scheduling.Schedule {
-				resp, err = s.callWorker(ctx, decision.WorkerID, functionId, decision.InstanceID, req)
-				if err != nil {
-					switch err.(type) {
-					case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
-						return nil, err
-					case *WorkerDownError:
-						s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
-						return nil, err
-					default:
-						return nil, err
-					}
+			err = s.scheduler.AddInstance(workerID, functionId, instanceID)
+			if err != nil {
+				return nil, err
+			}
+			resp, err = s.callWorker(ctx, workerID, functionId, instanceID, req)
+			if err != nil {
+				switch err.(type) {
+				case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
+					return nil, err
+				case *WorkerDownError:
+					s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
+					return nil, err
+				default:
+					return nil, err
 				}
-				s.scheduler.ReduceInstanceConcurrency(decision.WorkerID, functionId, decision.InstanceID)
-				break
+			}
+			s.scheduler.UpdateStartingInstancesCounter(workerID, functionId, -1)
+			s.scheduler.ReduceInstanceConcurrency(workerID, functionId, instanceID)
+
+		case scheduling.Schedule:
+			resp, err = s.callWorker(ctx, workerID, functionId, instanceID, req)
+			if err != nil {
+				switch err.(type) {
+				case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
+					return nil, err
+				case *WorkerDownError:
+					s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
+					return nil, err
+				default:
+					return nil, err
+				}
+			}
+			s.scheduler.ReduceInstanceConcurrency(workerID, functionId, instanceID)
+		case scheduling.TooManyRequests:
+			s.logger.Error("Too many requests", "functionID", functionId, "workerID", workerID)
+			return nil, status.Errorf(codes.ResourceExhausted, "too many requests")
+		case scheduling.TooManyStartingInstances:
+			s.logger.Info("Too many starting instances, backoff triggered", "functionID", functionId, "workerID", workerID)
+			for {
+				time.Sleep(s.panicBackoff)
+				s.panicBackoff = s.panicBackoff + s.panicBackoffIncrease
+				if s.panicBackoff > s.panicMaxBackoff {
+					s.panicBackoff = s.panicMaxBackoff
+				}
+				decision, err = s.scheduler.Schedule(ctx, functionId, functionData.Config.MaxConcurrency)
+				if err != nil {
+					return nil, err
+				}
+				if decision.Decision == scheduling.Schedule {
+					resp, err = s.callWorker(ctx, decision.WorkerID, functionId, decision.InstanceID, req)
+					if err != nil {
+						switch err.(type) {
+						case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
+							return nil, err
+						case *WorkerDownError:
+							s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
+							return nil, err
+						default:
+							return nil, err
+						}
+					}
+					s.scheduler.ReduceInstanceConcurrency(decision.WorkerID, functionId, decision.InstanceID)
+					break
+				}
 			}
 		}
+		return resp, nil
 	}
+*/
+func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
+	autoscaler := s.state.GetAutoscaler(state.FunctionID(req.FunctionID.Id))
+	if autoscaler.IsScaledDown() {
+		err := autoscaler.ForceScaleUp(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	randWorker := s.workerIds[rand.Intn(len(s.workerIds))]
+	// TODO: pick a better way to pick a worker.
+	// Note: we send function id as instance id because I havent updated the proto yet. But the call instance endpoint is now call function. worker handles the instance id.
+	resp, err := s.callWorker(ctx, randWorker, state.FunctionID(req.FunctionID.Id), state.InstanceID(req.FunctionID.Id), req)
+	if err != nil {
+		return nil, err
+	}
+
 	return resp, nil
 }
 
 func NewLeafServer(
 	scheduler scheduling.Scheduler,
 	httpClient kv.FunctionMetadataStore,
+	workerIds []state.WorkerID,
 	maxStartingInstancesPerFunction int,
 	startingInstanceWaitTimeout time.Duration,
 	maxRunningInstancesPerFunction int,
@@ -178,7 +219,10 @@ func NewLeafServer(
 		scheduler:                       scheduler,
 		database:                        httpClient,
 		functionIdCache:                 make(map[string]kv.FunctionData),
+		functionMetricChans:             make(map[state.FunctionID]chan struct{}),
 		poolManager:                     *NewPoolManager(1, 100, 120*time.Second),
+		workerIds:                       workerIds,
+		state:                           state.NewSmallState(workerIds, logger),
 		maxStartingInstancesPerFunction: maxStartingInstancesPerFunction,
 		startingInstanceWaitTimeout:     startingInstanceWaitTimeout,
 		maxRunningInstancesPerFunction:  maxRunningInstancesPerFunction,

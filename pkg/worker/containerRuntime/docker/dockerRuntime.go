@@ -279,12 +279,14 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 	var networkMode string
 	if d.containerized {
 		networkMode = "hyperfaas-network"
+		//networkMode = "host"
 	} else {
 		networkMode = "bridge" //Cannot be host since otherwise the container id pulled by the docker container from env will always be docker-desktop
 	}
 	return &container.HostConfig{
-		AutoRemove:  d.autoRemove,
-		NetworkMode: container.NetworkMode(networkMode),
+		AutoRemove:      d.autoRemove,
+		NetworkMode:     container.NetworkMode(networkMode),
+		PublishAllPorts: true,
 		Mounts: []mount.Mount{
 			{
 				Type:   mount.TypeVolume,
@@ -302,21 +304,22 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 
 func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID string, containerName string) (string, error) {
 	if d.containerized {
-		// Use Docker DNS resolution via container name
 		return fmt.Sprintf("%s:%d", containerName, 50052), nil
 	}
 
-	// Use container IP from Docker inspect
 	containerJSON, err := d.Cli.ContainerInspect(ctx, containerID)
 	if err != nil {
 		return "", err
 	}
 
-	network, ok := containerJSON.NetworkSettings.Networks["hyper-faas"]
+	network, ok := containerJSON.NetworkSettings.Networks["hyperfaas-network"]
 	if !ok {
-		return "", fmt.Errorf("container not connected to hyper-faas network")
+		return "", fmt.Errorf("container not connected to hyperfaas-network network")
 	}
-
+	/* network := containerJSON.NetworkSettings.Networks["host"]
+	if network == nil {
+		return "", fmt.Errorf("container not connected to host network")
+	} */
 	return fmt.Sprintf("%s:%d", network.IPAddress, 50052), nil
 }
 

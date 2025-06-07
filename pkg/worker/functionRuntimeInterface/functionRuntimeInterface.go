@@ -79,7 +79,7 @@ func (f *Function) Ready(handler func(context.Context, *common.CallRequest) (*co
 
 	functionpb.RegisterFunctionServiceServer(f.server, f)
 
-	lis, err := net.Listen("tcp", ":50052")
+	lis, err := net.Listen("tcp", "0.0.0.0:50052")
 	if err != nil {
 		logger.Error("Failed to listen", "error", err)
 		os.Exit(1)
