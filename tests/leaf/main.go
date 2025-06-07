@@ -26,9 +26,9 @@ const (
 	RequestedCPUPeriod = 100000
 	RequestedCPUQuota  = 50000
 	SQLITE_DB_PATH     = "metrics.db"
-	TIMEOUT            = 10 * time.Second
+	TIMEOUT            = 30 * time.Second
 	DURATION           = 10 * time.Second
-	RPS                = 2000
+	RPS                = 10000
 )
 
 func main() {
@@ -116,58 +116,26 @@ func testConcurrentCalls(client pb.LeafClient, functionID *common.FunctionID, nu
 	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d, AvgLatency: %v\n", successCount, failureCount, avgLatency)
 }
 
-func testConcurrentCallsForDurationOLD(client pb.LeafClient, functionID *common.FunctionID, rps int, duration time.Duration) {
-	var wg sync.WaitGroup
-	seconds := int(duration.Seconds())
-
-	for i := 0; i < seconds; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			testConcurrentCalls(client, functionID, rps)
-		}()
-		time.Sleep(1 * time.Second)
-	}
-
-	time.Sleep(2 * time.Second)
-
-	wg.Wait()
-}
-
 func testConcurrentCallsForDuration(client pb.LeafClient, functionID *common.FunctionID, rps int, duration time.Duration) {
-	var wg sync.WaitGroup
-	seconds := int(duration.Seconds())
 
 	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), duration+3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), duration+30*time.Second)
 	defer cancel()
 
-	for i := 0; i < seconds; i++ {
+	ticker := time.NewTicker(1 * time.Second)
+	var wg sync.WaitGroup
+	for {
 		select {
-		case <-ctx.Done():
-			return
-		default:
+		case <-ticker.C:
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				testConcurrentCalls(client, functionID, rps)
 			}()
-			time.Sleep(1 * time.Second)
+		case <-ctx.Done():
+			wg.Wait()
+			return
 		}
-	}
-
-	// Use a timeout on the WaitGroup
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		fmt.Println("All calls completed successfully")
-	case <-time.After(10 * time.Second):
-		fmt.Println("Timed out waiting for all calls to complete")
 	}
 }
 

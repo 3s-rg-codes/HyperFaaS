@@ -34,7 +34,16 @@ services:
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./leaf", "--address=0.0.0.0:50050", "--log-level=info", "--log-format=text", "--log-file=/root/log/leaf.log", "--worker-ids=worker:50051", "--scheduler-type=mru", "--database-address=http://database:8999"]
+    command: ["./leaf", "--address=0.0.0.0:50050",
+     "--log-level=info", "--log-format=text", "--log-file=/root/log/leaf.log",
+     "--worker-ids=worker:50051",
+     "--database-address=http://database:8999",
+     "--max-starting-instances-per-function=2",
+     "--starting-instance-wait-timeout=10s",
+     "--max-running-instances-per-function=10",
+     "--panic-backoff=1s",
+     "--panic-backoff-increase=1s",
+     "--panic-max-backoff=10s"]
     develop:
         watch:
             - action: rebuild
