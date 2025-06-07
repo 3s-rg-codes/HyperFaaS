@@ -94,6 +94,25 @@ def import_function_images(conn, json_file='generated_scenarios.json'):
     cursor.execute("SELECT * FROM function_images")
     for row in cursor.fetchall():
         print(f"  Function {row[0]}: {row[1]}")
+        
+
+def add_function_ids_to_cpu_mem_stats(conn):
+    """Fill function IDs in cpu_mem_stats table"""
+    cursor = conn.cursor()
+    cursor.execute('''
+    UPDATE cpu_mem_stats
+    SET function_id = (
+        SELECT su.function_id
+        FROM status_updates su
+        WHERE su.instance_id = cpu_mem_stats.instance_id
+        AND su.function_id IS NOT NULL
+        ORDER BY su.timestamp DESC
+        LIMIT 1
+    )
+    WHERE function_id IS NULL
+    ''')
+    conn.commit()
+    
 
 def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json_file='generated_scenarios.json'):
     conn = sqlite3.connect(db_file)
@@ -233,6 +252,7 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
         except:
             pass
     
+    add_function_ids_to_cpu_mem_stats(conn)
     conn.close()
 
 if __name__ == "__main__":

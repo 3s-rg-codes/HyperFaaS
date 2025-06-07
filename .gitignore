@@ -24,6 +24,7 @@ node_modules/
 generated_scenarios.json
 test_results.csv
 metrics.db
+stderr_output.txt
 # main binary
 main
 bin/

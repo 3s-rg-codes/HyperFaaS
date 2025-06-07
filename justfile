@@ -125,6 +125,12 @@ metrics-analyse:
 metrics-plot:
     cd benchmarks && uv run analyse.py --scenarios-path ../load-generator/generated_scenarios.json --plot true
 
+clean-metrics:
+    rm ./benchmarks/metrics.db 2> /dev/null
+    rm ./load-generator/generated_scenarios.json 2> /dev/null
+    rm ./load-generator/test_results.csv 2> /dev/null
+    rm ./load-generator/stderr_output.txt 2> /dev/null
+
 ############################
 # Misc. Stuff
 ############################
