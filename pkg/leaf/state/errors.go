@@ -6,7 +6,7 @@ type FunctionNotAssignedError struct {
 	FunctionID FunctionID
 }
 
-func (e *FunctionNotAssignedError) Error() string {
+func (e FunctionNotAssignedError) Error() string {
 	return fmt.Sprintf("function %s not registered with any worker", e.FunctionID)
 }
 
@@ -14,7 +14,7 @@ type FunctionAlreadyAssignedError struct {
 	FunctionID FunctionID
 }
 
-func (e *FunctionAlreadyAssignedError) Error() string {
+func (e FunctionAlreadyAssignedError) Error() string {
 	return fmt.Sprintf("function %s already assigned to worker", e.FunctionID)
 }
 
@@ -22,7 +22,7 @@ type InstanceNotFoundError struct {
 	InstanceID InstanceID
 }
 
-func (e *InstanceNotFoundError) Error() string {
+func (e InstanceNotFoundError) Error() string {
 	return fmt.Sprintf("instance %s not found", e.InstanceID)
 }
 
@@ -30,7 +30,7 @@ type NoIdleInstanceError struct {
 	FunctionID FunctionID
 }
 
-func (e *NoIdleInstanceError) Error() string {
+func (e NoIdleInstanceError) Error() string {
 	return fmt.Sprintf("no idle instance found for function %s", e.FunctionID)
 }
 
@@ -38,7 +38,7 @@ type WorkerNotFoundError struct {
 	WorkerID WorkerID
 }
 
-func (e *WorkerNotFoundError) Error() string {
+func (e WorkerNotFoundError) Error() string {
 	return fmt.Sprintf("worker %s not found", e.WorkerID)
 }
 
@@ -46,6 +46,16 @@ type TooManyStartingInstancesError struct {
 	FunctionID FunctionID
 }
 
-func (e *TooManyStartingInstancesError) Error() string {
+func (e TooManyStartingInstancesError) Error() string {
 	return fmt.Sprintf("too many starting instances for function %s", e.FunctionID)
+}
+
+type ScaleUpFailedError struct {
+	FunctionID FunctionID
+	WorkerID   WorkerID
+	Err        error
+}
+
+func (e ScaleUpFailedError) Error() string {
+	return fmt.Sprintf("failed to scale up function %s on worker %s: %v", e.FunctionID, e.WorkerID, e.Err)
 }

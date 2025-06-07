@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -29,7 +30,7 @@ type LeafServer struct {
 	scheduler                       scheduling.Scheduler
 	state                           *state.SmallState
 	workerIds                       []state.WorkerID
-	functionMetricChans             map[state.FunctionID]chan struct{}
+	functionMetricChans             map[state.FunctionID]chan bool
 	functionMetricChansMutex        sync.RWMutex
 	database                        kv.FunctionMetadataStore
 	functionIdCache                 map[string]kv.FunctionData
@@ -57,7 +58,7 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 	}
 
 	s.functionMetricChansMutex.Lock()
-	s.functionMetricChans[state.FunctionID(functionID.Id)] = make(chan struct{})
+	s.functionMetricChans[state.FunctionID(functionID.Id)] = make(chan bool, 10000)
 	s.functionMetricChansMutex.Unlock()
 
 	s.state.AddFunction(state.FunctionID(functionID.Id),
@@ -189,16 +190,42 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	if autoscaler.IsScaledDown() {
 		err := autoscaler.ForceScaleUp(ctx)
 		if err != nil {
-			return nil, err
+			if errors.As(err, &state.TooManyStartingInstancesError{}) {
+				time.Sleep(s.panicBackoff)
+				s.panicBackoff = s.panicBackoff + s.panicBackoffIncrease
+				if s.panicBackoff > s.panicMaxBackoff {
+					s.panicBackoff = s.panicMaxBackoff
+				}
+				return s.ScheduleCall(ctx, req)
+			}
+			if errors.As(err, &state.ScaleUpFailedError{}) {
+				//TODO improve error message with better info.
+				return nil, status.Errorf(codes.ResourceExhausted, "failed to scale up function")
+			}
 		}
 	}
-	randWorker := s.workerIds[rand.Intn(len(s.workerIds))]
+	if autoscaler.IsPanicMode() {
+		time.Sleep(s.panicBackoff)
+		s.panicBackoff = s.panicBackoff + s.panicBackoffIncrease
+		if s.panicBackoff > s.panicMaxBackoff {
+			s.panicBackoff = s.panicMaxBackoff
+		}
+		return s.ScheduleCall(ctx, req)
+	}
+
 	// TODO: pick a better way to pick a worker.
+	randWorker := s.workerIds[rand.Intn(len(s.workerIds))]
+
+	s.functionMetricChansMutex.RLock()
+	metricChan := s.functionMetricChans[state.FunctionID(req.FunctionID.Id)]
+	s.functionMetricChansMutex.RUnlock()
+	metricChan <- true
 	// Note: we send function id as instance id because I havent updated the proto yet. But the call instance endpoint is now call function. worker handles the instance id.
 	resp, err := s.callWorker(ctx, randWorker, state.FunctionID(req.FunctionID.Id), state.InstanceID(req.FunctionID.Id), req)
 	if err != nil {
 		return nil, err
 	}
+	metricChan <- false
 
 	return resp, nil
 }
@@ -219,7 +246,7 @@ func NewLeafServer(
 		scheduler:                       scheduler,
 		database:                        httpClient,
 		functionIdCache:                 make(map[string]kv.FunctionData),
-		functionMetricChans:             make(map[state.FunctionID]chan struct{}),
+		functionMetricChans:             make(map[state.FunctionID]chan bool),
 		poolManager:                     *NewPoolManager(1, 100, 120*time.Second),
 		workerIds:                       workerIds,
 		state:                           state.NewSmallState(workerIds, logger),

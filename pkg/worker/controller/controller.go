@@ -61,7 +61,6 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*contro
 	}
 
 	functionData := s.functionIDCache[req.Id]
-
 	s.logger.Debug("Starting container with params:", "tag", functionData.ImageTag, "memory", functionData.Config.Memory, "quota", functionData.Config.Cpu.Quota, "period", functionData.Config.Cpu.Period)
 	container, err := s.runtime.Start(ctx, req.Id, functionData.ImageTag.Tag, functionData.Config)
 
