@@ -40,7 +40,7 @@ func main() {
 		panic(err)
 	}
 
-	logger.Info(start.Id)
+	logger.Info(start.InstanceId.Id)
 
 	for {
 

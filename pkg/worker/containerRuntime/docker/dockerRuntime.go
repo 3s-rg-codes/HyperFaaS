@@ -32,12 +32,11 @@ import (
 
 type DockerRuntime struct {
 	cr.ContainerRuntime
-	Cli               *client.Client
-	autoRemove        bool
-	containerized     bool
-	outputFolderAbs   string
-	logger            *slog.Logger
-	runningContainers *RunningContainers
+	Cli             *client.Client
+	autoRemove      bool
+	containerized   bool
+	outputFolderAbs string
+	logger          *slog.Logger
 }
 
 const (
@@ -91,7 +90,7 @@ func NewDockerRuntime(containerized bool, autoRemove bool, address string, logge
 		}
 	}
 
-	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized, runningContainers: NewRunningContainers()}
+	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized}
 }
 
 // Start a container with the given image tag and configuration.
@@ -146,14 +145,13 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 	}
 	shortID := resp.ID[:12]
 
-	d.runningContainers.SetContainerIp(shortID, addr)
-
 	return cr.Container{InstanceID: shortID, InstanceName: containerName, InstanceIP: addr}, nil
 }
 
 func (d *DockerRuntime) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
+	return nil, nil
 
-	containerIP, err := d.runningContainers.GetContainerIp(req.InstanceId.Id)
+	containerIP, err := d.resolveContainerAddr(ctx, req.InstanceId.Id, req.InstanceId.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -187,8 +185,6 @@ func (d *DockerRuntime) Stop(ctx context.Context, req *common.InstanceID) (*comm
 	if err := d.Cli.ContainerStop(ctx, req.Id, container.StopOptions{}); err != nil {
 		return nil, err
 	}
-
-	d.runningContainers.DeleteContainerIp(req.Id)
 
 	d.logger.Debug("Stopped container", "id", req.Id)
 

@@ -62,15 +62,15 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 
 	if testCase.ExpectsError {
 		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusFailed})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusFailed})
 	} else {
 		// add a success start event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusSuccess})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusSuccess})
 		// add a success running event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventRunning, Status: stats.StatusSuccess})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventRunning, Status: stats.StatusSuccess})
 	}
 
-	response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: cID, Data: testCase.CallPayload, FunctionId: &pbc.FunctionID{Id: testCase.ImageTag}})
+	response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: &pbc.InstanceID{Id: cID.InstanceId.Id}, Data: testCase.CallPayload, FunctionId: &pbc.FunctionID{Id: testCase.ImageTag}})
 	if err != nil {
 		return nil, err
 	}
@@ -78,17 +78,17 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 
 	if testCase.ExpectsError {
 		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventCall, Status: stats.StatusFailed})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventCall, Status: stats.StatusFailed})
 	} else {
 		// add a success event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventCall, Status: stats.StatusSuccess})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventCall, Status: stats.StatusSuccess})
 	}
 	//If there was a response, there is a container response event
 	if testCase.ExpectsResponse && response != nil {
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.Id, Type: stats.TypeContainer, Event: stats.EventResponse, Status: stats.StatusSuccess})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventResponse, Status: stats.StatusSuccess})
 	}
 
-	responseContainerID, err := client.Stop(context.Background(), cID)
+	responseContainerID, err := client.Stop(context.Background(), &pbc.InstanceID{Id: cID.InstanceId.Id})
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 	if testCase.ExpectsError {
 		// add an error event to the stats
 		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: stats.TypeContainer, Event: stats.EventStop, Status: stats.StatusFailed})
-	} else if responseContainerID != nil && responseContainerID.Id == cID.Id {
+	} else if responseContainerID != nil && responseContainerID.Id == cID.InstanceId.Id {
 		// add a success event to the stats
 		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: stats.TypeContainer, Event: stats.EventStop, Status: stats.StatusSuccess})
 	}
