@@ -127,6 +127,18 @@ metrics-analyse:
     cd benchmarks && uv run analyse.py --scenarios-path ../load-generator/generated_scenarios.json
 metrics-plot:
     cd benchmarks && uv run analyse.py --scenarios-path ../load-generator/generated_scenarios.json --plot true
+metrics-process:
+    cd benchmarks && uv run process.py --db-path ../benchmarks/metrics.db --active-calls-window-size 100
+metrics-clean-training:
+    sqlite3 benchmarks/metrics.db "drop table training_data;"
+metrics-verify:
+    sqlite3 benchmarks/metrics.db ".headers on" "select count(), function_instances_count from training_data group by function_instances_count limit 100;"
+    sqlite3 benchmarks/metrics.db ".headers on" "select count() , active_function_calls_count from training_data group by active_function_calls_count limit 100;"
+    sqlite3 benchmarks/metrics.db ".headers on" "select count(distinct(function_cpu_usage)) from training_data;"
+    sqlite3 benchmarks/metrics.db ".headers on" "select count(distinct(function_ram_usage)) from training_data;"
+    sqlite3 benchmarks/metrics.db ".headers on" "select count(distinct(worker_cpu_usage)) from training_data;"
+    sqlite3 benchmarks/metrics.db ".headers on" "select count(distinct(worker_ram_usage)) from training_data;"
+    sqlite3 benchmarks/metrics.db ".headers on" "select count(case when function_cpu_usage = 0.0 then 1 end) as zero_count, count(case when function_cpu_usage != 0.0 then 1 end) as non_zero_count from training_data;"
 
 clean-metrics:
     rm ./benchmarks/metrics.db 2> /dev/null

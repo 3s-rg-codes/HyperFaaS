@@ -59,7 +59,7 @@ func initDB(db *sql.DB) error {
 			instance_id TEXT NOT NULL,
 			function_id TEXT,
 			image_tag TEXT NOT NULL,
-			timestamp DATETIME NOT NULL,
+			timestamp INTEGER NOT NULL,
 
 			-- CPU usage
 			-- Units: nanoseconds (Linux)
@@ -141,7 +141,7 @@ func main() {
 			update.Event,
 			update.Status,
 			update.FunctionId.Id,
-			update.Timestamp.AsTime(),
+			update.Timestamp.AsTime().Unix(),
 		)
 		if err != nil {
 			log.Printf("Failed to insert update: %v", err)
@@ -258,7 +258,7 @@ func saveStats(db *sql.DB, s *container.StatsResponse, containerID string, image
 		instanceID,
 		nil, // functionID is inserted later during import
 		image_tag,
-		s.Read,
+		s.Read.Unix(),
 		s.CPUStats.CPUUsage.TotalUsage,
 		cpuPercent,
 		mem,
