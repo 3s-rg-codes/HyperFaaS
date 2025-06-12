@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -120,7 +121,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 	s.logger.Debug("Passing call with payload", "payload", req.Data, "instance ID", req.InstanceId.Id)
 	s.CallerServer.QueueInstanceCall(req.InstanceId.Id, caller.Request{Context: ctx, Payload: req.Data})
-	callQueuedTimestamp := time.Now().UTC().Truncate(time.Nanosecond)
+	callQueuedTimestamp := time.Now()
 
 	//s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Call().Success())
 
@@ -136,8 +137,9 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 		// add timestamps to the trailer so they can be read by the client
 		defer func() {
 			trailer := metadata.New(map[string]string{
-				"gotResponseTimestamp": gotResponseTimestamp.Format(time.RFC3339Nano),
-				"callQueuedTimestamp":  callQueuedTimestamp.Format(time.RFC3339Nano),
+				"gotResponseTimestamp":   strconv.FormatInt(gotResponseTimestamp.UnixNano(), 10),
+				"callQueuedTimestamp":    strconv.FormatInt(callQueuedTimestamp.UnixNano(), 10),
+				"functionProcessingTime": gotResponseTimestamp.Sub(callQueuedTimestamp).String(),
 			})
 			grpc.SetTrailer(ctx, trailer)
 		}()
@@ -147,8 +149,6 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 
 		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId.Id).Container(req.InstanceId.Id).Down())
 		s.logger.Error("Container timed out or crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
-		s.logger.Error("Container timed out or crashed while waiting for response", "instance ID", req.InstanceId.Id, "error", err)
-
 		return nil, &ContainerCrashError{InstanceID: req.InstanceId.Id, ContainerError: err.Error()}
 
 	}

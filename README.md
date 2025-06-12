@@ -14,8 +14,6 @@ The platform can be run in two modes:
 - **Containerized Mode**: All components (load balancer nodes, workers and database) run in Docker containers
 - **Native Mode**: All components run directly on the host
 
-
-
 ## Getting Started
 To get started with HyperFaaS, follow these steps:
 
@@ -136,4 +134,6 @@ cd ..
 just metrics-analyse
 ```
 
+## hyperFake
 
+### [hyperFake Model](./hyperFakeModel/README.md)

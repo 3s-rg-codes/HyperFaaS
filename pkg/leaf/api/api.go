@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
@@ -36,8 +37,11 @@ type LeafServer struct {
 }
 
 type CallMetadata struct {
-	CallQueuedTimestamp  string
-	GotResponseTimestamp string
+	CallQueuedTimestamp        string
+	GotResponseTimestamp       string
+	FunctionProcessingTime     string
+	LeafGotRequestTimestamp    string
+	LeafScheduledCallTimestamp string
 }
 
 // CreateFunction should only create the function, e.g. save its Config and image tag in local cache
@@ -59,82 +63,9 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 
 }
 
-/* func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
-
-	//Check if the functionID is cached, if not get it from database
-	if _, ok := s.functionIdCache[req.FunctionID.Id]; !ok {
-		ImageTag, Config, err := s.database.Get(req.FunctionID)
-		if err != nil {
-			if errors.As(err, &kv.NoSuchKeyError{}) {
-				return nil, status.Errorf(codes.NotFound, "failed to get function from database: %s", req.FunctionID.Id)
-			}
-			return nil, fmt.Errorf("failed to get function from database: %w", err)
-		}
-
-		s.functionIdCache[req.FunctionID.Id] = kv.FunctionData{
-			Config:   Config,
-			ImageTag: ImageTag,
-		}
-	}
-
-	functionId := state.FunctionID(req.FunctionID.Id)
-
-	workerID, instanceID, err := s.scheduler.Schedule(ctx, functionId)
-	if err != nil {
-		return nil, err
-	}
-
-	if instanceID == "" {
-		// There is no idle instance available
-
-		// Check if the worker has already to many instances starting or running
-		backpressured, err := s.IsFunctionBackpressured(ctx, workerID, functionId)
-		if err != nil {
-			return nil, err
-		} else if backpressured {
-			workerID, instanceID, err = s.ScheduleWithBackoff(ctx, functionId)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			instanceID, err = s.startInstance(ctx, workerID, functionId)
-			if err != nil {
-				return nil, err
-			}
-			log.Printf("Started new instance for function %s on worker %s, instanceID: %s", functionId, workerID, instanceID)
-			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateStarting)
-		}
-
-	} else {
-		// An Idle instance was found
-		s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateRunning)
-	}
-
-	resp, err := s.callWorker(ctx, workerID, functionId, instanceID, req)
-	if err != nil {
-		switch err.(type) {
-		case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
-			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
-			// TODO: handle this and dont return.
-			return nil, err
-		case *WorkerDownError:
-			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
-			s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
-			return nil, err
-		default:
-			return nil, err
-		}
-	}
-	log.Printf("Recieved response from worker %s, instanceID: %s, response: %v", workerID, instanceID, resp)
-	// The instance is no longer running
-	s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateIdle)
-
-	return resp, nil
-} */
-
 // ScheduleCall places a call to a function on a worker and returns the response
 func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
-	// Cache check remains the same
+	leafGotRequestTimestamp := time.Now()
 	if _, ok := s.functionIdCache[req.FunctionID.Id]; !ok {
 		ImageTag, Config, err := s.database.Get(req.FunctionID)
 		if err != nil {
@@ -169,6 +100,8 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 		return nil, err
 	}
 
+	leafScheduledCallTimestamp := time.Now()
+
 	resp, callMetadata, err := s.callWorker(ctx, workerID, functionId, instanceID, req)
 	if err != nil {
 		switch err.(type) {
@@ -189,9 +122,12 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 
 	// Add metadata to trailers
 	trailer := metadata.New(map[string]string{
-		"callQueuedTimestamp":  callMetadata.CallQueuedTimestamp,
-		"gotResponseTimestamp": callMetadata.GotResponseTimestamp,
-		"instanceID":           string(instanceID),
+		"callQueuedTimestamp":        callMetadata.CallQueuedTimestamp,
+		"gotResponseTimestamp":       callMetadata.GotResponseTimestamp,
+		"functionProcessingTime":     callMetadata.FunctionProcessingTime,
+		"instanceID":                 string(instanceID),
+		"leafGotRequestTimestamp":    strconv.FormatInt(leafGotRequestTimestamp.UnixNano(), 10),
+		"leafScheduledCallTimestamp": strconv.FormatInt(leafScheduledCallTimestamp.UnixNano(), 10),
 	})
 	grpc.SetTrailer(ctx, trailer)
 
@@ -270,8 +206,9 @@ func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, fu
 	}
 
 	callMetadata := &CallMetadata{
-		CallQueuedTimestamp:  trailer.Get("callQueuedTimestamp")[0],
-		GotResponseTimestamp: trailer.Get("gotResponseTimestamp")[0],
+		CallQueuedTimestamp:    trailer.Get("callQueuedTimestamp")[0],
+		GotResponseTimestamp:   trailer.Get("gotResponseTimestamp")[0],
+		FunctionProcessingTime: trailer.Get("functionProcessingTime")[0],
 	}
 
 	return &leaf.ScheduleCallResponse{Data: resp.Data, Error: resp.Error}, callMetadata, nil

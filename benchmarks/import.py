@@ -11,7 +11,7 @@ def create_tables(conn):
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS metrics (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp INTEGER,
+        timestamp INTEGER, -- timestamp of the logging of the request
         scenario TEXT,
         service TEXT,
         image_tag TEXT,
@@ -22,11 +22,17 @@ def create_tables(conn):
         grpc_req_duration REAL,
         callqueuedtimestamp REAL,
         gotresponsetimestamp REAL,
+        functionprocessingtime REAL,
+        leafgotrequesttimestamp REAL,
+        leafscheduledcalltimestamp REAL,
+        timeout REAL, -- timestamp of the timeout of the request
+        error REAL, -- timestamp of the error of the request
         
         -- Data metrics
         data_sent REAL,
         data_received REAL,
         iteration_duration REAL,
+        function_parameters TEXT,
         
         -- Other metadata
         proto TEXT,
@@ -88,6 +94,25 @@ def import_function_images(conn, json_file='generated_scenarios.json'):
     cursor.execute("SELECT * FROM function_images")
     for row in cursor.fetchall():
         print(f"  Function {row[0]}: {row[1]}")
+        
+
+def add_function_ids_to_cpu_mem_stats(conn):
+    """Fill function IDs in cpu_mem_stats table"""
+    cursor = conn.cursor()
+    cursor.execute('''
+    UPDATE cpu_mem_stats
+    SET function_id = (
+        SELECT su.function_id
+        FROM status_updates su
+        WHERE su.instance_id = cpu_mem_stats.instance_id
+        AND su.function_id IS NOT NULL
+        ORDER BY su.timestamp DESC
+        LIMIT 1
+    )
+    WHERE function_id IS NULL
+    ''')
+    conn.commit()
+    
 
 def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json_file='generated_scenarios.json'):
     conn = sqlite3.connect(db_file)
@@ -139,6 +164,10 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
                     requests[request_key]['image_tag'] = tags['image_tag']
                 if 'instanceId' in tags:
                     requests[request_key]['instance_id'] = tags['instanceId']
+                if 'functionProcessingTime' in tags:
+                    requests[request_key]['function_processing_time'] = tags['functionProcessingTime']
+                if 'functionParameters' in tags:
+                    requests[request_key]['function_parameters'] = tags['functionParameters']
                     
             # Store proto and subproto info
             requests[request_key]['proto'] = row['proto']
@@ -159,17 +188,25 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
                 requests[request_key]['iteration_duration'] = row['metric_value']
             elif row['metric_name'] == 'grpc_req_duration':
                 requests[request_key]['grpc_req_duration'] = row['metric_value']
-    
+            elif row['metric_name'] == 'leafgotrequesttimestamp':
+                requests[request_key]['leafgotrequesttimestamp'] = row['metric_value']
+            elif row['metric_name'] == 'leafscheduledcalltimestamp':
+                requests[request_key]['leafscheduledcalltimestamp'] = row['metric_value']
+            elif row['metric_name'] == 'timeout':
+                requests[request_key]['timeout'] = row['metric_value']
+            elif row['metric_name'] == 'error':
+                requests[request_key]['error'] = row['metric_value']
     # insert collected requests into the database
     for request_key, data in requests.items():
             
         cursor.execute('''
         INSERT INTO metrics (
             timestamp, scenario, service, image_tag, instance_id, request_id,
-            grpc_req_duration, callqueuedtimestamp, gotresponsetimestamp, 
-            data_sent, data_received, iteration_duration,
-            proto, subproto, group_name, extra_tags
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            grpc_req_duration, callqueuedtimestamp, gotresponsetimestamp, functionprocessingtime,
+            leafgotrequesttimestamp, leafscheduledcalltimestamp,
+            data_sent, data_received, iteration_duration, function_parameters,
+            proto, subproto, group_name, extra_tags, timeout, error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('timestamp'),
             data.get('scenario'),
@@ -180,13 +217,19 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
             data.get('grpc_req_duration'),
             data.get('callqueuedtimestamp'),
             data.get('gotresponsetimestamp'),
+            data.get('function_processing_time'),
+            data.get('leafgotrequesttimestamp'),
+            data.get('leafscheduledcalltimestamp'),
             data.get('data_sent'),
             data.get('data_received'),
             data.get('iteration_duration'),
+            data.get('function_parameters'),
             data.get('proto'),
             data.get('subproto'),
             data.get('group_name'),
-            data.get('extra_tags')
+            data.get('extra_tags'),
+            data.get('timeout'),
+            data.get('error'),
         ))
     
     conn.commit()
@@ -209,6 +252,7 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
         except:
             pass
     
+    add_function_ids_to_cpu_mem_stats(conn)
     conn.close()
 
 if __name__ == "__main__":

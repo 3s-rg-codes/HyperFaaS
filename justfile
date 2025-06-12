@@ -121,7 +121,15 @@ load-test:
     go run ./tests/leaf/main.go
 
 metrics-analyse:
-    cd benchmarks && uv run analyse.py
+    cd benchmarks && uv run analyse.py --scenarios-path ../load-generator/generated_scenarios.json
+metrics-plot:
+    cd benchmarks && uv run analyse.py --scenarios-path ../load-generator/generated_scenarios.json --plot true
+
+clean-metrics:
+    rm ./benchmarks/metrics.db 2> /dev/null
+    rm ./load-generator/generated_scenarios.json 2> /dev/null
+    rm ./load-generator/test_results.csv 2> /dev/null
+    rm ./load-generator/stderr_output.txt 2> /dev/null
 
 ############################
 # Misc. Stuff
@@ -136,8 +144,14 @@ worker-log:
 pprof-worker:
     docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
 
+pprof-leaf:
+    docker exec -it $(docker ps | grep leaf | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
+
 memory-worker:
     docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/heap
+
+memory-leaf:
+    docker exec -it $(docker ps | grep leaf | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/heap
 trace-worker:
     docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool trace http://localhost:6060/debug/pprof/trace?seconds=60
 block-worker:

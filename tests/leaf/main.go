@@ -29,14 +29,15 @@ const (
 	RequestedCPUPeriod = 100000
 	RequestedCPUQuota  = 50000
 	SQLITE_DB_PATH     = "./benchmarks/metrics.db"
-	TIMEOUT            = 10 * time.Second
+	TIMEOUT            = 40 * time.Second
 	DURATION           = 10 * time.Second
-	RPS                = 5
+	RPS                = 50
 )
 
 type CallMetadata struct {
-	CallQueuedTimestamp  string
-	GotResponseTimestamp string
+	CallQueuedTimestamp    string
+	GotResponseTimestamp   string
+	FunctionProcessingTime string
 }
 
 func main() {
@@ -75,13 +76,13 @@ func main() {
 	//testSequentialCalls(client, createFunctionResp.FunctionID)
 
 	// Concurrent calls for duration
-	testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
+	testConcurrentCallsForDuration(client, functionIDs[1], RPS, DURATION)
 
 	// Send thumbnail request
-	sendThumbnailRequest(client, functionIDs[3])
+	//sendThumbnailRequest(client, functionIDs[3])
 
 	// Send BFS request
-	testBFS(client, functionIDs[4])
+	//testBFS(client, functionIDs[4])
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {
@@ -189,16 +190,21 @@ func sendCall(client pb.LeafClient, functionID *common.FunctionID) (time.Duratio
 
 	// Uncomment if you want to test that the data is the same with the echo function
 	/* if string(response.Data) != string(startReq.Data) {
+		panic("data mismatch")
 		return 0, fmt.Errorf("data mismatch: %v", response.Data)
+	} else {
+		fmt.Printf("Data matches: %v\n", response.Data)
 	} */
 
 	callMetadata := &CallMetadata{
-		CallQueuedTimestamp:  metadata.Get("callQueuedTimestamp")[0],
-		GotResponseTimestamp: metadata.Get("gotResponseTimestamp")[0],
+		CallQueuedTimestamp:    metadata.Get("callQueuedTimestamp")[0],
+		GotResponseTimestamp:   metadata.Get("gotResponseTimestamp")[0],
+		FunctionProcessingTime: metadata.Get("functionProcessingTime")[0],
 	}
-	log.Printf("Call queued at %s, got response at %s", callMetadata.CallQueuedTimestamp, callMetadata.GotResponseTimestamp)
+	latency := time.Since(start)
+	log.Printf("Latency: %v, Call queued at %s, got response at %s, function processing time: %s", latency, callMetadata.CallQueuedTimestamp, callMetadata.GotResponseTimestamp, callMetadata.FunctionProcessingTime)
 
-	return time.Since(start), nil
+	return latency, nil
 }
 
 func testSequentialCalls(client pb.LeafClient, functionID *common.FunctionID) {

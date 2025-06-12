@@ -1,51 +1,41 @@
 default:
 	@just --list
 
-build:
-	node build.js
-
-run:
-	k6 run generated/k6-script.js
-
-clean: 
-	rm -rf generated
-
-run-with-output:
-	k6 run  --out csv=test_results.csv script.js
 
 export:
 	uv run ../benchmarks/import.py --csv test_results.csv --db ../benchmarks/metrics.db
 
 # run a seeded load generation with parameters
-run-seeded:
+run time="2m" seed="12345":
 	k6 run \
 	--quiet \
 	--out csv=test_results.csv \
-	-e WORKLOAD_SEED=21020 \
+	-e WORKLOAD_SEED={{seed}} \
 	-e PERSIST_GENERATION=true \
-	-e TOTAL_TEST_DURATION="15m" \
+	-e TOTAL_TEST_DURATION={{time}} \
+	-e FUNCTION_TIMEOUT_SECONDS=2 \
 	-e MIN_PREALLOCATED_VUS=10 \
 	-e MAX_PREALLOCATED_VUS=50 \
-	-e MIN_MAX_VUS=1000 \
-	-e MAX_MAX_VUS=1110 \
+	-e MIN_MAX_VUS=450 \
+	-e MAX_MAX_VUS=500 \
 	-e RAMPING_START_RATE_MIN=1 \
 	-e RAMPING_START_RATE_MAX=50 \
-	-e BFS_MIN_SCENARIOS=6 \
-	-e BFS_MAX_SCENARIOS=10 \
+	-e BFS_MIN_SCENARIOS=2 \
+	-e BFS_MAX_SCENARIOS=3 \
 	-e BFS_CONSTANT_SCENARIOS_RATIO=0.6 \
 	-e BFS_CONSTANT_RATE_MIN=100 \
 	-e BFS_CONSTANT_RATE_MAX=300 \
 	-e BFS_BURST_TARGET_RATE_MIN=300 \
-	-e BFS_BURST_TARGET_RATE_MAX=600 \
+	-e BFS_BURST_TARGET_RATE_MAX=350 \
 	-e ECHO_MIN_SCENARIOS=5 \
-	-e ECHO_MAX_SCENARIOS=16 \
+	-e ECHO_MAX_SCENARIOS=6 \
 	-e ECHO_CONSTANT_SCENARIOS_RATIO=0.5 \
 	-e ECHO_CONSTANT_RATE_MIN=100 \
 	-e ECHO_CONSTANT_RATE_MAX=300 \
 	-e ECHO_BURST_TARGET_RATE_MIN=300 \
-	-e ECHO_BURST_TARGET_RATE_MAX=800 \
+	-e ECHO_BURST_TARGET_RATE_MAX=400 \
 	-e THUMBNAILER_MIN_SCENARIOS=4 \
-	-e THUMBNAILER_MAX_SCENARIOS=12 \
+	-e THUMBNAILER_MAX_SCENARIOS=5 \
 	-e THUMBNAILER_CONSTANT_SCENARIOS_RATIO=0.8 \
 	-e THUMBNAILER_CONSTANT_RATE_MIN=40 \
 	-e THUMBNAILER_CONSTANT_RATE_MAX=300 \
