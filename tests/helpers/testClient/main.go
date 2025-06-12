@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
+	"log/slog"
+	"os"
+	"time"
+
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"log/slog"
-	"os"
-	"time"
 )
 
 const (
@@ -39,7 +40,7 @@ func main() {
 		panic(err)
 	}
 
-	logger.Info(start.Id)
+	logger.Info(start.InstanceId.Id)
 
 	for {
 

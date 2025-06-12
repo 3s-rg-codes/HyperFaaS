@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
-	"log"
+	"fmt"
 	"math/rand"
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"gonum.org/v1/gonum/graph/simple"
 )
 
@@ -32,11 +33,10 @@ func main() {
 
 // inspired by https://github.com/spcl/serverless-benchmarks/blob/master/benchmarks/500.scientific/503.graph-bfs/python/function.py
 
-func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functionRuntimeInterface.Response {
+func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
 	var input InputData
 	if err := gob.NewDecoder(bytes.NewReader(in.Data)).Decode(&input); err != nil {
-		log.Printf("failed to decode input: %v", err)
-		return encodeErrorResponse(in.Id, "invalid input")
+		return nil, fmt.Errorf("failed to decode input: %v", err)
 	}
 
 	if input.Seed != nil {
@@ -61,21 +61,13 @@ func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functio
 
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(output); err != nil {
-		log.Printf("failed to encode response: %v", err)
-		return encodeErrorResponse(in.Id, "encoding failed")
+		return nil, fmt.Errorf("failed to encode response: %v", err)
 	}
 
-	return &functionRuntimeInterface.Response{
-		Data: buf.Bytes(),
-		Id:   in.Id,
-	}
-}
-
-func encodeErrorResponse(id, msg string) *functionRuntimeInterface.Response {
-	return &functionRuntimeInterface.Response{
-		Data: []byte(msg),
-		Id:   id,
-	}
+	return &common.CallResponse{
+		Data:  buf.Bytes(),
+		Error: nil,
+	}, nil
 }
 
 // generateBarabasiAlbert creates a scale-free graph using a simple preferential attachment model

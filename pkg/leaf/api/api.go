@@ -5,14 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
+	"math/rand"
 	"strconv"
 	"sync"
 	"time"
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/scheduling"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	controllerPB "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/leaf"
@@ -24,16 +25,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// Here we could have a cache of functions and if they are scale 0 or 1.
+
 type LeafServer struct {
 	leaf.UnimplementedLeafServer
-	scheduler                       scheduling.Scheduler
-	database                        kv.FunctionMetadataStore
-	functionIdCache                 map[string]kv.FunctionData
-	poolManager                     PoolManager
-	coordinator                     *InstanceCoordinator
-	maxStartingInstancesPerFunction int
-	startingInstanceWaitTimeout     time.Duration
-	maxRunningInstancesPerFunction  int
+	state                    *state.SmallState
+	leafConfig               config.LeafConfig
+	workerIds                []state.WorkerID
+	functionMetricChans      map[state.FunctionID]chan bool
+	functionMetricChansMutex sync.RWMutex
+	database                 kv.FunctionMetadataStore
+	functionIdCache          map[string]kv.FunctionData
+	poolManager              PoolManager
+	logger                   *slog.Logger
 }
 
 type CallMetadata struct {
@@ -42,6 +46,7 @@ type CallMetadata struct {
 	FunctionProcessingTime     string
 	LeafGotRequestTimestamp    string
 	LeafScheduledCallTimestamp string
+	InstanceID                 string
 }
 
 // CreateFunction should only create the function, e.g. save its Config and image tag in local cache
@@ -57,102 +62,100 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 		ImageTag: req.ImageTag,
 	}
 
+	s.functionMetricChansMutex.Lock()
+	s.functionMetricChans[state.FunctionID(functionID.Id)] = make(chan bool, 10000)
+	s.functionMetricChansMutex.Unlock()
+
+	s.state.AddFunction(state.FunctionID(functionID.Id),
+		s.functionMetricChans[state.FunctionID(functionID.Id)],
+		func(ctx context.Context, functionID state.FunctionID, workerID state.WorkerID) error {
+			_, err := s.startInstance(ctx, workerID, functionID)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+
 	return &leaf.CreateFunctionResponse{
 		FunctionID: functionID,
 	}, nil
 
 }
 
-// ScheduleCall places a call to a function on a worker and returns the response
 func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
 	leafGotRequestTimestamp := time.Now()
-	if _, ok := s.functionIdCache[req.FunctionID.Id]; !ok {
-		ImageTag, Config, err := s.database.Get(req.FunctionID)
+	autoscaler := s.state.GetAutoscaler(state.FunctionID(req.FunctionID.Id))
+	if autoscaler.IsScaledDown() {
+		err := autoscaler.ForceScaleUp(ctx)
 		if err != nil {
-			var noSuchKeyError kv.NoSuchKeyError
-			if errors.As(err, &noSuchKeyError) {
-				return nil, status.Errorf(codes.NotFound, "failed to get function from database: %s", req.FunctionID.Id)
+			if errors.As(err, &state.TooManyStartingInstancesError{}) {
+				time.Sleep(s.leafConfig.PanicBackoff)
+				s.leafConfig.PanicBackoff = s.leafConfig.PanicBackoff + s.leafConfig.PanicBackoffIncrease
+				if s.leafConfig.PanicBackoff > s.leafConfig.PanicMaxBackoff {
+					s.leafConfig.PanicBackoff = s.leafConfig.PanicMaxBackoff
+				}
+				return s.ScheduleCall(ctx, req)
 			}
-			return nil, fmt.Errorf("failed to get function from database: %w", err)
-		}
-
-		s.functionIdCache[req.FunctionID.Id] = kv.FunctionData{
-			Config:   Config,
-			ImageTag: ImageTag,
+			if errors.As(err, &state.ScaleUpFailedError{}) {
+				//TODO improve error message with better info.
+				return nil, status.Errorf(codes.ResourceExhausted, "failed to scale up function")
+			}
 		}
 	}
+	if autoscaler.IsPanicMode() {
+		time.Sleep(s.leafConfig.PanicBackoff)
+		s.leafConfig.PanicBackoff = s.leafConfig.PanicBackoff + s.leafConfig.PanicBackoffIncrease
+		if s.leafConfig.PanicBackoff > s.leafConfig.PanicMaxBackoff {
+			s.leafConfig.PanicBackoff = s.leafConfig.PanicMaxBackoff
+		}
+		return s.ScheduleCall(ctx, req)
+	}
 
-	functionId := state.FunctionID(req.FunctionID.Id)
+	// TODO: pick a better way to pick a worker.
+	randWorker := s.workerIds[rand.Intn(len(s.workerIds))]
 
-	// Use the coordinator to handle instance creation with synchronization
-	workerID, instanceID, err := s.coordinator.CoordinateInstanceCreation(
-		ctx,
-		functionId,
-		s.IsFunctionBackpressured,
-		s.scheduler.Schedule,
-		s.startInstance,
-		func(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, state state.InstanceState) {
-			s.scheduler.UpdateInstanceState(workerID, functionID, instanceID, state)
-		},
-		s.startingInstanceWaitTimeout,
-	)
+	s.functionMetricChansMutex.RLock()
+	metricChan := s.functionMetricChans[state.FunctionID(req.FunctionID.Id)]
+	s.functionMetricChansMutex.RUnlock()
+	metricChan <- true
+	// Note: we send function id as instance id because I havent updated the proto yet. But the call instance endpoint is now call function. worker handles the instance id.
+	leafScheduledCallTimestamp := time.Now()
+	resp, callMetadata, err := s.callWorker(ctx, randWorker, state.FunctionID(req.FunctionID.Id), state.InstanceID(req.FunctionID.Id), req)
 	if err != nil {
 		return nil, err
 	}
+	metricChan <- false
 
-	leafScheduledCallTimestamp := time.Now()
-
-	resp, callMetadata, err := s.callWorker(ctx, workerID, functionId, instanceID, req)
-	if err != nil {
-		switch err.(type) {
-		case *controller.ContainerCrashError, *controller.InstanceNotFoundError:
-			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
-			return nil, err
-		case *WorkerDownError:
-			s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateDown)
-			s.scheduler.UpdateWorkerState(workerID, state.WorkerStateDown)
-			return nil, err
-		default:
-			return nil, err
-		}
-	}
-
-	//log.Printf("Received response from worker %s, instanceID: %s", workerID, instanceID)
-	s.scheduler.UpdateInstanceState(workerID, functionId, instanceID, state.InstanceStateIdle)
-
-	// Add metadata to trailers
-	trailer := metadata.New(map[string]string{
-		"callQueuedTimestamp":        callMetadata.CallQueuedTimestamp,
-		"gotResponseTimestamp":       callMetadata.GotResponseTimestamp,
-		"functionProcessingTime":     callMetadata.FunctionProcessingTime,
-		"instanceID":                 string(instanceID),
-		"leafGotRequestTimestamp":    strconv.FormatInt(leafGotRequestTimestamp.UnixNano(), 10),
-		"leafScheduledCallTimestamp": strconv.FormatInt(leafScheduledCallTimestamp.UnixNano(), 10),
-	})
-	grpc.SetTrailer(ctx, trailer)
+	defer func() {
+		trailer := metadata.New(map[string]string{
+			"callQueuedTimestamp":        callMetadata.CallQueuedTimestamp,
+			"gotResponseTimestamp":       callMetadata.GotResponseTimestamp,
+			"functionProcessingTime":     callMetadata.FunctionProcessingTime,
+			"instanceID":                 callMetadata.InstanceID,
+			"leafGotRequestTimestamp":    strconv.FormatInt(leafGotRequestTimestamp.UnixNano(), 10),
+			"leafScheduledCallTimestamp": strconv.FormatInt(leafScheduledCallTimestamp.UnixNano(), 10),
+		})
+		grpc.SetTrailer(ctx, trailer)
+	}()
 
 	return resp, nil
 }
 
 func NewLeafServer(
-	scheduler scheduling.Scheduler,
+	leafConfig config.LeafConfig,
 	httpClient kv.FunctionMetadataStore,
-	maxStartingInstancesPerFunction int,
-	startingInstanceWaitTimeout time.Duration,
-	maxRunningInstancesPerFunction int,
-	coordinatorBackoff time.Duration,
-	coordinatorBackoffIncrease time.Duration,
-	coordinatorMaxBackoff time.Duration,
+	workerIds []state.WorkerID,
+	logger *slog.Logger,
 ) *LeafServer {
 	return &LeafServer{
-		scheduler:                       scheduler,
-		database:                        httpClient,
-		functionIdCache:                 make(map[string]kv.FunctionData),
-		poolManager:                     *NewPoolManager(1, 100, 120*time.Second),
-		coordinator:                     NewInstanceCoordinator(coordinatorBackoff, coordinatorBackoffIncrease, coordinatorMaxBackoff),
-		maxStartingInstancesPerFunction: maxStartingInstancesPerFunction,
-		startingInstanceWaitTimeout:     startingInstanceWaitTimeout,
-		maxRunningInstancesPerFunction:  maxRunningInstancesPerFunction,
+		database:            httpClient,
+		functionIdCache:     make(map[string]kv.FunctionData),
+		functionMetricChans: make(map[state.FunctionID]chan bool),
+		poolManager:         *NewPoolManager(1, 100, 120*time.Second),
+		workerIds:           workerIds,
+		state:               state.NewSmallState(workerIds, logger),
+		logger:              logger,
+		leafConfig:          leafConfig,
 	}
 }
 
@@ -209,6 +212,7 @@ func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, fu
 		CallQueuedTimestamp:    trailer.Get("callQueuedTimestamp")[0],
 		GotResponseTimestamp:   trailer.Get("gotResponseTimestamp")[0],
 		FunctionProcessingTime: trailer.Get("functionProcessingTime")[0],
+		InstanceID:             resp.InstanceId.Id,
 	}
 
 	return &leaf.ScheduleCallResponse{Data: resp.Data, Error: resp.Error}, callMetadata, nil
@@ -237,12 +241,12 @@ func (s *LeafServer) startInstance(ctx context.Context, workerID state.WorkerID,
 	defer conn.Close()
 	client := controllerPB.NewControllerClient(conn)
 
-	instanceID, err := client.Start(ctx, &common.FunctionID{Id: string(functionId)})
+	resp, err := client.Start(ctx, &common.FunctionID{Id: string(functionId)})
 	if err != nil {
 		return "", err
 	}
 
-	return state.InstanceID(instanceID.Id), nil
+	return state.InstanceID(resp.InstanceId.Id), nil
 }
 
 type PoolManager struct {

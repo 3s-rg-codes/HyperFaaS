@@ -12,17 +12,14 @@ import (
 	"time"
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
-	"github.com/golang-cz/devslog"
-
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/mock"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	pbc "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/tests/helpers"
+	"github.com/golang-cz/devslog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 )
@@ -93,8 +90,6 @@ func main() {
 	//Dependency Injection :O
 	statsManager := stats.NewStatsManager(logger, time.Duration(config.Config.ListenerTimeout)*time.Second, 1.0, 100000)
 
-	callerServer := caller.NewCallerServer(config.Config.CallerServerAddress, logger, statsManager)
-
 	var testController controller.Controller
 	var runtime containerRuntime.ContainerRuntime
 
@@ -103,9 +98,9 @@ func main() {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime(config.Config.Containerized, config.Config.AutoRemove, config.Config.CallerServerAddress, logger)
 	case "fake":
-		runtime = mock.NewMockRuntime(callerServer, logger)
-		testsMap[6] = false
-		logger.Info("Mock runtime and container config test not compatible: Removing...") //TODO: it should be
+		//runtime = mock.NewMockRuntime(callerServer, logger)
+		//testsMap[6] = false
+		//logger.Info("Mock runtime and container config test not compatible: Removing...") //TODO: it should be
 	default:
 		logger.Error("No such runtime available, must be 'fake' or 'docker' ")
 		return
@@ -115,7 +110,7 @@ func main() {
 
 	if !config.Config.Containerized {
 		logger.Info("Setting up local environment")
-		testController = setupLocalEnv(runtime, callerServer, statsManager, logger, config.Config, dbClient)
+		testController = setupLocalEnv(runtime, statsManager, logger, config.Config, dbClient)
 	}
 	//For containerized running we don't need anything else set up
 
@@ -272,7 +267,7 @@ func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.Co
 			logger.Error("Error occurred starting container", "containerID", testContainerID)
 			return fmt.Errorf("starting container failed, containerID is nil %v", grpcStatus.Code())
 		}
-		if !runtime.ContainerExists(context.Background(), testContainerID.Id) {
+		if !runtime.ContainerExists(context.Background(), testContainerID.InstanceId.Id) {
 			logger.Error("Container did not start successfully", "containerID", testContainerID)
 			return fmt.Errorf("starting container failed, container doesnt exist %v", grpcStatus.Code())
 		}
@@ -284,7 +279,7 @@ func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.Co
 		}
 		logger.Info("GRPC response code for start is as expected", "expected", tCase.ExpectedErrorCode, "actual", grpcStatus.Code())
 
-		response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: testContainerID, Data: tCase.CallPayload, FunctionId: &pbc.FunctionID{Id: tCase.ImageTag}})
+		response, err := client.Call(context.Background(), &pbc.CallRequest{FunctionId: &pbc.FunctionID{Id: tCase.FunctionID}, Data: tCase.CallPayload})
 
 		grpcStatus, ok = status.FromError(err)
 
@@ -306,7 +301,7 @@ func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.Co
 		logger.Info("Expected response and actual response match", "expected", string(tCase.ExpectedResponse), "actual", string(response.Data))
 
 		//stop container
-		responseContainerID, err := client.Stop(context.Background(), testContainerID)
+		responseContainerID, err := client.Stop(context.Background(), &pbc.InstanceID{Id: testContainerID.InstanceId.Id})
 		grpcStatus, ok = status.FromError(err)
 		if !ok {
 			logger.Error("Stop failed", "code", grpcStatus.Code())
@@ -322,8 +317,8 @@ func testNormalExecution(client pb.ControllerClient, runtime containerRuntime.Co
 			logger.Error("Stop failed, containerID is nil")
 			return fmt.Errorf("stopping container failed, containerID is nil")
 		}
-		if responseContainerID.Id != testContainerID.Id {
-			logger.Error("Requested and actually deleted container are not the same", "requested", testContainerID.Id, "actual", responseContainerID.Id)
+		if responseContainerID.Id != testContainerID.InstanceId.Id {
+			logger.Error("Requested and actually deleted container are not the same", "requested", testContainerID.InstanceId.Id, "actual", responseContainerID.Id)
 			return fmt.Errorf("requested and actually deleted container are not the same, code: %v", grpcStatus.Code())
 		}
 		if runtime.ContainerExists(context.Background(), responseContainerID.Id) {
@@ -439,9 +434,9 @@ func testStartNonLocalImages(client pb.ControllerClient, runtime containerRuntim
 	return nil
 }
 
-func setupLocalEnv(runtime containerRuntime.ContainerRuntime, callerServer *caller.CallerServer, statsManager *stats.StatsManager, logger *slog.Logger, config TestConfig, client kv.FunctionMetadataStore) controller.Controller {
+func setupLocalEnv(runtime containerRuntime.ContainerRuntime, statsManager *stats.StatsManager, logger *slog.Logger, config TestConfig, client kv.FunctionMetadataStore) controller.Controller {
 
-	testController := *controller.NewController(runtime, callerServer, statsManager, logger, config.ServerAddress, client)
+	testController := *controller.NewController(runtime, statsManager, logger, config.ServerAddress, client)
 
 	logger.Debug("Created controller")
 	//CallerServer
