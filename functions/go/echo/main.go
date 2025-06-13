@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 )
 
 func main() {
@@ -13,12 +14,12 @@ func main() {
 	f.Ready(handler)
 }
 
-func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functionRuntimeInterface.Response {
+func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
 
-	resp := &functionRuntimeInterface.Response{
-		Data: in.Data,
-		Id:   in.Id,
+	resp := &common.CallResponse{
+		Data:  in.Data,
+		Error: nil,
 	}
 
-	return resp
+	return resp, nil
 }

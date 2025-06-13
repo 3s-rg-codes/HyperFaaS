@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 )
 
 func main() {
@@ -15,12 +16,11 @@ func main() {
 }
 
 // this function crashes the container on purpose
-func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functionRuntimeInterface.Response {
+func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
 
-	resp := &functionRuntimeInterface.Response{
+	resp := &common.CallResponse{
 		Data:  []byte(""),
-		Error: "Container crashed",
-		Id:    in.Id,
+		Error: nil,
 	}
 
 	//sleep for 2 seconds
@@ -28,5 +28,5 @@ func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functio
 	//crash the container
 	panic("crash")
 
-	return resp
+	return resp, nil
 }

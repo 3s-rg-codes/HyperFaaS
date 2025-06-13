@@ -26,9 +26,9 @@ type Reconciler struct {
 	logger    *slog.Logger
 }
 
-// We accept any type that implements the UpdateInstance method
+// We accept any type that implements RemoveInstance
 type WorkerData interface {
-	UpdateInstance(workerID state.WorkerID, functionID state.FunctionID, instanceState state.InstanceState, instance state.Instance) error
+	RemoveInstance(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) error
 }
 
 func NewReconciler(workerIDs []state.WorkerID, workers WorkerData, logger *slog.Logger) *Reconciler {
@@ -113,7 +113,7 @@ func (r *Reconciler) ListenToWorkerStatusUpdates(ctx context.Context, workerID s
 func (r *Reconciler) handleContainerTimeout(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) {
 	r.logger.Debug("Container timed out", "instanceID", instanceID)
 
-	err := r.workers.UpdateInstance(workerID, functionID, state.InstanceStateTimeout, state.Instance{InstanceID: instanceID})
+	err := r.workers.RemoveInstance(workerID, functionID, instanceID)
 	if err != nil {
 		r.logger.Error("Failed to reconcile container timeout", "error", err)
 	}
@@ -122,7 +122,7 @@ func (r *Reconciler) handleContainerTimeout(workerID state.WorkerID, functionID 
 func (r *Reconciler) handleContainerDown(workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID) {
 	r.logger.Debug("Container down", "instanceID", instanceID)
 
-	err := r.workers.UpdateInstance(workerID, functionID, state.InstanceStateDown, state.Instance{InstanceID: instanceID})
+	err := r.workers.RemoveInstance(workerID, functionID, instanceID)
 	if err != nil {
 		r.logger.Error("Failed to reconcile container down", "error", err)
 	}

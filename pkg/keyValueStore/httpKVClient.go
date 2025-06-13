@@ -3,10 +3,11 @@ package keyValueStore
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"io"
 	"log/slog"
 	"net/http"
+
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 )
 
 type HttpDBClient struct {
@@ -35,9 +36,11 @@ func (db *HttpDBClient) Put(imageTag *common.ImageTag, config *common.Config) (*
 	postData := PostRequest{
 		ImageTag: imageTag.Tag,
 		Config: Config{
-			CpuPeriod: int(config.Cpu.Period),
-			CpuQuota:  int(config.Cpu.Quota),
-			MemLimit:  int(config.Memory),
+			CpuPeriod:      int(config.Cpu.Period),
+			CpuQuota:       int(config.Cpu.Quota),
+			MemLimit:       int(config.Memory),
+			Timeout:        int32(config.Timeout),
+			MaxConcurrency: int32(config.MaxConcurrency),
 		},
 	}
 
@@ -136,6 +139,8 @@ func (db *HttpDBClient) Get(functionID *common.FunctionID) (*common.ImageTag, *c
 			Period: int64(r.Config.CpuPeriod),
 			Quota:  int64(r.Config.CpuQuota),
 		},
+		Timeout:        int32(r.Config.Timeout),
+		MaxConcurrency: int32(r.Config.MaxConcurrency),
 	}
 
 	id := &common.ImageTag{Tag: r.ImageTag}

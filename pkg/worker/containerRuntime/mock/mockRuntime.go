@@ -1,5 +1,6 @@
 package mock
 
+/*
 import (
 	"context"
 	"errors"
@@ -8,24 +9,21 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type MockRuntime struct {
 	cr.ContainerRuntime
-	logger    *slog.Logger
-	callerRef *caller.CallerServer
-	mapLock   *sync.Mutex
-	Running   map[string][]RunningInstance
-	Dict      map[string]string
+	logger  *slog.Logger
+	mapLock *sync.Mutex
+	Running map[string][]RunningInstance
+	Dict    map[string]string
 }
 
 type RunningInstance struct {
@@ -33,13 +31,12 @@ type RunningInstance struct {
 	id  string
 }
 
-func NewMockRuntime(server *caller.CallerServer, logger *slog.Logger) *MockRuntime {
+func NewMockRuntime(logger *slog.Logger) *MockRuntime {
 	return &MockRuntime{
-		logger:    logger,
-		callerRef: server,
-		mapLock:   new(sync.Mutex),
-		Running:   make(map[string][]RunningInstance),
-		Dict:      make(map[string]string),
+		logger:  logger,
+		mapLock: new(sync.Mutex),
+		Running: make(map[string][]RunningInstance),
+		Dict:    make(map[string]string),
 	}
 }
 
@@ -248,3 +245,4 @@ func deleteFromList(list []RunningInstance, item string) []RunningInstance {
 	}
 	return result
 }
+*/

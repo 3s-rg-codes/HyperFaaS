@@ -22,8 +22,8 @@ const (
 	RequestedCPUPeriod    = 100000
 	RequestedCPUQuota     = 50000
 	SQLITE_DB_PATH        = "./benchmarks/metrics.db"
-	totalInstances        = 10
-	totalCallsPerInstance = 2500
+	totalInstances        = 1
+	totalCallsPerInstance = 10
 	TIMEOUT               = 60 * time.Second
 )
 
@@ -47,10 +47,10 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create function: %v", err)
 		}
-		err = saveFunctionId(functionID, imageTag)
+		/* err = saveFunctionId(functionID, imageTag)
 		if err != nil {
 			log.Fatalf("Failed to save function id: %v", err)
-		}
+		} */
 		functionIDs[i] = functionID
 	}
 
@@ -101,9 +101,11 @@ func TestWorkerConcurrentCalls(functionID *common.FunctionID) error {
 			log.Printf("Error starting instance: %v", err)
 			return fmt.Errorf("error starting instance: %v", err)
 		}
-		instanceIDs[i] = instanceID.Id
+		instanceIDs[i] = instanceID.InstanceId.Id
 	}
 	log.Printf("Started %d instances", totalInstances)
+
+	time.Sleep(2 * time.Second)
 	// Send all calls
 	ctx := context.Background()
 
@@ -126,7 +128,7 @@ func TestWorkerConcurrentCalls(functionID *common.FunctionID) error {
 						//log.Printf("Call timed out for instance: %v", instanceID)
 					} else {
 						failureCount++
-						//log.Printf("Error calling instance: %v", err)
+						log.Printf("Error calling instance: %v", err)
 					}
 					countMu.Unlock()
 					return fmt.Errorf("error calling instance: %v", err)

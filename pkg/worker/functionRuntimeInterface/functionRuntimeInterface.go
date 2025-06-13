@@ -5,17 +5,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	pb "github.com/3s-rg-codes/HyperFaaS/proto/function"
+	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
-
-type handler func(context.Context, *Request) *Response
 
 type Request struct {
 	Data []byte
@@ -29,12 +28,17 @@ type Response struct {
 }
 
 type Function struct {
-	timeout    int
-	address    string
-	request    *Request
-	response   *Response
-	instanceId string
-	functionId string
+	timeout      int
+	address      string
+	request      *Request
+	response     *Response
+	instanceId   string
+	functionId   string
+	handler      func(context.Context, *common.CallRequest) (*common.CallResponse, error)
+	lastActivity time.Time
+	activityMu   sync.RWMutex
+	server       *grpc.Server
+	functionpb.UnimplementedFunctionServiceServer
 }
 
 func New(timeout int) *Function {
@@ -58,71 +62,55 @@ func New(timeout int) *Function {
 	}
 }
 
-// Ready is called from inside the function instance container. It waits for a request from the caller server.
-func (f *Function) Ready(handler handler) {
+func (f *Function) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
+	f.activityMu.Lock()
+	f.lastActivity = time.Now()
+	f.activityMu.Unlock()
+
+	return f.handler(ctx, req)
+}
+
+func (f *Function) Ready(handler func(context.Context, *common.CallRequest) (*common.CallResponse, error)) {
 	logger := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.instanceId))
+	f.handler = handler
 
-	logger.Info("Address", "address", f.address)
+	f.server = grpc.NewServer()
+	f.lastActivity = time.Now()
 
-	connection, err := grpc.NewClient(f.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	functionpb.RegisterFunctionServiceServer(f.server, f)
+
+	lis, err := net.Listen("tcp", "0.0.0.0:50052")
 	if err != nil {
-		logger.Error("failed to connect", "error", err)
+		logger.Error("Failed to listen", "error", err)
+		os.Exit(1)
 	}
-	defer connection.Close()
 
-	c := pb.NewFunctionServiceClient(connection)
+	go f.monitorTimeout(logger)
 
-	//Set the id in the response to the id of the container
-	f.response.Id = f.instanceId
+	logger.Info("Server starting", "timeout", f.timeout)
+	f.server.Serve(lis)
+}
 
-	defer logger.Info("Closing connection.")
-	first := true
+func (f *Function) monitorTimeout(logger *slog.Logger) {
+	ticker := time.NewTicker(time.Second)
 
-	parentCtx := context.Background()
+	for range ticker.C {
+		f.activityMu.RLock()
+		timeSinceLastActivity := time.Since(f.lastActivity)
+		f.activityMu.RUnlock()
 
-	for {
-		// Create new timeout context for each iteration
-		ctx, cancel := context.WithTimeout(parentCtx, time.Duration(f.timeout)*time.Second)
-		select {
-		case <-parentCtx.Done():
-			logger.Info("Context was canceled and function shut down")
-			cancel()
+		if timeSinceLastActivity >= time.Duration(f.timeout)*time.Second {
+			logger.Info("Server timeout reached, shutting down",
+				"timeout", f.timeout,
+				"last_activity", timeSinceLastActivity)
+
+			f.server.GracefulStop()
 			return
-		default:
-			//We ask for a new request whilst sending the response of the previous one
-			p, err := c.Ready(ctx, &pb.Payload{
-				Data:           f.response.Data,
-				InstanceId:     &common.InstanceID{Id: f.response.Id},
-				FunctionId:     &common.FunctionID{Id: f.functionId},
-				FirstExecution: first,
-				Error:          &common.Error{Message: f.response.Error},
-			})
-			cancel()
-			first = false
-			if err != nil {
-				logger.Error("failed to call", "error", err)
-				return
-			}
-			if ctx.Err() == context.DeadlineExceeded {
-				// Timeout occurred, don't try to send response
-				logger.Debug("Ready call timed out, stopping function")
-				return
-			}
-			logger.Info("Received request", "data", p.Data)
-
-			f.request = &Request{p.Data, p.InstanceId.Id}
-
-			f.response = handler(ctx, f.request)
-
-			logger.Debug("Function handler called and generated response", "response", f.response.Data)
 		}
-
 	}
-
 }
 
 func configLog(logFile string) *slog.Logger {
-	// Open the log file
 	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 
 	if err != nil {
