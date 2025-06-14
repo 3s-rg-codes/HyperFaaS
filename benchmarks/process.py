@@ -7,9 +7,9 @@ import argparse
 from tqdm import tqdm
 
 # METRICS TABLE
-# timestamp is in seconds, rest is in nanoseconds
-# sqlite> select timestamp, leafgotrequesttimestamp, leafscheduledcalltimestamp,callqueuedtimestamp,gotresponsetimestamp from metrics limit 1;
-# 1749539245|1.74953924495481e+18|1.7495392457413e+18|1.74953924574153e+18|1.74953924574764e+18
+# callqueuedtimestamp and gotresponsetimestamp are in nanoseconds
+# sqlite> select leafgotrequesttimestamp, leafscheduledcalltimestamp,callqueuedtimestamp,gotresponsetimestamp from metrics limit 1;
+# 1.74953924495481e+18|1.7495392457413e+18|1.74953924574153e+18|1.74953924574764e+18
 
 # CPU_MEM_STATS TABLE
 # timestamp is in seconds
@@ -71,7 +71,6 @@ class TrainingData:
         query = """
         SELECT 
             request_id,
-            timestamp,
             instance_id,
             image_tag,
             grpc_req_duration,
@@ -84,14 +83,13 @@ class TrainingData:
             data_received
         FROM metrics 
         WHERE request_id IS NOT NULL
-        ORDER BY timestamp
+        ORDER BY callqueuedtimestamp
         """
         
         try:
             df = pd.read_sql_query(query, self.conn)
             
-            # everything to nanoseconds
-            df['timestamp'] = pd.to_numeric(df['timestamp'], downcast='float') * 1e9
+            # convert to appropriate data types
             df['callqueuedtimestamp'] = pd.to_numeric(df['callqueuedtimestamp'], downcast='float')
             df['gotresponsetimestamp'] = pd.to_numeric(df['gotresponsetimestamp'], downcast='float')
             df['leafgotrequesttimestamp'] = pd.to_numeric(df['leafgotrequesttimestamp'], downcast='float')
@@ -157,7 +155,7 @@ class TrainingData:
         window_size = self.active_calls_window_size
         
         # Get all unique timestamps
-        unique_timestamps = sorted(metrics_df['timestamp'].unique())
+        unique_timestamps = sorted(metrics_df['callqueuedtimestamp'].unique())
         active_calls_dict = {}
         
         # Convert to numpy arrays for faster operations
@@ -245,7 +243,7 @@ class TrainingData:
             # we insert 0 values for all metrics that are not available for now. I think this fks up the training so we should try to find a better way to handle this.
             try:
                 request_id = row['request_id']
-                timestamp = row['timestamp']
+                timestamp = row['callqueuedtimestamp']
                 function_image_tag = row['image_tag']
                 instance_id = row['instance_id']
                 

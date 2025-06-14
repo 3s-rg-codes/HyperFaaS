@@ -19,7 +19,6 @@ def create_tables(conn):
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS metrics (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp INTEGER, -- timestamp of the logging of the request
         scenario TEXT,
         service TEXT,
         image_tag TEXT,
@@ -46,9 +45,7 @@ def create_tables(conn):
         proto TEXT,
         subproto TEXT,
         group_name TEXT,
-        extra_tags TEXT,
-        
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        extra_tags TEXT
     )
     ''')
     
@@ -162,7 +159,6 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
             # Store common metadata for this request
             requests[request_key]['scenario'] = scenario
             requests[request_key]['service'] = row['service']
-            requests[request_key]['timestamp'] = row['timestamp']
             requests[request_key]['request_id'] = request_key
             
             # Parse extra_tags to extract image_tag
@@ -209,14 +205,13 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
             
         cursor.execute('''
         INSERT INTO metrics (
-            timestamp, scenario, service, image_tag, instance_id, request_id,
+            scenario, service, image_tag, instance_id, request_id,
             grpc_req_duration, callqueuedtimestamp, gotresponsetimestamp, functionprocessingtime,
             leafgotrequesttimestamp, leafscheduledcalltimestamp,
             data_sent, data_received, iteration_duration, function_parameters,
             proto, subproto, group_name, extra_tags, timeout, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            data.get('timestamp'),
             data.get('scenario'),
             data.get('service'),
             data.get('image_tag'),

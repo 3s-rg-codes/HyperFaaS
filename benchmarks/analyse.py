@@ -86,7 +86,7 @@ def get_metrics(db_path: str) -> pd.DataFrame:
         error_result.loc[error_valid_mask] = pd.to_datetime(error_series[error_valid_mask], unit='ms')
     df['error'] = error_result
     
-    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+    df['timestamp'] = pd.to_datetime(df['callqueuedtimestamp'], unit='ns')
     # Add latency
     df['scheduling_latency_ms'] = (df['leafscheduledcalltimestamp'] - df['leafgotrequesttimestamp']).dt.total_seconds() * 1000
     df['leaf_to_worker_latency_ms'] = (df['callqueuedtimestamp'] - df['leafscheduledcalltimestamp']).dt.total_seconds() * 1000
