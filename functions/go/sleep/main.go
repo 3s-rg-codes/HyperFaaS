@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 )
 
 func main() {
@@ -14,15 +15,15 @@ func main() {
 	f.Ready(handler)
 }
 
-func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functionRuntimeInterface.Response {
+func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
 
 	//sleep for 20 seconds
 	time.Sleep(20 * time.Second)
 
-	resp := &functionRuntimeInterface.Response{
-		Data: []byte("Finished Sleeping"),
-		Id:   in.Id,
+	resp := &common.CallResponse{
+		Data:  []byte("Finished Sleeping"),
+		Error: nil,
 	}
 
-	return resp
+	return resp, nil
 }

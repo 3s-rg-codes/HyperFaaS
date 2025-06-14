@@ -4,6 +4,14 @@ from collections import defaultdict
 import re
 import json
 
+# There is a bug somewhere inthe data pipeline right now. 
+# sqlite> select count(distinct(request_id)) from metrics where grpc_req_duration is null and timeout is null and error is null;
+# 214599
+# This doesnt really make sense. it should be 0.
+# It looks like its k6 . I revised the end of the csv file generated with a 10m big workload, and the last requests are not logging neither grpc_req_duration, nor timeout, nor error.
+#  Idk if this is a VU issue or something else.
+# Maybe it was my laptop that was lagging.
+
 def create_tables(conn):
     cursor = conn.cursor()
     
@@ -251,8 +259,11 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
             print(f"  {row[0]}: {row[1]} requests, avg duration: {row[2]:.3f}ms")
         except:
             pass
-    
-    add_function_ids_to_cpu_mem_stats(conn)
+    try:
+        add_function_ids_to_cpu_mem_stats(conn)
+    except sqlite3.OperationalError as e:
+        print(f"Error adding function IDs to cpu_mem_stats: {e}")
+        print("Did you forget to run the metrics-client? [just metrics-client]")
     conn.close()
 
 if __name__ == "__main__":

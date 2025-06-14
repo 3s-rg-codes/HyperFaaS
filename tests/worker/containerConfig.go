@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
+
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	pbc "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
-	"log/slog"
 )
 
 func TestContainerConfig(runtime containerRuntime.ContainerRuntime, client pb.ControllerClient, logger slog.Logger, config FullConfig) error {
@@ -21,7 +22,7 @@ func TestContainerConfig(runtime containerRuntime.ContainerRuntime, client pb.Co
 		return err
 	}
 
-	stBody := runtime.ContainerStats(context.Background(), cID.Id)
+	stBody := runtime.ContainerStats(context.Background(), cID.InstanceId.Id)
 
 	buf := new(bytes.Buffer)
 	_, err = buf.ReadFrom(stBody)
@@ -42,7 +43,7 @@ func TestContainerConfig(runtime containerRuntime.ContainerRuntime, client pb.Co
 	logger.Debug("Configured CPU Quota (Throttled Time)", "quota", cStats.CPUStats.ThrottlingData.ThrottledTime)
 	//t.Logf("Container inspect: %v , %v , %v", a, a.Config, a.NetworkSettings)
 
-	_, err = client.Stop(context.Background(), cID)
+	_, err = client.Stop(context.Background(), &pbc.InstanceID{Id: cID.InstanceId.Id})
 	if err != nil {
 		logger.Error("Error stopping container", "error", err)
 		return err
