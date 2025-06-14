@@ -1,0 +1,40 @@
+{
+  "name": "RidgeRegression",
+  "config": {
+    "type": "regression",
+    "hyperparameters": {
+      "alpha": 1.0,
+      "fit_intercept": true
+    }
+  },
+  "is_trained": true,
+  "feature_names": [
+    "hyperfaas-thumbnailer-json:latest_active_calls",
+    "hyperfaas-bfs-json:latest_active_calls",
+    "hyperfaas-echo:latest_active_calls"
+  ],
+  "target_names": [
+    "cpu_usage",
+    "memory_usage"
+  ],
+  "training_history": {
+    "train_mse": [
+      737.622518786494
+    ],
+    "train_mae": [
+      16.472221575408955
+    ],
+    "train_r2": [
+      0.04437225542609868
+    ],
+    "val_mse": [
+      859.2104690464847
+    ],
+    "val_mae": [
+      17.730474617464715
+    ],
+    "val_r2": [
+      -0.10451055738888892
+    ]
+  }
+}

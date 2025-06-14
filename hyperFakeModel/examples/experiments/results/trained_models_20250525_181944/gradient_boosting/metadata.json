@@ -1,0 +1,89 @@
+{
+  "name": "GradientBoosting",
+  "config": {
+    "type": "ensemble",
+    "hyperparameters": {
+      "n_estimators": 100,
+      "learning_rate": 0.1,
+      "max_depth": 6,
+      "min_samples_split": 2,
+      "random_state": 42
+    }
+  },
+  "is_trained": true,
+  "feature_names": [
+    "hyperfaas-thumbnailer-json:latest_active_calls",
+    "hyperfaas-bfs-json:latest_active_calls",
+    "hyperfaas-echo:latest_active_calls"
+  ],
+  "target_names": [
+    "cpu_usage",
+    "memory_usage"
+  ],
+  "training_history": {
+    "train_mse_output_0": [
+      0.06356017582151575
+    ],
+    "train_mae_output_0": [
+      0.18516203033596665
+    ],
+    "train_r2_output_0": [
+      0.30010455445116613
+    ],
+    "feature_importance_output_0": [
+      0.12136677841206138,
+      0.6767680504160303,
+      0.20186517117190833
+    ],
+    "val_mse_output_0": [
+      0.07742987936479419
+    ],
+    "val_mae_output_0": [
+      0.20577583526025453
+    ],
+    "val_r2_output_0": [
+      0.35986331103259395
+    ],
+    "train_mse_output_1": [
+      1045.06652252075
+    ],
+    "train_mae_output_1": [
+      24.78959433446233
+    ],
+    "train_r2_output_1": [
+      0.3319822372489699
+    ],
+    "feature_importance_output_1": [
+      0.11956092817971009,
+      0.6303694889719702,
+      0.25006958284831965
+    ],
+    "val_mse_output_1": [
+      1245.4595519922384
+    ],
+    "val_mae_output_1": [
+      28.59096935311712
+    ],
+    "val_r2_output_1": [
+      0.15936287418231254
+    ],
+    "train_mse": [
+      522.5650413482857
+    ],
+    "train_mae": [
+      12.487378182399143
+    ],
+    "train_r2": [
+      0.3160433958500681
+    ],
+    "val_mse": [
+      622.7684909358015
+    ],
+    "val_mae": [
+      14.398372594188688
+    ],
+    "val_r2": [
+      0.2596130926074533
+    ]
+  }
+}

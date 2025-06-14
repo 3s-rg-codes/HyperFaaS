@@ -1,0 +1,87 @@
+# Model Configuration for HyperFaaS Resource Prediction
+
+# Data Configuration
+data:
+  raw_data_path: "data/raw/metrics.csv"
+  processed_data_path: "data/processed/training.csv"
+  features_path: "data/features/"
+  target_columns: ["cpu_usage", "memory_usage"]
+  feature_columns: 
+    - "hyperfaas-thumbnailer-json:latest_active_calls"
+    - "hyperfaas-bfs-json:latest_active_calls"
+    - "hyperfaas-echo:latest_active_calls"
+
+# Model Configurations
+models:
+  linear_regression:
+    type: "regression"
+    hyperparameters:
+      fit_intercept: true
+      normalize: false
+    
+  polynomial_regression:
+    type: "regression"
+    hyperparameters:
+      degree: 2
+      fit_intercept: true
+      
+  ridge_regression:
+    type: "regression"
+    hyperparameters:
+      alpha: 1.0
+      fit_intercept: true
+      
+  lasso_regression:
+    type: "regression"
+    hyperparameters:
+      alpha: 1.0
+      fit_intercept: true
+
+  simple_neural_network:
+    type: "neural"
+    hyperparameters:
+      hidden_layers: [64, 32]
+      activation: "relu"
+      dropout: 0.2
+      learning_rate: 0.001
+      epochs: 100
+      batch_size: 32
+      
+  deep_neural_network:
+    type: "neural"
+    hyperparameters:
+      hidden_layers: [128, 64, 32, 16]
+      activation: "relu"
+      dropout: 0.3
+      learning_rate: 0.0001
+      epochs: 200
+      batch_size: 32
+
+  random_forest:
+    type: "ensemble"
+    hyperparameters:
+      n_estimators: 100
+      max_depth: 10
+      min_samples_split: 2
+      min_samples_leaf: 1
+      
+  gradient_boosting:
+    type: "ensemble"
+    hyperparameters:
+      n_estimators: 100
+      learning_rate: 0.1
+      max_depth: 6
+      min_samples_split: 2
+
+# Training Configuration
+training:
+  test_size: 0.2
+  validation_size: 0.1
+  random_state: 42
+  cross_validation_folds: 5
+  
+# Evaluation Metrics
+evaluation:
+  metrics: ["mse", "mae", "r2", "mape"]
+  save_plots: true
+  save_models: true 

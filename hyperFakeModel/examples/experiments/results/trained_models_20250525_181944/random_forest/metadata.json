@@ -1,0 +1,48 @@
+{
+  "name": "RandomForest",
+  "config": {
+    "type": "ensemble",
+    "hyperparameters": {
+      "n_estimators": 100,
+      "max_depth": 10,
+      "min_samples_split": 2,
+      "min_samples_leaf": 1,
+      "random_state": 42
+    }
+  },
+  "is_trained": true,
+  "feature_names": [
+    "hyperfaas-thumbnailer-json:latest_active_calls",
+    "hyperfaas-bfs-json:latest_active_calls",
+    "hyperfaas-echo:latest_active_calls"
+  ],
+  "target_names": [
+    "cpu_usage",
+    "memory_usage"
+  ],
+  "training_history": {
+    "train_mse": [
+      532.4165959259876
+    ],
+    "train_mae": [
+      12.914491173993259
+    ],
+    "train_r2": [
+      0.30454797447055526
+    ],
+    "feature_importance": [
+      0.10331106487875567,
+      0.5997427748385187,
+      0.2969461602827257
+    ],
+    "val_mse": [
+      616.6981086519887
+    ],
+    "val_mae": [
+      14.259645351471752
+    ],
+    "val_r2": [
+      0.26658319950673687
+    ]
+  }
+}

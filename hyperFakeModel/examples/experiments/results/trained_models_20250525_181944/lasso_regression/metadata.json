@@ -1,0 +1,40 @@
+{
+  "name": "LassoRegression",
+  "config": {
+    "type": "regression",
+    "hyperparameters": {
+      "alpha": 1.0,
+      "fit_intercept": true
+    }
+  },
+  "is_trained": true,
+  "feature_names": [
+    "hyperfaas-thumbnailer-json:latest_active_calls",
+    "hyperfaas-bfs-json:latest_active_calls",
+    "hyperfaas-echo:latest_active_calls"
+  ],
+  "target_names": [
+    "cpu_usage",
+    "memory_usage"
+  ],
+  "training_history": {
+    "train_mse": [
+      739.065406365054
+    ],
+    "train_mae": [
+      16.63402612135561
+    ],
+    "train_r2": [
+      0.027610466867717898
+    ],
+    "val_mse": [
+      853.6701159160295
+    ],
+    "val_mae": [
+      17.766601601601955
+    ],
+    "val_r2": [
+      -0.10123614698932792
+    ]
+  }
+}
