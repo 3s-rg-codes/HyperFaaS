@@ -83,7 +83,7 @@ run-local-worker:
 
 run-local-leaf:
     @echo "Running local leaf"
-    go run cmd/leaf/main.go --address=0.0.0.0:50050 --log-level=info --log-format=dev --worker-ids=127.0.0.1:50051 --scheduler-type=mru --database-address=http://localhost:8999
+    go run cmd/leaf/main.go --address=0.0.0.0:50050 --log-level=info --log-format=dev --worker-ids=127.0.0.1:50051 --database-address=http://localhost:8999
 
 
 ############################

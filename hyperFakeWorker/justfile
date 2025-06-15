@@ -1,0 +1,25 @@
+set dotenv-load
+set export
+set windows-shell := ["powershell"]
+set shell := ["bash", "-c"]
+
+default:
+  @just --list --unsorted
+
+proto:
+  @echo "Generating proto files"
+  uv run python -m grpc_tools.protoc -I../proto "../proto/common/common.proto" --python_out=./worker/api --pyi_out=./worker/api --grpc_python_out=./worker/api
+  uv run python -m grpc_tools.protoc -I../proto "../proto/controller/controller.proto" --python_out=./worker/api --pyi_out=./worker/api --grpc_python_out=./worker/api
+  uv run python -m grpc_tools.protoc -I../proto "../proto/function/function.proto" --python_out=./worker/api --pyi_out=./worker/api --grpc_python_out=./worker/api
+
+check:
+  @echo "Checking if functions are still alive"
+  uv run python -m worker.main client
+
+run-local:
+  @echo "Running hyperFake worker"
+  uv run python -m worker.main server
+
+test-all:
+  @echo "Running tests that require external components"
+  uv run pytest tests/
