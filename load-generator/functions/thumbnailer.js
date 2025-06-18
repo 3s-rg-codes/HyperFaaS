@@ -61,7 +61,7 @@ export function thumbnailerSetup(client) {
 // Thumbnailer function execution
 export function thumbnailerFunction(setupData) {
   const { thumbnailerFunctionId, imageDataB64 } = setupData.thumbnailer;
-  client.connect('localhost:50050', {
+  client.connect(setupData.address, {
     plaintext: true
   });
   // Create input data structure with random dimensions

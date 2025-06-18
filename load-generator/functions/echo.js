@@ -58,7 +58,7 @@ export function echoSetup(client) {
 // Echo function execution
 export function echoFunction(setupData) {
   const echoFunctionId = setupData.echo;
-  client.connect('localhost:50050', {
+  client.connect(setupData.address, {
     plaintext: true
   });
   const data = encoding.b64encode(randomBytes(getRandomInt(512, 2048)));

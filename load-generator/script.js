@@ -17,6 +17,7 @@ const config = {
   rampingStartRateMin: parseInt(__ENV.RAMPING_START_RATE_MIN) || 1,
   rampingStartRateMax: parseInt(__ENV.RAMPING_START_RATE_MAX) || 5,
   functionTimeoutSeconds: __ENV.FUNCTION_TIMEOUT_SECONDS + "s",
+  address: __ENV.ADDRESS
 }
 
 // Load executor functions for each function
@@ -68,13 +69,14 @@ const client = new grpc.Client();
 client.load(['./config'], 'common.proto', 'leaf.proto');
 
 export function setup() {
-  client.connect('localhost:50050', {
+    client.connect(config.address, {
     plaintext: true
   });
 
   const setupResults = {
     client: client,
-    timeout: config.functionTimeoutSeconds
+    timeout: config.functionTimeoutSeconds,
+    address: config.address
   };
 
   for (const func of functionsToProcess) {
@@ -84,6 +86,8 @@ export function setup() {
       setupResults[func.name] = result;
     }
   }
+
+  client.close();
 
   return setupResults;
 }

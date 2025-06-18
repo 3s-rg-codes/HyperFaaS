@@ -63,7 +63,7 @@ export function bfsSetup(client) {
 
 export function bfsFunction(setupData) {
   const bfsFunctionId = setupData.bfs;
-  client.connect('localhost:50050', {
+    client.connect(setupData.address, {
     plaintext: true
   });
 

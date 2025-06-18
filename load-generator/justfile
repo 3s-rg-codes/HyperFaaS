@@ -6,7 +6,7 @@ export:
 	uv run ../benchmarks/import.py --csv test_results.csv --db ../benchmarks/metrics.db
 
 # run a seeded load generation with parameters
-run time="2m" seed="12345":
+run time="2m" seed="12345" address="localhost:50050":
 	k6 run \
 	--quiet \
 	--out csv=test_results.csv \
@@ -41,6 +41,7 @@ run time="2m" seed="12345":
 	-e THUMBNAILER_CONSTANT_RATE_MAX=550 \
 	-e THUMBNAILER_BURST_TARGET_RATE_MIN=600 \
 	-e THUMBNAILER_BURST_TARGET_RATE_MAX=1000 \
+	-e ADDRESS={{address}} \
 	script.js 1> generated_scenarios.json 2> stderr_output.txt && \
 	jq --arg bfs "$(grep -o "bfsFunctionId= [^\"]*" stderr_output.txt | sed 's/functionId= //' | awk '{print $2}')" \
 	   --arg echo "$(grep -o "echoFunctionId= [^\"]*" stderr_output.txt | sed 's/functionId= //' | awk '{print $2}')" \
