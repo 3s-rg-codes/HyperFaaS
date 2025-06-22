@@ -8,5 +8,6 @@ dependencies = [
     "click>=8.2.1",
     "grpcio-tools>=1.71.0",
     "httpx>=0.28.1",
+    "onnxruntime>=1.22.0",
     "pytest>=8.3.5",
 ]
