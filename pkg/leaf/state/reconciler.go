@@ -111,11 +111,21 @@ func (s *SmallState) ListenToWorkerStatusUpdates(ctx context.Context, workerID W
 func (s *SmallState) handleContainerTimeout(workerID WorkerID, functionID FunctionID, instanceID InstanceID) {
 	s.logger.Debug("Container timed out", "instanceID", instanceID)
 
-	s.GetAutoscaler(functionID).UpdateRunningInstances(-1)
+	autoscaler, ok := s.GetAutoscaler(functionID)
+	if !ok {
+		s.logger.Error("Reconciliation failed to find autoscaler", "functionID", functionID)
+		return
+	}
+	autoscaler.UpdateRunningInstances(-1)
 }
 
 func (s *SmallState) handleContainerDown(workerID WorkerID, functionID FunctionID, instanceID InstanceID) {
 	s.logger.Debug("Container down", "instanceID", instanceID)
 
-	s.GetAutoscaler(functionID).UpdateRunningInstances(-1)
+	autoscaler, ok := s.GetAutoscaler(functionID)
+	if !ok {
+		s.logger.Error("Reconciliation failed to find autoscaler", "functionID", functionID)
+		return
+	}
+	autoscaler.UpdateRunningInstances(-1)
 }
