@@ -122,7 +122,7 @@ func NewLeafServer(
 	workerIds []state.WorkerID,
 	logger *slog.Logger,
 ) *LeafServer {
-	return &LeafServer{
+	ls := LeafServer{
 		database:            httpClient,
 		functionIdCache:     make(map[string]kv.FunctionData),
 		functionMetricChans: make(map[state.FunctionID]chan bool),
@@ -132,6 +132,8 @@ func NewLeafServer(
 		logger:              logger,
 		leafConfig:          leafConfig,
 	}
+	ls.state.RunReconciler(context.Background())
+	return &ls
 }
 
 func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
