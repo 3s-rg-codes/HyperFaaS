@@ -37,10 +37,11 @@ func (s *SmallState) AddFunction(functionID FunctionID, metricChan chan bool, sc
 	s.mu.Unlock()
 }
 
-func (s *SmallState) GetAutoscaler(functionID FunctionID) *Autoscaler {
+func (s *SmallState) GetAutoscaler(functionID FunctionID) (*Autoscaler, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.autoscalers[functionID]
+	autoscaler, ok := s.autoscalers[functionID]
+	return autoscaler, ok
 }
 
 type Autoscaler struct {
@@ -108,7 +109,7 @@ func (a *Autoscaler) Scale(ctx context.Context) {
 			if concurrencyLevel == 0 {
 				continue
 			}
-			if concurrencyLevel/runningInstances > a.targetInstanceConcurrency {
+			if runningInstances == 0 || concurrencyLevel/runningInstances > a.targetInstanceConcurrency {
 				if runningInstances < a.maxRunningInstances && startingInstances < a.maxStartingInstances {
 					a.startingInstances.Add(1)
 					// TODO: pick a better way to pick a worker.

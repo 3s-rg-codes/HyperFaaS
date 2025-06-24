@@ -84,7 +84,10 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 
 func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
 	leafGotRequestTimestamp := time.Now()
-	autoscaler := s.state.GetAutoscaler(state.FunctionID(req.FunctionID.Id))
+	autoscaler, ok := s.state.GetAutoscaler(state.FunctionID(req.FunctionID.Id))
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "function id not found")
+	}
 	if autoscaler.IsScaledDown() {
 		err := autoscaler.ForceScaleUp(ctx)
 		if err != nil {
@@ -118,13 +121,15 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	metricChan := s.functionMetricChans[state.FunctionID(req.FunctionID.Id)]
 	s.functionMetricChansMutex.RUnlock()
 	metricChan <- true
+	defer func() {
+		metricChan <- false
+	}()
 	// Note: we send function id as instance id because I havent updated the proto yet. But the call instance endpoint is now call function. worker handles the instance id.
 	leafScheduledCallTimestamp := time.Now()
 	resp, callMetadata, err := s.callWorker(ctx, randWorker, state.FunctionID(req.FunctionID.Id), state.InstanceID(req.FunctionID.Id), req)
 	if err != nil {
 		return nil, err
 	}
-	metricChan <- false
 
 	defer func() {
 		trailer := metadata.New(map[string]string{
@@ -147,7 +152,7 @@ func NewLeafServer(
 	workerIds []state.WorkerID,
 	logger *slog.Logger,
 ) *LeafServer {
-	return &LeafServer{
+	ls := LeafServer{
 		database:            httpClient,
 		functionIdCache:     make(map[string]kv.FunctionData),
 		functionMetricChans: make(map[state.FunctionID]chan bool),
@@ -157,6 +162,8 @@ func NewLeafServer(
 		logger:              logger,
 		leafConfig:          leafConfig,
 	}
+	ls.state.RunReconciler(context.Background())
+	return &ls
 }
 
 func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, *CallMetadata, error) {

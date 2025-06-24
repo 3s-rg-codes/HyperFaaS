@@ -83,6 +83,9 @@ func main() {
 
 	// Send BFS request
 	//testBFS(client, functionIDs[4])
+
+	// Test call with sleep
+	testCallWithSleep(client, functionIDs[0], 20*time.Second)
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {
@@ -394,4 +397,17 @@ func testBFS(client pb.LeafClient, functionID *common.FunctionID) {
 	}
 
 	log.Printf("Received response from BFS: %v", output)
+}
+
+// this tests if the leaf is able to update its state to realise that a conatiner has timed out and it needs to scale up again.
+func testCallWithSleep(client pb.LeafClient, functionID *common.FunctionID, sleep time.Duration) {
+	_, err := sendCall(client, functionID)
+	if err != nil {
+		log.Fatalf("failed to send call: %v", err)
+	}
+	time.Sleep(sleep)
+	_, err = sendCall(client, functionID)
+	if err != nil {
+		log.Fatalf("failed to send call: %v", err)
+	}
 }
