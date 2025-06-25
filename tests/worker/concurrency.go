@@ -29,7 +29,7 @@ func TestConcurrentCalls(client pb.ControllerClient, runtime containerRuntime.Co
 			logger.Error("Error starting instance", "error", err)
 			return fmt.Errorf("error starting instance: %v", err)
 		}
-		instanceIDs[i] = instanceID.Id
+		instanceIDs[i] = instanceID.InstanceId.Id
 	}
 
 	// Send all calls

@@ -1,10 +1,12 @@
 package state
 
+// TODOs: find a way to update workers list when workers are added or removed.
+
 import (
-	"fmt"
+	"context"
 	"log/slog"
-	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,231 +14,147 @@ type WorkerID string
 type InstanceID string
 type FunctionID string
 
-type WorkerState int
-type InstanceState int
-
-const (
-	WorkerStateUp WorkerState = iota
-	WorkerStateDown
-)
-
-const (
-	InstanceStateRunning InstanceState = iota
-	InstanceStateIdle
-	InstanceStateStarting
-	InstanceStateDown
-	InstanceStateTimeout
-)
-
-type Instance struct {
-	InstanceID InstanceID
-	State      InstanceState
-	LastWorked time.Time
-	Created    time.Time
+type SmallState struct {
+	mu          sync.RWMutex
+	workers     []WorkerID
+	autoscalers map[FunctionID]*Autoscaler
+	logger      *slog.Logger
 }
 
-// --- Worker and Workers ---
-
-type Worker struct {
-	ID        WorkerID
-	state     WorkerState
-	Functions map[FunctionID]map[InstanceID]*Instance
-	mutex     sync.RWMutex
-}
-
-type Workers struct {
-	mu                sync.RWMutex
-	Workers           map[WorkerID]*Worker
-	functionToWorkers map[FunctionID]map[WorkerID]struct{}
-	logger            *slog.Logger
-}
-
-func NewWorkers(logger *slog.Logger) *Workers {
-	return &Workers{
-		Workers:           make(map[WorkerID]*Worker),
-		functionToWorkers: make(map[FunctionID]map[WorkerID]struct{}),
-		logger:            logger,
+func NewSmallState(workers []WorkerID, logger *slog.Logger) *SmallState {
+	return &SmallState{
+		workers:     workers,
+		autoscalers: make(map[FunctionID]*Autoscaler),
+		logger:      logger,
 	}
 }
 
-func (w *Workers) CreateWorker(workerID WorkerID) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+func (s *SmallState) AddFunction(functionID FunctionID, metricChan chan bool, scaleUpCallback func(ctx context.Context, functionID FunctionID, workerID WorkerID) error) {
+	s.mu.Lock()
+	s.autoscalers[functionID] = NewAutoscaler(functionID, s.workers, metricChan, scaleUpCallback, s.logger)
+	// TODO: pick a way to manage context correctly
+	go s.autoscalers[functionID].Scale(context.TODO())
+	s.mu.Unlock()
+}
 
-	if _, exists := w.Workers[workerID]; !exists {
-		w.Workers[workerID] = &Worker{
-			ID:        workerID,
-			state:     WorkerStateUp,
-			Functions: make(map[FunctionID]map[InstanceID]*Instance),
+func (s *SmallState) GetAutoscaler(functionID FunctionID) (*Autoscaler, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	autoscaler, ok := s.autoscalers[functionID]
+	return autoscaler, ok
+}
+
+type Autoscaler struct {
+	functionID                FunctionID
+	workers                   []WorkerID
+	panicMode                 atomic.Bool
+	MetricChan                chan bool
+	concurrencyLevel          atomic.Int32
+	runningInstances          atomic.Int32
+	startingInstances         atomic.Int32
+	maxStartingInstances      int32
+	maxRunningInstances       int32
+	targetInstanceConcurrency int32
+	evaluationInterval        time.Duration
+	scaleUpCallback           func(ctx context.Context, functionID FunctionID, workerID WorkerID) error
+	logger                    *slog.Logger
+}
+
+func NewAutoscaler(functionID FunctionID, workers []WorkerID, metricChan chan bool, scaleUpCallback func(ctx context.Context, functionID FunctionID, workerID WorkerID) error, logger *slog.Logger) *Autoscaler {
+	return &Autoscaler{
+		functionID:                functionID,
+		workers:                   workers,
+		MetricChan:                metricChan,
+		scaleUpCallback:           scaleUpCallback,
+		concurrencyLevel:          atomic.Int32{},
+		runningInstances:          atomic.Int32{},
+		startingInstances:         atomic.Int32{},
+		logger:                    logger,
+		evaluationInterval:        2 * time.Second,
+		maxStartingInstances:      10,
+		maxRunningInstances:       10,
+		targetInstanceConcurrency: 250,
+	}
+}
+
+func (a *Autoscaler) runMetricReceiver(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case m := <-a.MetricChan:
+			if m {
+				a.concurrencyLevel.Add(1)
+			} else {
+				a.concurrencyLevel.Add(-1)
+			}
 		}
 	}
 }
 
-func (w *Workers) AssignFunction(workerID WorkerID, functionID FunctionID) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+func (a *Autoscaler) Scale(ctx context.Context) {
+	go a.runMetricReceiver(ctx)
+	ticker := time.NewTicker(a.evaluationInterval)
+	defer ticker.Stop()
 
-	worker, exists := w.Workers[workerID]
-	if !exists {
-		return
-	}
-
-	worker.mutex.Lock()
-	defer worker.mutex.Unlock()
-
-	if _, ok := worker.Functions[functionID]; !ok {
-		worker.Functions[functionID] = make(map[InstanceID]*Instance)
-	}
-
-	if _, ok := w.functionToWorkers[functionID]; !ok {
-		w.functionToWorkers[functionID] = make(map[WorkerID]struct{})
-	}
-	w.functionToWorkers[functionID][workerID] = struct{}{}
-}
-
-func (w *Workers) DeleteWorker(workerID WorkerID) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	worker, exists := w.Workers[workerID]
-	if !exists {
-		return
-	}
-
-	worker.mutex.Lock()
-	defer worker.mutex.Unlock()
-
-	for functionID := range worker.Functions {
-		delete(w.functionToWorkers[functionID], workerID)
-		if len(w.functionToWorkers[functionID]) == 0 {
-			delete(w.functionToWorkers, functionID)
-		}
-	}
-	delete(w.Workers, workerID)
-}
-
-func (w *Workers) FindIdleInstance(functionID FunctionID) (WorkerID, InstanceID, error) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	workers, ok := w.functionToWorkers[functionID]
-	if !ok {
-		return "", "", &FunctionNotAssignedError{FunctionID: functionID}
-	}
-
-	var bestInstance *Instance
-	var selectedWorker WorkerID
-
-	for wid := range workers {
-		worker := w.Workers[wid]
-		worker.mutex.RLock()
-		instances := worker.Functions[functionID]
-
-		for _, inst := range instances {
-			if inst.State == InstanceStateIdle {
-				if bestInstance == nil || inst.LastWorked.After(bestInstance.LastWorked) {
-					temp := *inst
-					bestInstance = &temp
-					selectedWorker = wid
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// run simple scaling algorithm
+			concurrencyLevel := a.concurrencyLevel.Load()
+			runningInstances := a.runningInstances.Load()
+			startingInstances := a.startingInstances.Load()
+			if concurrencyLevel == 0 {
+				continue
+			}
+			if concurrencyLevel/runningInstances > a.targetInstanceConcurrency {
+				if runningInstances < a.maxRunningInstances && startingInstances < a.maxStartingInstances {
+					a.startingInstances.Add(1)
+					// TODO: pick a better way to pick a worker.
+					err := a.scaleUpCallback(ctx, a.functionID, a.workers[0])
+					if err != nil {
+						a.logger.Error("Failed to scale up", "error", err)
+					} else {
+						// if scale up was successful, decrement starting instances and increment running instances
+						a.startingInstances.Add(-1)
+						a.runningInstances.Add(1)
+					}
 				}
 			}
 		}
-		worker.mutex.RUnlock()
 	}
-
-	if bestInstance == nil {
-		return "", "", &NoIdleInstanceError{FunctionID: functionID}
-	}
-
-	return selectedWorker, bestInstance.InstanceID, nil
 }
 
-func (w *Workers) UpdateInstance(workerID WorkerID, functionID FunctionID, state InstanceState, inst Instance) error {
-	w.mu.RLock()
-	worker, exists := w.Workers[workerID]
-	w.mu.RUnlock()
-	if !exists {
-		return &WorkerNotFoundError{WorkerID: workerID}
+func (a *Autoscaler) UpdateRunningInstances(delta int32) {
+	a.runningInstances.Add(delta)
+}
+
+func (a *Autoscaler) IsScaledDown() bool {
+	return a.runningInstances.Load() == 0
+}
+
+func (a *Autoscaler) IsPanicMode() bool {
+	return a.panicMode.Load()
+}
+
+func (a *Autoscaler) ForceScaleUp(ctx context.Context) error {
+	if a.startingInstances.Load() >= a.maxStartingInstances {
+		return &TooManyStartingInstancesError{FunctionID: a.functionID}
 	}
-
-	worker.mutex.Lock()
-	defer worker.mutex.Unlock()
-
-	if _, ok := worker.Functions[functionID]; !ok {
-		worker.Functions[functionID] = make(map[InstanceID]*Instance)
+	// turn on panic mode
+	a.panicMode.Store(true)
+	a.startingInstances.Add(1)
+	// TODO: implement a better way to pick a worker.
+	err := a.scaleUpCallback(ctx, a.functionID, a.workers[0])
+	if err != nil {
+		a.logger.Error("Failed to scale up", "error", err)
+		return &ScaleUpFailedError{FunctionID: a.functionID, WorkerID: a.workers[0], Err: err}
 	}
-
-	instance := inst // make a copy
-
-	instance.State = state
-	worker.Functions[functionID][inst.InstanceID] = &instance
-
-	// If the instance has timed out or is down, remove it from the worker's functions
-	if state == InstanceStateTimeout || state == InstanceStateDown {
-		delete(worker.Functions[functionID], inst.InstanceID)
-	}
-
+	// scale up was successful
+	a.panicMode.Store(false)
+	a.startingInstances.Add(-1)
+	a.runningInstances.Add(1)
 	return nil
-}
-
-func (w *Workers) CountInstancesInState(workerID WorkerID, functionID FunctionID, instanceState InstanceState) (int, error) {
-	w.mu.RLock()
-	worker, exists := w.Workers[workerID]
-	w.mu.RUnlock()
-	if !exists {
-		return 0, &WorkerNotFoundError{WorkerID: workerID}
-	}
-
-	worker.mutex.RLock()
-	defer worker.mutex.RUnlock()
-
-	instances, ok := worker.Functions[functionID]
-	if !ok {
-		return 0, &FunctionNotAssignedError{FunctionID: functionID}
-	}
-
-	count := 0
-	for _, inst := range instances {
-		if inst.State == instanceState {
-			count++
-		}
-	}
-
-	return count, nil
-}
-
-func (w *Workers) DebugPrint() {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	fmt.Println("==== Debug Workers ====")
-	for wid, worker := range w.Workers {
-		fmt.Printf("Worker %s (%v):\n", wid, worker.state)
-		worker.mutex.RLock()
-		for fid, instances := range worker.Functions {
-			fmt.Printf("  Function %s:\n", fid)
-			var sorted []*Instance
-			for _, inst := range instances {
-				sorted = append(sorted, inst)
-			}
-			sort.Slice(sorted, func(i, j int) bool {
-				return sorted[i].LastWorked.After(sorted[j].LastWorked)
-			})
-			for _, inst := range sorted {
-				fmt.Printf("    - %s State: %s LastWorked: %v\n", inst.InstanceID, InstanceStateToString(inst.State), inst.LastWorked)
-			}
-		}
-		worker.mutex.RUnlock()
-	}
-	fmt.Println("=======================")
-}
-
-func InstanceStateToString(state InstanceState) string {
-	return []string{
-		InstanceStateRunning:  "Running",
-		InstanceStateIdle:     "Idle",
-		InstanceStateStarting: "Starting",
-		InstanceStateDown:     "Down",
-		InstanceStateTimeout:  "Timeout",
-	}[state]
 }

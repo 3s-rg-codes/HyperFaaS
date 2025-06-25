@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/jpeg"
-	"log"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"golang.org/x/image/draw"
 )
 
@@ -25,29 +26,21 @@ func main() {
 
 //Inspired by https://github.com/spcl/serverless-benchmarks/blob/master/benchmarks/200.multimedia/210.thumbnailer/python/function.py
 
-func handler(ctx context.Context, in *functionRuntimeInterface.Request) *functionRuntimeInterface.Response {
+func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
 	var input InputData
 	if err := json.Unmarshal(in.Data, &input); err != nil {
-		log.Printf("failed to decode input: %v", err)
-		return &functionRuntimeInterface.Response{
-			Data: []byte("invalid input"),
-			Id:   in.Id,
-		}
+		return nil, fmt.Errorf("failed to decode input: %v", err)
 	}
 
 	resized, err := resizeImage(input.Image, input.Width, input.Height)
 	if err != nil {
-		log.Printf("resize failed: %v", err)
-		return &functionRuntimeInterface.Response{
-			Data: []byte("resize failed"),
-			Id:   in.Id,
-		}
+		return nil, fmt.Errorf("resize failed: %v", err)
 	}
 
-	return &functionRuntimeInterface.Response{
-		Data: resized,
-		Id:   in.Id,
-	}
+	return &common.CallResponse{
+		Data:  resized,
+		Error: nil,
+	}, nil
 }
 
 func resizeImage(input []byte, w, h int) ([]byte, error) {

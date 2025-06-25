@@ -23,7 +23,10 @@ proto:
 # build the worker binary
 build-worker:
     go build -o bin/ cmd/worker/main.go
-
+leaf:
+    docker compose up -d --build leaf
+worker:
+    docker compose up -d --build worker
 # build all go functions
 build-functions-go:
     find ./functions/go/*/ -maxdepth 0 -type d | xargs -I {} bash -c 'just build-function-go $(basename "{}")'
@@ -135,7 +138,11 @@ worker-log:
     docker logs $(docker ps -a | grep worker | awk '{print $1}') --tail 100
 pprof-worker:
     docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
+pprof-leaf:
+    docker exec -it $(docker ps | grep leaf | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
 
+docker-logs component:
+    docker logs $(docker ps -a | grep {{component}} | awk '{print $1}') --tail 100
 memory-worker:
     docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/heap
 trace-worker:
