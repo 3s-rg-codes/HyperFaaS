@@ -10,6 +10,8 @@ import {
   leafGotRequestTimestampKey,
   leafScheduledCallTimestampKey,
   functionParametersMetric,
+  functionProcessingTime,
+  functionProcessingTimeKey,
   timeout,
   error
 } from '../metrics.js';
@@ -103,5 +105,6 @@ export function bfsFunction(setupData) {
   leafGotRequestTimestamp.add(isoToMs(response.trailers[leafGotRequestTimestampKey]));
   leafScheduledCallTimestamp.add(isoToMs(response.trailers[leafScheduledCallTimestampKey]));
   functionParametersMetric.add(0, { functionParameters: JSON.stringify(inputData) });
+  functionProcessingTime.add(isoToMs(response.trailers[functionProcessingTimeKey]));
   client.close();
 }

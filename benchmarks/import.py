@@ -172,8 +172,6 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
                     requests[request_key]['image_tag'] = tags['image_tag']
                 if 'instanceId' in tags:
                     requests[request_key]['instance_id'] = tags['instanceId']
-                if 'functionProcessingTime' in tags:
-                    requests[request_key]['function_processing_time'] = tags['functionProcessingTime']
                 if 'functionParameters' in tags:
                     requests[request_key]['function_parameters'] = tags['functionParameters']
                     
@@ -200,6 +198,8 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
                 requests[request_key]['leafgotrequesttimestamp'] = row['metric_value']
             elif row['metric_name'] == 'leafscheduledcalltimestamp':
                 requests[request_key]['leafscheduledcalltimestamp'] = row['metric_value']
+            elif row['metric_name'] == 'functionprocessingtime':
+                requests[request_key]['functionprocessingtime'] = row['metric_value']
             elif row['metric_name'] == 'timeout':
                 requests[request_key]['timeout'] = row['metric_value']
             elif row['metric_name'] == 'error':
@@ -225,7 +225,7 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
             data.get('grpc_req_duration'),
             data.get('callqueuedtimestamp'),
             data.get('gotresponsetimestamp'),
-            data.get('function_processing_time'),
+            data.get('functionprocessingtime'),
             data.get('leafgotrequesttimestamp'),
             data.get('leafscheduledcalltimestamp'),
             data.get('data_sent'),

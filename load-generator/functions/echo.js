@@ -11,7 +11,9 @@ import {
   leafScheduledCallTimestampKey,
   functionParametersMetric,
   timeout,
-  error
+  error,
+  functionProcessingTime,
+  functionProcessingTimeKey
 } from '../metrics.js';
 import { getRandomInt, isoToMs } from '../utils.js'
 import grpc from 'k6/net/grpc';
@@ -84,6 +86,7 @@ export function echoFunction(setupData) {
   leafGotRequestTimestamp.add(isoToMs(response.trailers[leafGotRequestTimestampKey]));
   leafScheduledCallTimestamp.add(isoToMs(response.trailers[leafScheduledCallTimestampKey]));
   functionParametersMetric.add(0, { functionParameters: JSON.stringify(data) });
+  functionProcessingTime.add(isoToMs(response.trailers[functionProcessingTimeKey]));
   // check that there is no error and that the data that was sent is the same as the data that was received
   /* check(response, {
     'No error when scheduling echo function': (r) => {

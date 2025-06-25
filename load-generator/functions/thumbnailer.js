@@ -11,7 +11,9 @@ import {
   leafScheduledCallTimestampKey,
   functionParametersMetric,
   timeout,
-  error
+  error,
+  functionProcessingTime,
+  functionProcessingTimeKey
 } from '../metrics.js';
 import { getRandomInt, isoToMs } from '../utils.js'
 import grpc from 'k6/net/grpc';
@@ -99,5 +101,6 @@ export function thumbnailerFunction(setupData) {
   leafGotRequestTimestamp.add(isoToMs(response.trailers[leafGotRequestTimestampKey]));
   leafScheduledCallTimestamp.add(isoToMs(response.trailers[leafScheduledCallTimestampKey]));
   functionParametersMetric.add(0, { functionParameters: JSON.stringify(inputData) });
+  functionProcessingTime.add(isoToMs(response.trailers[functionProcessingTimeKey]));
   client.close();
 }
