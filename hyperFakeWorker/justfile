@@ -20,6 +20,6 @@ run-local:
   @echo "Running hyperFake worker"
   uv run python -m worker.main server
 
-test-all:
+test:
   @echo "Running tests that require external components"
-  uv run pytest tests/
+  uv run pytest -m "not external" tests/
