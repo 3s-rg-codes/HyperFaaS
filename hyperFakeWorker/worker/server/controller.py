@@ -1,6 +1,7 @@
 import grpc
 from traceback import print_exc
 from time import sleep
+from pathlib import Path
 
 from ..api.controller import controller_pb2_grpc
 from ..api.common.common_pb2 import FunctionID, InstanceID, CallRequest, CallResponse, Error
@@ -14,16 +15,18 @@ from ..utils.time import get_timestamp
 
 class ControllerServicer(controller_pb2_grpc.ControllerServicer):
 
-    def __init__(self):
+    def __init__(self, models: list[Path]):
         super().__init__()
-        self._fn_mngr = FunctionManager()
+        self._function_manager = FunctionManager(models)
 
     def Start(self, request: FunctionID, context: grpc.ServicerContext):
         logger.debug(f"Got Start call for function {request.id}")
-        new_function = Function.create_new(self._fn_mngr, request.id, self._fn_mngr.get_image(request.id))
-        with self._fn_mngr.function_lock:
-            self._fn_mngr.add_function(new_function)
-            self._fn_mngr.send_status_update(
+        function_image = self._function_manager.get_image(request.id)
+        model_path = self._function_manager.find_model(request.id, function_image)
+        new_function = Function.create_new(self._function_manager, request.id, function_image, model_path)
+        with self._function_manager.function_lock:
+            self._function_manager.add_function(new_function)
+            self._function_manager.send_status_update(
                 StatusUpdate(
                     instance_id=InstanceID(id=new_function.instance_id),
                     event=Event.Value("EVENT_START"),
@@ -44,7 +47,7 @@ class ControllerServicer(controller_pb2_grpc.ControllerServicer):
                     error=Error(message="Unable to schedule function call!")
                 )
                 return response
-            func = self._fn_mngr.choose_function(request.function_id.id)
+            func = self._function_manager.choose_function(request.function_id.id)
             tries += 1
             if func is None:
                 sleep(0.1)
@@ -53,10 +56,13 @@ class ControllerServicer(controller_pb2_grpc.ControllerServicer):
         with func.work_lock:
             try:
                 queued_ts = get_timestamp().ToNanoseconds()
-                response = func.work(10)
+                response, runtime = func.work(
+                    len(request.SerializeToString()), # Body size
+                    10
+                )
                 response_ts = get_timestamp().ToNanoseconds()
                 if response:
-                    self._fn_mngr.send_status_update(
+                    self._function_manager.send_status_update(
                         StatusUpdate(
                             instance_id=InstanceID(id=func.instance_id),
                             event=Event.Value("EVENT_RESPONSE"),
@@ -65,7 +71,7 @@ class ControllerServicer(controller_pb2_grpc.ControllerServicer):
                         )
                     )
                 else:
-                    self._fn_mngr.send_status_update(
+                    self._function_manager.send_status_update(
                         StatusUpdate(
                             instance_id=InstanceID(id=func.instance_id),
                             event=Event.Value("EVENT_DOWN"),
@@ -82,7 +88,7 @@ class ControllerServicer(controller_pb2_grpc.ControllerServicer):
                     (
                         ("gotResponseTimestamp".lower(), str(response_ts)),
                         ("callQueuedTimestamp".lower(), str(queued_ts)),
-                        ("functionProcessingTime".lower(), str(response_ts - queued_ts))
+                        ("functionProcessingTime".lower(), str(runtime))
                     )
                 )
                 
@@ -98,8 +104,8 @@ class ControllerServicer(controller_pb2_grpc.ControllerServicer):
     
     def Stop(self, request: InstanceID, context: grpc.ServicerContext):
         logger.info(f"Got Stop call for function instance {request.id}")
-        func = self._fn_mngr.remove_function(request.id)
-        self._fn_mngr.send_status_update(
+        func = self._function_manager.remove_function(request.id)
+        self._function_manager.send_status_update(
             StatusUpdate(
                 instance_id=InstanceID(id=func.instance_id),
                 event=Event.Value("EVENT_STOP"),
@@ -112,13 +118,13 @@ class ControllerServicer(controller_pb2_grpc.ControllerServicer):
     
     def Status(self, request: StatusRequest, context: grpc.ServicerContext):
         # Collect functions...
-        for update in self._fn_mngr.get_status_updates():
+        for update in self._function_manager.get_status_updates():
             logger.debug(f"Sent Status update:\nFunction: {update.function_id}\nInstance: {update.instance_id}\nEvent: {update.event.__str__()}\nStatus: {update.status.__str__()}\ntime: {update.timestamp.__str__()}")
             yield update
     
     def Metrics(self, request: MetricsRequest, context: grpc.ServicerContext):
         logger.debug(f"Got Metrics request!")
         return MetricsUpdate(
-            used_ram_percent=1000.0,
-            cpu_percent_percpu=[1.0,1.0,0.3]
+            used_ram_percent=self._function_manager.total_ram_usage,
+            cpu_percent_percpu=[self._function_manager.total_cpu_usage]
         )

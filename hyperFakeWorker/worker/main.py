@@ -2,6 +2,8 @@
 from .api import add_proto_definitions
 add_proto_definitions()
 
+from pathlib import Path
+
 import click
 
 from .log import logger
@@ -11,10 +13,11 @@ def main():
     pass
 
 @main.command()
-def server():
+@click.option("-m", "--model", "model", multiple=True, default=[], type=click.Path(resolve_path=True, path_type=Path, dir_okay=False, exists=True))
+def server(model: list[Path]):
     from .server.server import serve
 
-    serve()
+    serve(model)
 
 @main.command()
 def client():

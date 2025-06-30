@@ -1,8 +1,10 @@
 import datetime
+from pathlib import Path
 import random
 from hashlib import sha256
 import threading
 from queue import Queue
+import time
 from weakref import WeakSet
 
 from . import FunctionIdStr, InstanceIdStr
@@ -11,13 +13,14 @@ from ..api.controller.controller_pb2 import StatusUpdate, Event, Status, Functio
 from ..api.common.common_pb2 import InstanceID, FunctionID
 from ..log import logger
 from ..utils.time import get_timestamp
+from .model import FunctionModelInferer, FunctionModelInput, FunctionModelOutput
 
 from ..kvstore.client import KVStoreClient
 from .image import FunctionImage
 
 class Function():
 
-    def __init__(self, manager: "FunctionManager", name: str, function_id: str, instance_id: str, image: FunctionImage):
+    def __init__(self, manager: "FunctionManager", name: str, function_id: str, instance_id: str, image: FunctionImage, model: FunctionModelInferer):
         self.manager = manager
 
         self.created_at = int(datetime.datetime.now().timestamp())
@@ -30,11 +33,16 @@ class Function():
         self.instance_id = instance_id
         self.image = image
 
+        self.model = model
+
+        self.cpu = 0.0
+        self.ram = 0
+
         self.is_cold = True
 
     @property
     def was_recently_active(self):
-        return self.is_active or self.time_since_last_work < 1.0
+        return self.is_active or self.time_since_last_work <= 1.0
 
     @property
     def is_active(self):
@@ -54,42 +62,64 @@ class Function():
         return current_time - self.last_worked_at
 
     @staticmethod
-    def create_new(manager: "FunctionManager", function_id: str, image: FunctionImage):
+    def create_new(manager: "FunctionManager", function_id: str, image: FunctionImage, model: Path):
+        if model is None:
+            raise ValueError(f"model cannot be None!")
         hash_source = function_id + str(random.randint(1, 2**31))
         return Function(
             manager=manager,
             name=f"{random.choice(adjectives)}-{random.choice(names)}",
             function_id=function_id,
             instance_id=sha256(hash_source.encode(errors="ignore")).hexdigest()[0:12],
-            image=image
+            image=image,
+            model=FunctionModelInferer(model)
         )
     
-    def work(self, bytes: int):
+    def coldstart(self):
+        logger.debug(f"Waiting for coldstart of function {self.function_id} - {self.instance_id}")
+        # time.sleep(1)
+        self.is_cold = False
+        self.manager.send_status_update(update=StatusUpdate(
+            instance_id=InstanceID(id=self.instance_id),
+            event=Event.Value("EVENT_RUNNING"),
+            status=Status.Value("STATUS_SUCCESS"),
+            function_id=FunctionID(id=self.function_id),
+            timestamp=get_timestamp()
+        ))
+        logger.debug(f"Finished coldstart of function {self.function_id} - {self.instance_id}")
+
+    def timeout(self):
+        self.manager.send_status_update(update=StatusUpdate(
+            instance_id=InstanceID(id=self.instance_id),
+            event=Event.Value("EVENT_TIMEOUT"),
+            function_id=FunctionID(id=self.function_id),
+        ))
+        return b''
+
+    def work(self, body_size: int, bytes: int):
         with self.work_lock:
             self.last_worked_at = int(datetime.datetime.now().timestamp())
             logger.debug(f"Executing function {self.function_id} - {self.instance_id}")
             if self.is_cold:
-                logger.debug(f"Waiting for coldstart of function {self.function_id} - {self.instance_id}")
-                # time.sleep(1)
-                self.is_cold = False
-                self.manager.send_status_update(update=StatusUpdate(
-                    instance_id=InstanceID(id=self.instance_id),
-                    event=Event.Value("EVENT_RUNNING"),
-                    status=Status.Value("STATUS_SUCCESS"),
-                    function_id=FunctionID(id=self.function_id),
-                    timestamp=get_timestamp()
-                ))
-                logger.debug(f"Finished coldstart of function {self.function_id} - {self.instance_id}")
-            # time.sleep(1)
+                self.coldstart()
+            results = self.model.infer(
+                FunctionModelInput(body_size, 
+                                   self.manager.num_functions[self.function_id], 
+                                   self.manager.num_active_functions[self.function_id], 
+                                   self.manager.total_cpu_usage, 
+                                   self.manager.total_ram_usage
+                                   )
+            )
+            self.cpu = results.cpu_usage
+            self.ram = results.ram_usage
+            time.sleep(results.function_runtime)
             timeout = False
-            if timeout:
-                self.manager.send_status_update(update=StatusUpdate(
-                    instance_id=InstanceID(id=self.instance_id),
-                    event=Event.Value("EVENT_TIMEOUT"),
-                    function_id=FunctionID(id=self.function_id),
-                ))
             self.last_worked_at = int(datetime.datetime.now().timestamp())
-            return random.randbytes(bytes)
+            if timeout:
+                return self.timeout()
+            self.cpu = 0
+            self.ram = 0
+            return random.randbytes(bytes), results.function_runtime
            
     def __eq__(self, value):
         if not isinstance(value, Function):
@@ -101,7 +131,7 @@ class Function():
 
 class FunctionManager():
 
-    def __init__(self):
+    def __init__(self, models: list[Path]):
         self.function_lock = threading.RLock()
         # instance_id : Function
         self.active_functions: dict[InstanceIdStr, Function] = {}
@@ -109,10 +139,23 @@ class FunctionManager():
         self.instances: dict[FunctionIdStr, set[Function]] = {}
         self.images: dict[FunctionIdStr, FunctionImage] = {}
 
+        self.function_model_paths = models
+        self.function_models: dict[FunctionIdStr, Path] = {}
+
         self.kvs_client = KVStoreClient("127.0.0.1:8999")
         
         self.status_lock = threading.RLock()
         self.status_queues: WeakSet[Queue] = WeakSet()
+
+    @property
+    def total_cpu_usage(self) -> float:
+        with self.function_lock:
+            return sum([func.cpu for func in self.active_functions.values()], 0)
+    
+    @property
+    def total_ram_usage(self) -> int:
+        with self.function_lock:
+            return sum([func.ram for func in self.active_functions.values()], 0)
 
     def get_image(self, function_id: FunctionIdStr):
         with self.function_lock:
@@ -158,10 +201,21 @@ class FunctionManager():
                 active_funcs[key] = len(value)
             return active_funcs
 
+    def find_model(self, function_id: FunctionIdStr, image: FunctionImage) -> Path:
+        # resolve model path
+        if self.function_models.get(function_id) is None:
+            for p in self.function_model_paths:
+                if p.stem == image.image:
+                    self.function_models[function_id] = p
+                    break
+        return self.function_models.get(function_id)
+
     def add_function(self, function: Function):
         with self.function_lock:
+            # Add to function instance map
             self.active_functions[function.instance_id] = function
 
+            # Add to set of all instances of an image
             if self.instances.get(function.function_id) is None:
                 self.instances[function.function_id] = set()
             self.instances[function.function_id].add(function)
