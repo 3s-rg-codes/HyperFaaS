@@ -131,7 +131,7 @@ class Function():
 
 class FunctionManager():
 
-    def __init__(self, models: list[Path]):
+    def __init__(self, models: list[Path], db_address: str, update_buffer_size: int):
         self.function_lock = threading.RLock()
         # instance_id : Function
         self.active_functions: dict[InstanceIdStr, Function] = {}
@@ -142,10 +142,12 @@ class FunctionManager():
         self.function_model_paths = models
         self.function_models: dict[FunctionIdStr, Path] = {}
 
-        self.kvs_client = KVStoreClient("127.0.0.1:8999")
+        self.kvs_client = KVStoreClient(db_address)
         
         self.status_lock = threading.RLock()
         self.status_queues: WeakSet[Queue] = WeakSet()
+        
+        self.update_buffer_size = update_buffer_size
 
     @property
     def total_cpu_usage(self) -> float:
@@ -251,7 +253,7 @@ class FunctionManager():
                 q.put(update)
             
     def get_status_updates(self):
-        updates_queue: Queue[StatusUpdate] = Queue()
+        updates_queue: Queue[StatusUpdate] = Queue(maxsize=self.update_buffer_size)
         with self.status_lock:
             self.status_queues.add(updates_queue)
         
