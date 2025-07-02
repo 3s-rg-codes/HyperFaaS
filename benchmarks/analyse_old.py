@@ -326,6 +326,8 @@ def main():
     parser.add_argument('--scenarios-path', 
                         help='Path to k6 scenarios JSON file (optional)')
     parser.add_argument('--plot', help='Plot the metrics', default=False)
+    parser.add_argument('--save-path', help='Save the plots', default=None)
+    parser.add_argument('--show', help='Show the plots', default=True)
     args = parser.parse_args()
 
     try:
@@ -333,14 +335,15 @@ def main():
         print_data_transfer(args.db_path)
         #print_cold_start_metrics(args.db_path)
         if args.plot:
-            plot_throughput_leaf_node(metrics)
+            p = Plotter(show=args.show, save_path=args.save_path)
+            p.plot_throughput_leaf_node(metrics)
             #plot_requests_processed_per_second(metrics)
             #plot_throughput_vs_latency_over_time(metrics)
-            plot_decomposed_latency(metrics)
+            p.plot_decomposed_latency(metrics)
         
             if args.scenarios_path:
                     scenarios_df = analyze_k6_scenarios(args.scenarios_path)
-                    plot_expected_rps(scenarios_df, args.scenarios_path)
+                    p.plot_expected_rps(scenarios_df, args.scenarios_path)
             
     except sqlite3.OperationalError as e:
         print(f"Error accessing database: {e}", file=sys.stderr)

@@ -308,9 +308,9 @@ func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID st
 		return "", err
 	}
 
-	network, ok := containerJSON.NetworkSettings.Networks["hyperfaas-network"]
+	network, ok := containerJSON.NetworkSettings.Networks["bridge"]
 	if !ok {
-		return "", fmt.Errorf("container not connected to hyperfaas-network network")
+		return "", fmt.Errorf("container not connected to bridge network")
 	}
 	/* network := containerJSON.NetworkSettings.Networks["host"]
 	if network == nil {

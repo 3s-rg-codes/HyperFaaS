@@ -79,11 +79,11 @@ run-local-database:
 
 run-local-worker:
     @echo "Running local worker"
-    go run cmd/worker/main.go --address=0.0.0.0:50051 --runtime=fake --log-level=info --log-format=dev --auto-remove=true --containerized=false --caller-server-address=127.0.0.1:50052 --database-type=http
+    go run cmd/worker/main.go --address=localhost:50051 --runtime=docker --log-level=info --log-format=dev --auto-remove=true --containerized=false --caller-server-address=127.0.0.1:50052 --database-type=http
 
 run-local-leaf:
     @echo "Running local leaf"
-    go run cmd/leaf/main.go --address=0.0.0.0:50050 --log-level=info --log-format=dev --worker-ids=127.0.0.1:50051 --database-address=http://localhost:8999
+    go run cmd/leaf/main.go --address=localhost:50050 --log-level=debug --log-format=text --worker-ids=127.0.0.1:50051 --database-address=http://localhost:8999
 
 
 ############################
@@ -124,11 +124,13 @@ load-test:
     go run ./tests/leaf/main.go
 
 metrics-analyse:
-    cd benchmarks && uv run analyse.py --scenarios-path ../load-generator/generated_scenarios.json
+    cd benchmarks && uv run main.py --analyse --db-path metrics.db --scenarios-path ../load-generator/generated_scenarios_run_1.json --plot-save-path ./plots/
+
 metrics-plot:
-    cd benchmarks && uv run analyse.py --scenarios-path ../load-generator/generated_scenarios.json --plot true
+    cd benchmarks && uv run plot.py--plot --prefix $(date +%Y-%m-%d) --plot-save-path ./plots/
 metrics-process:
     cd benchmarks && uv run process.py --db-path ../benchmarks/metrics.db --active-calls-window-size 100
+
 metrics-clean-training:
     sqlite3 benchmarks/metrics.db "drop table training_data;"
 metrics-verify:
@@ -139,6 +141,34 @@ metrics-verify:
     sqlite3 benchmarks/metrics.db ".headers on" "select count(distinct(worker_cpu_usage)) from training_data;"
     sqlite3 benchmarks/metrics.db ".headers on" "select count(distinct(worker_ram_usage)) from training_data;"
     sqlite3 benchmarks/metrics.db ".headers on" "select count(case when function_cpu_usage = 0.0 then 1 end) as zero_count, count(case when function_cpu_usage != 0.0 then 1 end) as non_zero_count from training_data;"
+    sqlite3 benchmarks/metrics.db ".headers on" "select scenario, count() from metrics where grpc_req_duration is null and error is null and timeout is null group by scenario;"
+
+############################
+# Data pipeline
+############################
+run-full-pipeline time="1m" total_runs="3" address="localhost:50050":
+    #!/bin/bash
+    # run the load generation
+    just load-generator/register-functions {{address}}
+    just load-generator/run-sequential {{total_runs}} {{time}} {{address}}
+    # call pull metrics script : this will fail unless you have it locally
+    # This script lives outside the repo - its infra specific
+    ../pull_metrics.sh
+    # process the metrics
+    just load-generator/export-sequential
+
+    just load-generator/process-sequential
+
+    just load-generator/scenarios-sequential
+
+    just load-generator/plot-sequential
+
+    # Move the experiment run to the training data folder
+    timestamp=$(date +%Y-%m-%d_%H-%M-%S)
+    mkdir -p ~/training_data/${timestamp}
+    mv ./benchmarks/metrics.db ~/training_data/${timestamp}/metrics.db
+    mv ./load-generator/generated_scenarios_*.json ~/training_data/${timestamp}/
+    mv ./benchmarks/plots ~/training_data/${timestamp}/plots
 
 clean-metrics:
     rm ./benchmarks/metrics.db 2> /dev/null

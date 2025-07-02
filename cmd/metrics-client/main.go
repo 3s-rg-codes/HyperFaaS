@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -105,55 +106,124 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		log.Fatalf("Failed to connect: %v", err)
-	}
-	defer conn.Close()
-
-	client := controller.NewControllerClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream, err := client.Status(ctx, &controller.StatusRequest{NodeID: "metrics-client"})
-	if err != nil {
-		log.Fatalf("Failed to get status stream: %v", err)
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		collectMetrics(ctx, db)
+		return nil
+	})
+
+	eg.Go(func() error {
+		return handleStatusStream(ctx, db)
+	})
+
+	if err := eg.Wait(); err != nil {
+		log.Printf("Error: %v", err)
 	}
+}
 
-	log.Println("Connected to status stream, waiting for updates...")
-
-	go collectMetrics(db)
+// handleStatusStream manages the gRPC connection with retry logic
+func handleStatusStream(ctx context.Context, db *sql.DB) error {
+	const maxRetries = 5
+	const backoffDuration = 1 * time.Second
 
 	for {
-		update, err := stream.Recv()
-		if err != nil {
-			log.Printf("Error receiving update: %v", err)
-			break
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
 		}
 
-		_, err = db.Exec(`
-			INSERT INTO status_updates (
-				instance_id, virtualization_type, event, status, 
-				function_id, timestamp
-			) VALUES (?, ?, ?, ?, ?, ?)`,
-			update.InstanceId.Id,
-			update.Type,
-			update.Event,
-			update.Status,
-			update.FunctionId.Id,
-			update.Timestamp.AsTime().Unix(),
-		)
-		if err != nil {
-			log.Printf("Failed to insert update: %v", err)
-			continue
+		connected := false
+		for attempt := 0; attempt <= maxRetries && !connected; attempt++ {
+			if attempt > 0 {
+				log.Printf("Attempting to reconnect (attempt %d/%d)...", attempt, maxRetries)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(backoffDuration * time.Duration(attempt)):
+				}
+			}
+
+			conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				log.Printf("Failed to connect (attempt %d): %v", attempt+1, err)
+				if attempt == maxRetries {
+					break
+				}
+				continue
+			}
+
+			client := controller.NewControllerClient(conn)
+			stream, err := client.Status(ctx, &controller.StatusRequest{NodeID: "metrics-client"})
+			if err != nil {
+				log.Printf("Failed to get status stream (attempt %d): %v", attempt+1, err)
+				conn.Close()
+				if attempt == maxRetries {
+					break
+				}
+				continue
+			}
+
+			log.Println("Connected to status stream, waiting for updates...")
+			connected = true
+
+			// Process messages until error or context cancellation
+			for {
+				select {
+				case <-ctx.Done():
+					conn.Close()
+					return ctx.Err()
+				default:
+				}
+
+				update, err := stream.Recv()
+				if err != nil {
+					log.Printf("Error receiving update: %v", err)
+					conn.Close()
+					connected = false
+					break // Break inner loop to retry connection
+				}
+
+				_, err = db.Exec(`
+					INSERT INTO status_updates (
+						instance_id, virtualization_type, event, status, 
+						function_id, timestamp
+					) VALUES (?, ?, ?, ?, ?, ?)`,
+					update.InstanceId.Id,
+					update.Type,
+					update.Event,
+					update.Status,
+					update.FunctionId.Id,
+					update.Timestamp.AsTime().Unix(),
+				)
+				if err != nil {
+					log.Printf("Failed to insert update: %v", err)
+					continue
+				}
+			}
+		}
+
+		if !connected {
+			log.Printf("Failed to connect after %d retries.", maxRetries)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(5 * time.Second):
+				return nil
+			}
 		}
 	}
 }
 
 // collectMetrics retrieves container stats periodically
-func collectMetrics(db *sql.DB) {
+func collectMetrics(ctx context.Context, db *sql.DB) {
 	cli, err := createDockerClient()
 	if err != nil {
+		log.Printf("Failed to create Docker client: %v", err)
 		return
 	}
 
@@ -161,34 +231,39 @@ func collectMetrics(db *sql.DB) {
 	defer ticker.Stop()
 
 	for {
-		<-ticker.C
-		// Get all containers
-		containers, err := cli.ContainerList(context.TODO(), container.ListOptions{
-			All: true,
-			Filters: filters.NewArgs(
-				filters.Arg("name", "hyperfaas-"),
-			),
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Get all containers
+			containers, err := cli.ContainerList(context.TODO(), container.ListOptions{
+				All: true,
+				Filters: filters.NewArgs(
+					filters.Arg("name", "hyperfaas-"),
+				),
+			})
+			if err != nil {
+				log.Printf("Failed to list containers: %v", err)
+				continue
+			}
 
-		// Get stats for each container
-		for _, c := range containers {
-			go func(cli *client.Client, db *sql.DB, c container.Summary) {
-				stats, err := queryStats(context.TODO(), cli, c.ID)
-				if err != nil {
-					if err == io.EOF || client.IsErrNotFound(err) {
-						// Container finished
+			// Get stats for each container
+			for _, c := range containers {
+				go func(cli *client.Client, db *sql.DB, c container.Summary) {
+					stats, err := queryStats(context.TODO(), cli, c.ID)
+					if err != nil {
+						if err == io.EOF || client.IsErrNotFound(err) {
+							// Container finished
+							return
+						}
+						log.Printf("error: failed to get stats for container %v: %v", c.ID, err)
 						return
 					}
-					log.Printf("error: failed to get stats for container %v: %v", c.ID, err)
-					return
-				}
-				if err := saveStats(db, stats, c.ID, c.Image); err != nil {
-					log.Printf("error: couldn't save the stats: %v\n", err)
-				}
-			}(cli, db, c)
+					if err := saveStats(db, stats, c.ID, c.Image); err != nil {
+						log.Printf("error: couldn't save the stats: %v\n", err)
+					}
+				}(cli, db, c)
+			}
 		}
 	}
 }

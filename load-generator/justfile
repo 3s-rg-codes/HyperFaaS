@@ -1,53 +1,125 @@
 default:
 	@just --list
 
-
+# Get a random picture from picsum.photos, you need it to run the sequential workloads.
+get-pic:
+	wget https://picsum.photos/200/300
+	# Its more efficient than getting many different pictures inside the script, or placing one in the setup context, as it consumes too much memory.
 export:
 	uv run ../benchmarks/import.py --csv test_results.csv --db ../benchmarks/metrics.db
 
-# run a seeded load generation with parameters
-run time="2m" seed="12345" address="localhost:50050":
-	k6 run \
-	--quiet \
-	--out csv=test_results.csv \
-	-e WORKLOAD_SEED={{seed}} \
-	-e PERSIST_GENERATION=true \
-	-e TOTAL_TEST_DURATION={{time}} \
-	-e FUNCTION_TIMEOUT_SECONDS=30 \
-	-e MIN_PREALLOCATED_VUS=10 \
-	-e MAX_PREALLOCATED_VUS=50 \
-	-e MIN_MAX_VUS=1000 \
-	-e MAX_MAX_VUS=1050 \
-	-e RAMPING_START_RATE_MIN=1 \
-	-e RAMPING_START_RATE_MAX=50 \
-	-e BFS_MIN_SCENARIOS=8 \
-	-e BFS_MAX_SCENARIOS=10 \
-	-e BFS_CONSTANT_SCENARIOS_RATIO=0.6 \
-	-e BFS_CONSTANT_RATE_MIN=350 \
-	-e BFS_CONSTANT_RATE_MAX=450 \
-	-e BFS_BURST_TARGET_RATE_MIN=300 \
-	-e BFS_BURST_TARGET_RATE_MAX=350 \
-	-e ECHO_MIN_SCENARIOS=12 \
-	-e ECHO_MAX_SCENARIOS=16 \
-	-e ECHO_CONSTANT_SCENARIOS_RATIO=0.5 \
-	-e ECHO_CONSTANT_RATE_MIN=1100 \
-	-e ECHO_CONSTANT_RATE_MAX=1500 \
-	-e ECHO_BURST_TARGET_RATE_MIN=2000 \
-	-e ECHO_BURST_TARGET_RATE_MAX=3000 \
-	-e THUMBNAILER_MIN_SCENARIOS=12 \
-	-e THUMBNAILER_MAX_SCENARIOS=15 \
-	-e THUMBNAILER_CONSTANT_SCENARIOS_RATIO=0.8 \
-	-e THUMBNAILER_CONSTANT_RATE_MIN=450 \
-	-e THUMBNAILER_CONSTANT_RATE_MAX=550 \
-	-e THUMBNAILER_BURST_TARGET_RATE_MIN=600 \
-	-e THUMBNAILER_BURST_TARGET_RATE_MAX=1000 \
-	-e ADDRESS={{address}} \
-	script.js 1> generated_scenarios.json 2> stderr_output.txt && \
-	jq --arg bfs "$(grep -o "bfsFunctionId= [^\"]*" stderr_output.txt | sed 's/functionId= //' | awk '{print $2}')" \
-	   --arg echo "$(grep -o "echoFunctionId= [^\"]*" stderr_output.txt | sed 's/functionId= //' | awk '{print $2}')" \
-	   --arg thumb "$(grep -o "thumbnailerFunctionId= [^\"]*" stderr_output.txt | sed 's/functionId= //' | awk '{print $2}')" \
-	   '.metadata += {bfsFunctionId: $bfs, echoFunctionId: $echo, thumbnailerFunctionId: $thumb}' \
-	   generated_scenarios.json > tmp.json && mv tmp.json generated_scenarios.json && rm stderr_output.txt
+# Register functions once before running sequential workloads
+register-functions address="localhost:50050":
+	k6 run --quiet -e ADDRESS={{address}} register-functions.js > function_ids.json
+	@echo "Functions registered and IDs saved to function_ids.json"
 
-# dont judge me for the monster above... there is no way to get data out of the setup function in k6
-# so we have to do this.
+# Run multiple short sequential workloads to avoid gRPC connection buildup
+run-sequential total_runs="10" run_duration="2m" address="localhost:50050":
+	#!/bin/bash
+	set -e
+	total_runs=$(echo "{{total_runs}}")
+	run_duration=$(echo "{{run_duration}}")
+	echo "Running $total_runs sequential workloads of $run_duration each"
+	
+	# Clean up previous results
+	rm -f test_results_*.csv generated_scenarios_*.json
+	
+	# Ensure functions are registered
+	if [ ! -f function_ids.json ]; then
+		echo "Function IDs not found, registering functions..."
+		just register-functions {{address}}
+	fi
+	
+	# Load function IDs from JSON file
+	BFS_FUNCTION_ID=$(jq -r '.functionIds.bfs' function_ids.json)
+	ECHO_FUNCTION_ID=$(jq -r '.functionIds.echo' function_ids.json)
+	THUMBNAILER_FUNCTION_ID=$(jq -r '.functionIds.thumbnailer' function_ids.json)
+	
+	# Run sequential workloads
+	for ((i=1; i<=total_runs; i++)); do
+		echo "Running workload $i/$total_runs..."
+		seed=$(shuf -i 1-1000000 -n 1)
+		k6 run \
+		--quiet \
+		--out csv=test_results_run_${i}.csv \
+		-e WORKLOAD_SEED=${seed} \
+		-e PERSIST_GENERATION=true \
+		-e TOTAL_TEST_DURATION=${run_duration} \
+		-e FUNCTION_TIMEOUT_SECONDS=30 \
+		-e MIN_PREALLOCATED_VUS=10 \
+		-e MAX_PREALLOCATED_VUS=12 \
+		-e MIN_MAX_VUS=10000 \
+		-e MAX_MAX_VUS=11000 \
+		-e RAMPING_START_RATE_MIN=1 \
+		-e RAMPING_START_RATE_MAX=50 \
+		-e BFS_MIN_SCENARIOS=14 \
+		-e BFS_MAX_SCENARIOS=15 \
+		-e BFS_CONSTANT_SCENARIOS_RATIO=0.6 \
+		-e BFS_CONSTANT_RATE_MIN=350 \
+		-e BFS_CONSTANT_RATE_MAX=450 \
+		-e BFS_BURST_TARGET_RATE_MIN=300 \
+		-e BFS_BURST_TARGET_RATE_MAX=350 \
+		-e ECHO_MIN_SCENARIOS=14 \
+		-e ECHO_MAX_SCENARIOS=15 \
+		-e ECHO_CONSTANT_SCENARIOS_RATIO=0.5 \
+		-e ECHO_CONSTANT_RATE_MIN=500 \
+		-e ECHO_CONSTANT_RATE_MAX=1200 \
+		-e ECHO_BURST_TARGET_RATE_MIN=1500 \
+		-e ECHO_BURST_TARGET_RATE_MAX=2000 \
+		-e THUMBNAILER_MIN_SCENARIOS=14 \
+		-e THUMBNAILER_MAX_SCENARIOS=15 \
+		-e THUMBNAILER_CONSTANT_SCENARIOS_RATIO=0.2 \
+		-e THUMBNAILER_CONSTANT_RATE_MIN=450 \
+		-e THUMBNAILER_CONSTANT_RATE_MAX=550 \
+		-e THUMBNAILER_BURST_TARGET_RATE_MIN=600 \
+		-e THUMBNAILER_BURST_TARGET_RATE_MAX=1000 \
+		-e ADDRESS={{address}} \
+		-e RUN_ID=${i} \
+		-e BFS_FUNCTION_ID=$BFS_FUNCTION_ID \
+		-e ECHO_FUNCTION_ID=$ECHO_FUNCTION_ID \
+		-e THUMBNAILER_FUNCTION_ID=$THUMBNAILER_FUNCTION_ID \
+		script-sequential.js > generated_scenarios_run_${i}.json
+		sleep 1
+	done
+	echo "Sequential workload completed successfully!"
+
+# Export multiple sequential results to database
+export-sequential:
+	#!/bin/bash
+	# after running a sequential run, there will be multiple csv files and json files.
+	# the naming will be test_results_run_1.csv, test_results_run_2.csv, etc.
+	# and generated_scenarios_run_1.json, generated_scenarios_run_2.json, etc.
+	# we need to loop over them and import them into the database.
+	# we should use --add-function-ids also.
+
+	# Find all test_results_run_*.csv files and loop through them
+	for csv_file in test_results_run_*.csv; do
+		if [ -f "$csv_file" ]; then
+			# Extract the run number from the filename
+			run_num=$(echo "$csv_file" | sed 's/test_results_run_\([0-9]*\)\.csv/\1/')
+			json_file="generated_scenarios_run_${run_num}.json"
+			
+			if [ -f "$json_file" ]; then
+				echo "Importing run $run_num: $csv_file and $json_file"
+				uv run ../benchmarks/import.py --csv "$csv_file" --db ../benchmarks/metrics.db --json "$json_file" --add-function-ids True
+			else
+				echo "Warning: JSON file $json_file not found for $csv_file"
+			fi
+		fi
+	done
+	
+	echo "Sequential export completed!"
+
+process-sequential:
+	cd ../benchmarks && uv run process.py --db-path metrics.db --active-calls-window-size 100
+
+plot-sequential:
+	cd ../benchmarks && uv run main.py --plot --db-path metrics.db --plot-save-path ./plots/
+
+scenarios-sequential:
+	#!/bin/bash
+	for file in generated_scenarios_run_*.json; do
+		run_num=$(echo "$file" | sed 's/generated_scenarios_run_\([0-9]*\)\.json/\1/')
+		short_date=$(date +%Y-%m-%d)
+		cd ../benchmarks && uv run main.py --scenarios-path ../load-generator/$file --plot-save-path ./plots/ --prefix $short_date-$run_num
+	done

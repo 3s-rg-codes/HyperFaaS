@@ -39,7 +39,6 @@ def create_tables(conn):
         -- Data metrics
         data_sent REAL,
         data_received REAL,
-        iteration_duration REAL,
         function_parameters TEXT,
         
         -- Other metadata
@@ -82,12 +81,22 @@ def import_function_images(conn, json_file='generated_scenarios.json'):
     
     cursor = conn.cursor()
     
-    # Extract function IDs and image tags from metadata
-    function_images = [
-        (data['metadata']['bfsFunctionId'], data['metadata']['configuration']['BFS_IMAGE_TAG']),
-        (data['metadata']['echoFunctionId'], data['metadata']['configuration']['ECHO_IMAGE_TAG']),
-        (data['metadata']['thumbnailerFunctionId'], data['metadata']['configuration']['THUMBNAILER_IMAGE_TAG'])
-    ]
+    # Handle both single run format and multiple runs format
+    if 'runs' in data:
+        # Multiple runs format - use the first run's metadata for function IDs
+        first_run = data['runs'][0]
+        function_images = [
+            (first_run['metadata']['bfsFunctionId'], first_run['metadata']['configuration']['BFS_IMAGE_TAG']),
+            (first_run['metadata']['echoFunctionId'], first_run['metadata']['configuration']['ECHO_IMAGE_TAG']),
+            (first_run['metadata']['thumbnailerFunctionId'], first_run['metadata']['configuration']['THUMBNAILER_IMAGE_TAG'])
+        ]
+    else:
+        # Single run format (backward compatibility)
+        function_images = [
+            (data['metadata']['bfsFunctionId'], data['metadata']['configuration']['BFS_IMAGE_TAG']),
+            (data['metadata']['echoFunctionId'], data['metadata']['configuration']['ECHO_IMAGE_TAG']),
+            (data['metadata']['thumbnailerFunctionId'], data['metadata']['configuration']['THUMBNAILER_IMAGE_TAG'])
+        ]
     
     # Insert or replace function images
     cursor.executemany('''
@@ -143,7 +152,7 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
                 continue
                 
             # Skip dropped iterations
-            if row['metric_name'] == 'dropped_iterations':
+            if row['metric_name'] == 'dropped_iterations' or row['metric_name'] == 'iteration_duration' or row['metric_name'] == 'iterations':
                 continue
             
             # Extract request identifier
@@ -157,7 +166,19 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
             # The metadata can be used as a request_id
             # Transform metadata string into consistent request_key format
             metadata_dict = {k: v for part in metadata.split('&') for k, v in [part.split('=')]}
-            request_key = f"vu={metadata_dict['vu']}&iter={metadata_dict['iter']}"
+            
+            # Create unique request key with run_id if available
+            run_id = None
+            if row['extra_tags']:
+                tags = parse_tags(row['extra_tags'])
+                if 'run_id' in tags:
+                    run_id = tags['run_id']
+            
+            if run_id:
+                request_key = f"run={run_id}&vu={metadata_dict['vu']}&iter={metadata_dict['iter']}"
+            else:
+                # Single run format
+                request_key = f"vu={metadata_dict['vu']}&iter={metadata_dict['iter']}"
             
             # Store common metadata for this request
             requests[request_key]['scenario'] = scenario
@@ -181,7 +202,7 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
             requests[request_key]['group_name'] = row['group']
             requests[request_key]['extra_tags'] = row['extra_tags']
             
-            # Store callqueuedtimestamp, gotresponsetimestamp, data_sent, data_received, iteration_duration
+            # Store callqueuedtimestamp, gotresponsetimestamp, data_sent, data_received
             if row['metric_name'] == 'callqueuedtimestamp':
                 requests[request_key]['callqueuedtimestamp'] = row['metric_value']
             elif row['metric_name'] == 'gotresponsetimestamp':
@@ -190,8 +211,6 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
                 requests[request_key]['data_sent'] = row['metric_value']
             elif row['metric_name'] == 'data_received':
                 requests[request_key]['data_received'] = row['metric_value']
-            elif row['metric_name'] == 'iteration_duration':
-                requests[request_key]['iteration_duration'] = row['metric_value']
             elif row['metric_name'] == 'grpc_req_duration':
                 requests[request_key]['grpc_req_duration'] = row['metric_value']
             elif row['metric_name'] == 'leafgotrequesttimestamp':
@@ -206,15 +225,22 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
                 requests[request_key]['error'] = row['metric_value']
     # insert collected requests into the database
     for request_key, data in requests.items():
-            
+        # skip requests that have no grpc_req_duration, error, or timeout
+        # I don't really understand why k6 logs this in this case. I think its related to the TCP connection issue.
+        if (
+            data.get('grpc_req_duration') is None and
+            data.get('timeout') is None and
+            data.get('error') is None
+        ):
+            continue
         cursor.execute('''
         INSERT INTO metrics (
             timestamp, scenario, service, image_tag, instance_id, request_id,
             grpc_req_duration, callqueuedtimestamp, gotresponsetimestamp, functionprocessingtime,
             leafgotrequesttimestamp, leafscheduledcalltimestamp,
-            data_sent, data_received, iteration_duration, function_parameters,
+            data_sent, data_received, function_parameters,
             proto, subproto, group_name, extra_tags, timeout, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('timestamp'),
             data.get('scenario'),
@@ -230,7 +256,6 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
             data.get('leafscheduledcalltimestamp'),
             data.get('data_sent'),
             data.get('data_received'),
-            data.get('iteration_duration'),
             data.get('function_parameters'),
             data.get('proto'),
             data.get('subproto'),
@@ -241,29 +266,9 @@ def import_csv_to_sqlite(csv_file='test_results.csv', db_file='metrics.db', json
         ))
     
     conn.commit()
+
+    print(f"Imported {len(requests)} requests into the database")
     
-    # Print statistics
-    cursor.execute("SELECT COUNT(*) FROM metrics")
-    count = cursor.fetchone()[0]
-    print(f"Imported {count} unique requests into the database")
-    
-    # Sample query to verify data
-    cursor.execute("""
-    SELECT scenario, COUNT(*), AVG(grpc_req_duration) as avg_duration 
-    FROM metrics 
-    GROUP BY scenario
-    """)
-    print("\nScenario statistics:")
-    for row in cursor.fetchall():
-        try:
-            print(f"  {row[0]}: {row[1]} requests, avg duration: {row[2]:.3f}ms")
-        except:
-            pass
-    try:
-        add_function_ids_to_cpu_mem_stats(conn)
-    except sqlite3.OperationalError as e:
-        print(f"Error adding function IDs to cpu_mem_stats: {e}")
-        print("Did you forget to run the metrics-client? [just metrics-client]")
     conn.close()
 
 if __name__ == "__main__":
@@ -273,6 +278,14 @@ if __name__ == "__main__":
     parser.add_argument('--csv', default='test_results.csv', help='Path to CSV file')
     parser.add_argument('--db', default='metrics.db', help='Path to SQLite database')
     parser.add_argument('--json', default='generated_scenarios.json', help='Path to scenarios JSON file')
-    
+    parser.add_argument('--add-function-ids', default=False, help='Add function IDs to cpu_mem_stats table')
     args = parser.parse_args()
     import_csv_to_sqlite(args.csv, args.db, args.json)
+    if args.add_function_ids:
+        conn = sqlite3.connect(args.db)
+        try:
+            add_function_ids_to_cpu_mem_stats(conn)
+        except sqlite3.OperationalError as e:
+            print(f"Error adding function IDs to cpu_mem_stats: {e}")
+            print("Did you forget to run the metrics-client? [just metrics-client]")
+        conn.close()
