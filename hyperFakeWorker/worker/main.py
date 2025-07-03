@@ -28,7 +28,7 @@ def main(ctx, address, database_type, runtime, timeout, auto_remove, log_level, 
 
     db_address = "localhost:8999"
     if containerized:
-        db_address = "database:8999/"
+        db_address = "database:8999"
 
     if update_buffer_size is None:
         # If maxsize is <= 0, the queue size is infinite.
