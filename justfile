@@ -55,20 +55,30 @@ start-rebuild:
 
 start:
     @echo "Starting docker service"
-    docker compose up --detach --remove-orphans
+    WORKER_TYPE=worker docker compose up --scale fake-worker=0 --detach --remove-orphans
 
 restart:
     @echo "Restarting docker service"
-    docker compose restart
+    WORKER_TYPE=worker docker compose restart
 
 stop:
     @echo "Stopping docker service"
-    docker compose down
+    WORKER_TYPE=worker docker compose down
     
 d:
     @echo "Starting docker service"
     docker compose up --build --detach
 
+############################
+# Running Faked HyperFaaS
+############################
+
+fake-start:
+    WORKER_TYPE=fake-worker docker compose up --scale worker=0 fake-worker leaf database -d
+fake-stop:
+    WORKER_TYPE=fake-worker docker compose down
+fake-restart:
+    WORKER_TYPE=fake-worker docker compose restart
 
 # generates proto, builds binary, builds docker go and runs the workser
 dev: build start
@@ -80,6 +90,9 @@ run-local-database:
 run-local-worker:
     @echo "Running local worker"
     go run cmd/worker/main.go --address=localhost:50051 --runtime=docker --log-level=info --log-format=dev --auto-remove=true --containerized=false --caller-server-address=127.0.0.1:50052 --database-type=http
+run-local-fake-worker:
+    @echo "Running local fake worker"
+    just hyperFakeWorker/run-local
 
 run-local-leaf:
     @echo "Running local leaf"

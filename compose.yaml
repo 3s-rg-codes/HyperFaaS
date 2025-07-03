@@ -23,6 +23,33 @@ services:
       interval: 6s
       timeout: 6s
       retries: 1
+  fake-worker:
+    build:
+      context: .
+      dockerfile: fakeworker.Dockerfile
+    ports:
+      - "50051:50051"
+    networks:
+      - hyperfaas-network
+    command: ["hyperfakeworker",
+     "-m", "/app/models/hyperfaas-bfs-json.onnx",
+     "-m", "/app/models/hyperfaas-echo.onnx",
+     "-m", "/app/models/hyperfaas-thumbnailer-json.onnx",
+     "--address", "0.0.0.0:50051",
+     "--database-type", "http",
+     "--runtime", "docker",
+     "--timeout", "20",
+     "--auto-remove",
+     "--log-level", "debug",
+     "--log-format", "text",
+     "--log-file", "stdout",
+     "--containerized",
+     "server"]
+    healthcheck:
+      test: ["CMD", "sleep", "5"]
+      interval: 6s
+      timeout: 6s
+      retries: 1
   leaf:
     build:
       context: .
@@ -36,7 +63,7 @@ services:
       - hyperfaas-network
     command: ["./leaf", "--address=0.0.0.0:50050",
      "--log-level=info", "--log-format=text", "--log-file=/root/log/leaf.log",
-     "--worker-ids=worker:50051",
+     "--worker-ids=${WORKER_TYPE}:50051",
      "--database-address=http://database:8999",
      "--max-starting-instances-per-function=2",
      "--starting-instance-wait-timeout=10s",
@@ -51,6 +78,8 @@ services:
               target: .
     depends_on:
       worker:
+        condition: service_healthy
+      fake-worker:
         condition: service_healthy
   database:
     build:
