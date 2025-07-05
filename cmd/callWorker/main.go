@@ -17,13 +17,17 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Please specify an action")
+		fmt.Printf("Please specify an action:\n\n")
+		fmt.Printf("%-35s %s\n", "create <image tag>", "create a function from image tag")
+		fmt.Printf("%-35s %s\n", "start  <func ID>", "start instance of a function")
+		fmt.Printf("%-35s %s\n", "call   <function id> <instance id>", "call a function")
+		fmt.Printf("%-35s %s\n", "\nplease, run go run main.go again with arguments", "")
 		return
 	}
 
 	switch os.Args[1] {
 	case "create":
-		createFunc()
+		createFunc(os.Args[2])
 	case "start":
 		startFunc(os.Args[2])
 	case "call":
@@ -48,11 +52,10 @@ func startFunc(id string) {
 	if err != nil {
 		log.Fatalf("Error starting function: %v", err)
 	}
-	fmt.Printf("Received Response: %v\n", instanceID)
-	fmt.Printf("Type of Response: %T\n", instanceID)
+	fmt.Printf("Started instance of function with instance id: %v\n", instanceID.Id)
 }
 
-func createFunc() {
+func createFunc(imageTag string) {
 	conn, err := grpc.NewClient("localhost:50050", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
@@ -67,11 +70,11 @@ func createFunc() {
 		Memory: 67108864,
 		Cpu:    cpuConfig,
 	}
-	imageTag := &commonpb.ImageTag{
-		Tag: "hyperfaas-echo:latest",
+	image_tag := &commonpb.ImageTag{
+		Tag: imageTag,
 	}
 	createFuncReq := &leafpb.CreateFunctionRequest{
-		ImageTag: imageTag,
+		ImageTag: image_tag,
 		Config:   config,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
@@ -80,8 +83,7 @@ func createFunc() {
 	if err != nil {
 		log.Fatalf("Error creating function: %v", err)
 	}
-	fmt.Printf("Received Response: %v\n", createFuncResp)
-	fmt.Printf("Type of Response: %T\n", createFuncResp)
+	fmt.Printf("Created function from imageTag '%v'. Function id: %v\n", imageTag, createFuncResp.FunctionID)
 }
 
 func callFunc(funcID string, instanceID string) {
@@ -114,6 +116,5 @@ func callFunc(funcID string, instanceID string) {
 	if err != nil {
 		log.Fatalf("Error starting function: %v", err)
 	}
-	fmt.Printf("Received Response: %v\n", callResp)
-	fmt.Printf("Type of Response: %T\n", callResp)
+	fmt.Printf("Function response: %v\n", string(callResp.Data))
 }
