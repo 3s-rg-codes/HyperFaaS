@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.24.3
 ARG ALPINE_VERSION=latest
 
 FROM golang:${GO_VERSION}-alpine
@@ -8,7 +8,6 @@ WORKDIR /root/
 COPY . .
 COPY ./cmd/worker/main.go .
 
-RUN go mod tidy
 RUN go mod download
 
 #Copy main function

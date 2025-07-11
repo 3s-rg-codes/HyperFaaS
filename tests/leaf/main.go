@@ -26,9 +26,9 @@ const (
 	RequestedCPUPeriod = 100000
 	RequestedCPUQuota  = 50000
 	SQLITE_DB_PATH     = "metrics.db"
-	TIMEOUT            = 10 * time.Second
-	DURATION           = 20 * time.Second
-	RPS                = 1500
+	TIMEOUT            = 30 * time.Second
+	DURATION           = 10 * time.Second
+	RPS                = 2500
 )
 
 func main() {
@@ -55,19 +55,23 @@ func main() {
 		functionIDs[i] = functionID
 	}
 
-	//Concurrent calls
-	//testConcurrentCalls(client, functionIDs[0], 10)
 	// Sequential calls
-	//testSequentialCalls(client, createFunctionResp.FunctionID)
+	//testSequentialCalls(client, functionIDs[0])
 
 	// Concurrent calls for duration
-	testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
-
+	//testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
+	go testRampingCallsForDuration(client, functionIDs[0], RPS, DURATION, 60*time.Second)
+	go testRampingCallsForDuration(client, functionIDs[1], RPS, DURATION, 60*time.Second)
+	go testRampingCallsForDuration(client, functionIDs[2], RPS, DURATION, 60*time.Second)
+	time.Sleep(DURATION + 5*time.Second)
 	// Send thumbnail request
-	sendThumbnailRequest(client, functionIDs[3])
+	//sendThumbnailRequest(client, functiocallerServer := caller.NewCallerServer(config.Config.CallerServerAddress, logger, statsManager)nIDs[3])
 
 	// Send BFS request
-	testBFS(client, functionIDs[4])
+	//testBFS(client, functionIDs[4])
+
+	// Test call with sleep
+	testCallWithSleep(client, functionIDs[0], 20*time.Second)
 }
 
 func createClient() (pb.LeafClient, *grpc.ClientConn) {
@@ -115,43 +119,56 @@ func testConcurrentCalls(client pb.LeafClient, functionID *common.FunctionID, nu
 	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d, AvgLatency: %v\n", successCount, failureCount, avgLatency)
 }
 
-func testConcurrentCallsForDurationOLD(client pb.LeafClient, functionID *common.FunctionID, rps int, duration time.Duration) {
-	var wg sync.WaitGroup
-	seconds := int(duration.Seconds())
-
-	for i := 0; i < seconds; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			testConcurrentCalls(client, functionID, rps)
-		}()
-		time.Sleep(1 * time.Second)
-	}
-
-	time.Sleep(2 * time.Second)
-
-	wg.Wait()
-}
-
 func testConcurrentCallsForDuration(client pb.LeafClient, functionID *common.FunctionID, rps int, duration time.Duration) {
-	var wg sync.WaitGroup
-	seconds := int(duration.Seconds())
 
 	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), duration+3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), duration+30*time.Second)
 	defer cancel()
 
-	for i := 0; i < seconds; i++ {
+	ticker := time.NewTicker(1 * time.Second)
+	var wg sync.WaitGroup
+	for {
 		select {
-		case <-ctx.Done():
-			return
-		default:
+		case <-ticker.C:
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				testConcurrentCalls(client, functionID, rps)
 			}()
+		case <-ctx.Done():
+			wg.Wait()
+			return
+		}
+	}
+}
+
+func testRampingCallsForDuration(client pb.LeafClient, functionID *common.FunctionID, targetRPS int, duration time.Duration, rampUpTime time.Duration) {
+	var wg sync.WaitGroup
+	//seconds := int(duration.Seconds())
+
+	rampUpSeconds := int(rampUpTime.Seconds())
+
+	ctx, cancel := context.WithTimeout(context.Background(), duration+3*time.Second)
+	defer cancel()
+
+	currentRPS := targetRPS / rampUpSeconds
+
+	for i := 0; i < rampUpSeconds; i++ {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if currentRPS > targetRPS {
+				fmt.Printf("Rampup done\n")
+				return
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				testConcurrentCalls(client, functionID, currentRPS)
+			}()
 			time.Sleep(1 * time.Second)
+			currentRPS += targetRPS / rampUpSeconds
 		}
 	}
 
@@ -183,10 +200,10 @@ func sendCall(client pb.LeafClient, functionID *common.FunctionID) (time.Duratio
 	_, err := client.ScheduleCall(ctx, startReq)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			fmt.Printf("Timeout error: %v\n", ctx.Err())
+			//fmt.Printf("Timeout error: %v\n", ctx.Err())
 			return 0, fmt.Errorf("timeout error: %v", ctx.Err())
 		}
-		fmt.Printf("Failed to schedule call: %v\n", err)
+		//fmt.Printf("Failed to schedule call: %v\n", err)
 		return 0, fmt.Errorf("failed to schedule call: %v", err)
 	}
 
@@ -194,7 +211,7 @@ func sendCall(client pb.LeafClient, functionID *common.FunctionID) (time.Duratio
 }
 
 func testSequentialCalls(client pb.LeafClient, functionID *common.FunctionID) {
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 100; i++ {
 		req := &pb.ScheduleCallRequest{
 			FunctionID: functionID,
 			Data:       []byte(""),
@@ -229,6 +246,8 @@ func createFunction(imageTag string, client *pb.LeafClient) (*common.FunctionID,
 				Period: RequestedCPUPeriod,
 				Quota:  RequestedCPUQuota,
 			},
+			MaxConcurrency: 500,
+			Timeout:        10,
 		},
 	}
 
@@ -329,4 +348,17 @@ func testBFS(client pb.LeafClient, functionID *common.FunctionID) {
 	}
 
 	log.Printf("Received response from BFS: %v", output)
+}
+
+// this tests if the leaf is able to update its state to realise that a conatiner has timed out and it needs to scale up again.
+func testCallWithSleep(client pb.LeafClient, functionID *common.FunctionID, sleep time.Duration) {
+	_, err := sendCall(client, functionID)
+	if err != nil {
+		log.Fatalf("failed to send call: %v", err)
+	}
+	time.Sleep(sleep)
+	_, err = sendCall(client, functionID)
+	if err != nil {
+		log.Fatalf("failed to send call: %v", err)
+	}
 }

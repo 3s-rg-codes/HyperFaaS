@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.24.3
 ARG ALPINE_VERSION=latest
 
 FROM golang:${GO_VERSION}-alpine as builder
@@ -8,7 +8,7 @@ RUN go mod download
 COPY . . 
 RUN go build -o leaf ./cmd/leaf/main.go
 
-FROM alpine:${ALPINE_VERSION}
+FROM golang:${GO_VERSION}-alpine
 
 RUN apk add --no-cache --upgrade bash
 

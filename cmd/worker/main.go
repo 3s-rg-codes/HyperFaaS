@@ -8,9 +8,6 @@ import (
 	"time"
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
-
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/caller"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/mock"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 
 	"net/http"
@@ -122,8 +119,6 @@ func main() {
 
 	statsManager := stats.NewStatsManager(logger, time.Duration(wc.General.ListenerTimeout)*time.Second, 1.0, wc.Stats.UpdateBufferSize)
 
-	callerServer := caller.NewCallerServer(wc.General.CallerServerAddress, logger, statsManager)
-
 	var dbAddress string
 	var dbClient kv.FunctionMetadataStore
 
@@ -141,15 +136,15 @@ func main() {
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
-		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.CallerServerAddress, logger)
+		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.Address, logger)
 	case "fake":
-		runtime = mock.NewMockRuntime(callerServer, logger)
+		//runtime = mock.NewMockRuntime(logger)
 	default:
 		logger.Error("No runtime specified")
 		os.Exit(1)
 	}
 
-	c := controller.NewController(runtime, callerServer, statsManager, logger, wc.General.Address, dbClient)
+	c := controller.NewController(runtime, statsManager, logger, wc.General.Address, dbClient)
 
 	c.StartServer()
 }

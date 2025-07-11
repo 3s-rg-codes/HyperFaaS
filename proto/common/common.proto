@@ -21,20 +21,24 @@ message ImageTag {
 }
 
 message CallRequest {
-    InstanceID instance_id = 1;
-    bytes data = 2;
-    FunctionID function_id = 3;
+    int64 request_id = 1;
+    InstanceID instance_id = 2;
+    bytes data = 3;
+    FunctionID function_id = 4;
 }
   
 message CallResponse {
-    bytes data = 1;
-    Error error = 2;
+    int64 request_id = 1;
+    bytes data = 2;
+    Error error = 3;
 }
 
 message Config {
     // container memory limit in bytes
     int64 memory = 1;
     CPUConfig cpu = 2;
+    int32 timeout = 3;
+    int32 max_concurrency = 4;
 }
 
 // Container CPU configuration. If the host has 2 CPUs and the container should only use 1 CPU, set period to 100000 and quota to 50000.
