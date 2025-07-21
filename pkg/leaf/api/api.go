@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"math/rand"
 	"sync"
@@ -16,7 +15,6 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	controllerPB "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/leaf"
-	grpcpool "github.com/processout/grpc-go-pool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -34,8 +32,18 @@ type LeafServer struct {
 	functionMetricChansMutex sync.RWMutex
 	database                 kv.FunctionMetadataStore
 	functionIdCache          map[string]kv.FunctionData
-	poolManager              PoolManager
+	workerClients            workerClients
 	logger                   *slog.Logger
+}
+
+type workerClients struct {
+	mu      sync.RWMutex
+	clients map[state.WorkerID]workerClient
+}
+
+type workerClient struct {
+	conn   *grpc.ClientConn
+	client controllerPB.ControllerClient
 }
 
 // CreateFunction should only create the function, e.g. save its Config and image tag in local cache
@@ -129,7 +137,7 @@ func NewLeafServer(
 		database:            httpClient,
 		functionIdCache:     make(map[string]kv.FunctionData),
 		functionMetricChans: make(map[state.FunctionID]chan bool),
-		poolManager:         *NewPoolManager(1, 100, 120*time.Second),
+		workerClients:       workerClients{clients: make(map[state.WorkerID]workerClient)},
 		workerIds:           workerIds,
 		state:               state.NewSmallState(workerIds, logger),
 		logger:              logger,
@@ -140,48 +148,24 @@ func NewLeafServer(
 }
 
 func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
-	pool, err := s.poolManager.GetPool(string(workerID), func() (*grpc.ClientConn, error) {
-		conn, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create gRPC client: %w", err)
-		}
-		return conn, nil
-	})
+	client, err := s.getOrCreateWorkerClient(workerID)
 	if err != nil {
-		log.Printf("[callWorker] Failed to get connection pool for worker %s: %v", workerID, err)
-		return nil, err
-	}
-
-	conn, err := pool.Get(ctx)
-	if err != nil {
-		log.Printf("Failed to get connection from pool for worker %s: %v", workerID, err)
 		return nil, err
 	}
 
 	var resp *common.CallResponse
-	err = func() error {
-		defer conn.Close() // Returns connection to pool
-		client := controllerPB.NewControllerClient(conn)
+	callReq := &common.CallRequest{
+		InstanceId: &common.InstanceID{Id: string(instanceID)},
+		FunctionId: &common.FunctionID{Id: string(functionID)},
+		Data:       req.Data,
+	}
 
-		callReq := &common.CallRequest{
-			InstanceId: &common.InstanceID{Id: string(instanceID)},
-			FunctionId: &common.FunctionID{Id: string(functionID)},
-			Data:       req.Data,
-		}
-
-		var err error
-		resp, err = client.Call(ctx, callReq)
-		if err != nil {
-			st, ok := status.FromError(err)
-			if ok && st.Code() == codes.Unavailable {
-				return &WorkerDownError{WorkerID: workerID, err: err}
-			}
-			return err
-		}
-		return nil
-	}()
-
+	resp, err = client.Call(ctx, callReq)
 	if err != nil {
+		st, ok := status.FromError(err)
+		if ok && st.Code() == codes.Unavailable {
+			return nil, &WorkerDownError{WorkerID: workerID, err: err}
+		}
 		return nil, err
 	}
 
@@ -189,28 +173,10 @@ func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, fu
 }
 
 func (s *LeafServer) startInstance(ctx context.Context, workerID state.WorkerID, functionId state.FunctionID) (state.InstanceID, error) {
-
-	factory := func() (*grpc.ClientConn, error) {
-		// Create a ClientConn using NewClient (same as in callWorker)
-		conn, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create gRPC client: %w", err)
-		}
-		return conn, nil
-	}
-
-	pool, err := s.poolManager.GetPool(string(workerID), factory)
+	client, err := s.getOrCreateWorkerClient(workerID)
 	if err != nil {
 		return "", err
 	}
-	conn, err := pool.Get(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	defer conn.Close()
-	client := controllerPB.NewControllerClient(conn)
-
 	resp, err := client.Start(ctx, &common.FunctionID{Id: string(functionId)})
 	if err != nil {
 		return "", err
@@ -219,64 +185,24 @@ func (s *LeafServer) startInstance(ctx context.Context, workerID state.WorkerID,
 	return state.InstanceID(resp.InstanceId.Id), nil
 }
 
-type PoolManager struct {
-	mu          sync.RWMutex
-	pools       map[string]*grpcpool.Pool
-	minConns    int
-	maxConns    int
-	idleTimeout time.Duration
-}
+func (s *LeafServer) getOrCreateWorkerClient(workerID state.WorkerID) (controllerPB.ControllerClient, error) {
+	s.workerClients.mu.RLock()
+	client, ok := s.workerClients.clients[workerID]
+	s.workerClients.mu.RUnlock()
+	if !ok {
 
-// NewPoolManager creates a new PoolManager with configurable settings
-func NewPoolManager(minConns, maxConns int, idleTimeout time.Duration) *PoolManager {
-	return &PoolManager{
-		pools:       make(map[string]*grpcpool.Pool),
-		minConns:    minConns,
-		maxConns:    maxConns,
-		idleTimeout: idleTimeout,
+		c, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create gRPC client: %w", err)
+		}
+		cl := controllerPB.NewControllerClient(c)
+		s.workerClients.mu.Lock()
+		s.workerClients.clients[workerID] = workerClient{
+			conn:   c,
+			client: cl,
+		}
+		s.workerClients.mu.Unlock()
+		return cl, nil
 	}
-}
-
-// GetPool returns the pool for a given worker, creating one if it doesn't exist
-func (pm *PoolManager) GetPool(workerID string, factory grpcpool.Factory) (*grpcpool.Pool, error) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	if pool, ok := pm.pools[workerID]; ok {
-		return pool, nil
-	}
-
-	// Create a new pool with configured settings
-	pool, err := grpcpool.New(factory, pm.minConns, pm.maxConns, pm.idleTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create connection pool for worker %s: %w", workerID, err)
-	}
-
-	log.Printf("[PoolManager] Created new connection pool for worker %s", workerID)
-	pm.pools[workerID] = pool
-	return pool, nil
-}
-
-// RemovePool removes a pool for a worker that is no longer active
-func (pm *PoolManager) RemovePool(workerID string) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	if pool, ok := pm.pools[workerID]; ok {
-		pool.Close()
-		delete(pm.pools, workerID)
-		log.Printf("[PoolManager] Removed connection pool for worker %s", workerID)
-	}
-}
-
-// Cleanup closes all pools
-func (pm *PoolManager) Cleanup() {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	for workerID, pool := range pm.pools {
-		pool.Close()
-		delete(pm.pools, workerID)
-		log.Printf("[PoolManager] Cleaned up connection pool for worker %s", workerID)
-	}
+	return client.client, nil
 }
