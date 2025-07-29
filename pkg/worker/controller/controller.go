@@ -232,19 +232,27 @@ func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container
 	// Use a background context so monitoring continues even after the original request context expires
 	monitorCtx := context.Background()
 
-	err := s.runtime.MonitorContainer(monitorCtx, &common.InstanceID{Id: c.InstanceID}, functionID)
+	event, err := s.runtime.MonitorContainer(monitorCtx, &common.InstanceID{Id: c.InstanceID}, functionID)
 
 	if err != nil {
-		// Container crashed (non-zero exit code)
+		s.logger.Error("Failed to monitor container", "instanceID", c.InstanceID, "error", err)
+		return
+	}
+
+	switch event {
+	case cr.ContainerEventCrash:
 		s.logger.Debug("Container crashed", "instanceID", c.InstanceID, "error", err)
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.InstanceID).Down().Failed())
 		s.callRouter.HandleInstanceTimeout(functionID, c.InstanceIP)
-	} else {
-		// Container timed out gracefully (exit code 0)
+	case cr.ContainerEventTimeout, cr.ContainerEventExit:
 		s.logger.Debug("Container timed out gracefully", "instanceID", c.InstanceID)
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.InstanceID).Timeout().Success())
 		s.callRouter.HandleInstanceTimeout(functionID, c.InstanceIP)
+	case cr.ContainerEventOOM:
+		s.logger.Debug("Container ran out of memory", "instanceID", c.InstanceID)
+		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.InstanceID).Down().Failed())
+		s.callRouter.HandleInstanceTimeout(functionID, c.InstanceIP)
+	default:
+		s.logger.Debug("Unexpected container event", "instanceID", c.InstanceID, "event", event)
 	}
-
-	s.logger.Debug("Container monitoring completed", "instanceID", c.InstanceID)
 }
