@@ -24,6 +24,7 @@ func main() {
 	addressWPtr := flag.String("addrW", "localhost:50050", "worker address")
 	imageTagPtr := flag.String("im", "hyperfaas-hello:latest", "image Tag of function to be called")
 	dataPtr := flag.String("d", "", "data to be passed to func")
+	nodeIdPtr := flag.String("node", "0000", "node ID for status requests") //<-- what default value should be used?
 
 	flag.Parse()
 
@@ -49,6 +50,12 @@ func main() {
 		callFunc(*funcIdPtr, *addressWPtr, *instIdPtr, data, *timeoutPtr)
 	case "stop":
 		stopInstance(*instIdPtr, *addressWPtr, *timeoutPtr)
+	case "status":
+		getStatusUpdate(*nodeIdPtr, *addressWPtr, *timeoutPtr)
+	case "metrics":
+		getMetricsUpdate(*nodeIdPtr, *addressWPtr, *timeoutPtr)
+	case "state":
+		getState(*nodeIdPtr, *addressWPtr, *timeoutPtr)
 	case "":
 		fmt.Printf("")
 	}
@@ -195,4 +202,87 @@ func stopInstance(id string, address string, timeout int) {
 		log.Fatalf("Error stopping instance: %v\n", err)
 	}
 	fmt.Printf("Successfully stopped instance. Worker response: %v\n", respInstId.Id)
+}
+
+func getStatusUpdate(nodeId string, address string, timeout int) {
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials())) //connect to worker
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+	client := controllerpb.NewControllerClient(conn)
+
+	statusReq := &controllerpb.StatusRequest{
+		NodeID: nodeId,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(timeout))
+	defer cancel()
+
+	statusResp, err := client.Status(ctx, statusReq)
+	if err != nil {
+		log.Fatalf("Error getting status: %v\n", err)
+	}
+	fmt.Printf("Successfully requested status update. Worker response: %v\n", statusResp) //<-- not sure how to display response (stream)
+}
+
+func getMetricsUpdate(nodeId string, address string, timeout int) {
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials())) //connect to worker
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+	client := controllerpb.NewControllerClient(conn)
+
+	metricsReq := &controllerpb.MetricsRequest{
+		NodeID: nodeId,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(timeout))
+	defer cancel()
+
+	metricsResp, err := client.Metrics(ctx, metricsReq)
+	if err != nil {
+		log.Fatalf("Error getting metrics: %v\n", err)
+	}
+	fmt.Printf("Successfully requested metrics update\nCPU percentages: [%v]\nRAM usage: %v%%\n", metricsResp.CpuPercentPercpu, metricsResp.UsedRamPercent)
+}
+
+func getState(nodeId string, address string, timeout int) {
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials())) //connect to worker
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+	client := controllerpb.NewControllerClient(conn)
+
+	stateReq := &controllerpb.StateRequest{
+		NodeId: nodeId,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(timeout))
+	defer cancel()
+
+	stateResp, err := client.State(ctx, stateReq)
+	if err != nil {
+		log.Fatalf("Error getting metrics: %v\n", err)
+	}
+	fmt.Print("Successfully requested node state!")
+
+	funcs := stateResp.Functions
+	for _, funcState := range funcs {
+		fmt.Println("Function ID:", funcState.FunctionId)
+
+		fmt.Println("\tRunning instances:")
+		for _, instance := range funcState.Running {
+			fmt.Println("\t\t - ", instance)
+		}
+
+		fmt.Println("\t\tIdle instances:")
+		for _, instance := range funcState.Idle {
+			fmt.Println("\t\t - ", instance)
+		}
+
+		fmt.Println("---------------------------------------------")
+	}
 }
