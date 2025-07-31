@@ -47,6 +47,8 @@ func main() {
 		startFunc(*funcIdPtr, *addressWPtr, *timeoutPtr)
 	case "call":
 		callFunc(*funcIdPtr, *addressWPtr, *instIdPtr, data, *timeoutPtr)
+	case "stop":
+		stopInstance(*instIdPtr, *addressWPtr, *timeoutPtr)
 	case "":
 		fmt.Printf("")
 	}
@@ -115,9 +117,9 @@ func scheduleCall(id string, address string, data []byte, timeout int) { //calls
 		log.Fatalf("Error scheduling call: %v", err)
 	}
 	if scheduleCallResponse.Error != nil {
-		log.Fatalf("Internal error scheduling call: %v", scheduleCallResponse.Error)
+		log.Fatalf("Internal error scheduling call: %v\n", scheduleCallResponse.Error)
 	}
-	fmt.Printf("Scheduled call! Received response: %v", string(scheduleCallResponse.Data))
+	fmt.Printf("Scheduled call! Received response: %v\n", string(scheduleCallResponse.Data))
 
 }
 
@@ -171,4 +173,26 @@ func callFunc(funcID string, address string, instanceID string, data []byte, tim
 		log.Fatalf("Error starting function: %v\n", err)
 	}
 	fmt.Printf("Function response: %v\n", string(callResp.Data))
+}
+
+func stopInstance(id string, address string, timeout int) {
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials())) //connect to worker
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+	client := controllerpb.NewControllerClient(conn)
+
+	instID := &commonpb.InstanceID{
+		Id: id,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(timeout))
+	defer cancel()
+
+	respInstId, err := client.Stop(ctx, instID)
+	if err != nil {
+		log.Fatalf("Error stopping instance: %v\n", err)
+	}
+	fmt.Printf("Successfully stopped instance. Worker response: %v\n", respInstId.Id)
 }
