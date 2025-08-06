@@ -52,18 +52,8 @@ func (f *CallRouter) AddInstance(id string, addr string) {
 	f.mu.Unlock()
 }
 
-func (f *CallRouter) registerFunction(id string, addrs []string) {
-	f.mu.Lock()
-	f.routers[id] = NewRouter(addrs, id)
-	f.mu.Unlock()
-}
-
-func (f *CallRouter) unregisterFunction(id string) {
-	f.mu.Lock()
-	delete(f.routers, id)
-	f.mu.Unlock()
-}
-
+// Updates the router to remove the instance from the list of available instances.
+// Must be called when the instance is no longer available to no longer send requests to it.
 func (f *CallRouter) HandleInstanceTimeout(id string, addr string) {
 	f.mu.RLock()
 	router := f.routers[id]
@@ -75,6 +65,7 @@ func (f *CallRouter) HandleInstanceTimeout(id string, addr string) {
 	router.RemoveAddr(addr)
 }
 
+// Updates the router to add the instance to the list of available instances.
 func (f *CallRouter) HandleAddInstance(id string, addr string) {
 	f.mu.RLock()
 	router := f.routers[id]

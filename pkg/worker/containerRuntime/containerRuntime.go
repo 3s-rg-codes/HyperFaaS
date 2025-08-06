@@ -28,8 +28,8 @@ type ContainerRuntime interface {
 	// Status returns the status of a container with the given instance ID.
 	Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error
 
-	// MonitorContainer monitors a container and returns when it exits
-	MonitorContainer(ctx context.Context, instanceId *common.InstanceID, functionId string) error
+	// MonitorContainer monitors a container and returns a specific event according to the container's exit status. Blocks until the container exits.
+	MonitorContainer(ctx context.Context, instanceId *common.InstanceID, functionId string) (ContainerEvent, error)
 
 	//RemoveImage checks if the provided image exists locally and removes it if it does
 	RemoveImage(ctx context.Context, imageID string) error
@@ -40,3 +40,12 @@ type ContainerRuntime interface {
 	//ContainerStats returns the stats for the container with the provided id
 	ContainerStats(ctx context.Context, containerID string) io.ReadCloser
 }
+
+type ContainerEvent int
+
+const (
+	ContainerEventExit ContainerEvent = iota
+	ContainerEventOOM
+	ContainerEventTimeout
+	ContainerEventCrash
+)

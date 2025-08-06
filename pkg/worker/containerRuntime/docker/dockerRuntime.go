@@ -321,7 +321,7 @@ func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID st
 
 // MonitorContainer monitors a container and returns when it exits
 // Returns nil for timeout, error for crash
-func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId *common.InstanceID, functionId string) error {
+func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId *common.InstanceID, functionId string) (cr.ContainerEvent, error) {
 	opt := events.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId.Id}),
 	}
@@ -330,31 +330,35 @@ func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId *common
 	for {
 		select {
 		case event := <-eventsChan:
-			if event.Action == "die" {
+
+			switch event.Action {
+			case events.ActionDie:
 				// Get container exit code to determine if it was timeout or crash
 				containerJSON, err := d.Cli.ContainerInspect(ctx, instanceId.Id)
 				if err != nil {
 					d.logger.Error("Failed to inspect container", "id", instanceId.Id, "error", err)
-					return fmt.Errorf("container died but failed to inspect: %v", err)
+					return cr.ContainerEventExit, fmt.Errorf("container died but failed to inspect: %v", err)
 				}
 
 				exitCode := containerJSON.State.ExitCode
 				if exitCode == 0 {
 					// Exit code 0 = graceful shutdown = timeout
 					d.logger.Debug("Container timed out gracefully", "id", instanceId.Id, "exitCode", exitCode)
-					return nil
+					return cr.ContainerEventTimeout, nil
 				} else {
 					// Non-zero exit code = crash
 					d.logger.Debug("Container crashed", "id", instanceId.Id, "exitCode", exitCode)
-					return fmt.Errorf("container died with exit code %d", exitCode)
+					return cr.ContainerEventCrash, nil
 				}
+			case events.ActionOOM:
+				d.logger.Debug("Container ran out of memory", "id", instanceId.Id)
+				return cr.ContainerEventOOM, nil
 			}
 		case <-errChan:
 			// Ignore Docker event errors as they're usually not critical
 			continue
 		case <-ctx.Done():
-			d.logger.Debug("Container monitoring context done", "id", instanceId.Id)
-			return nil
+			return cr.ContainerEventExit, nil
 		}
 	}
 }
