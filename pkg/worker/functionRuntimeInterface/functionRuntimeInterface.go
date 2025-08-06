@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Request struct {
@@ -28,37 +30,38 @@ type Response struct {
 }
 
 type Function struct {
-	timeout      int
-	address      string
-	request      *Request
-	response     *Response
-	instanceId   string
-	functionId   string
-	handler      func(context.Context, *common.CallRequest) (*common.CallResponse, error)
-	lastActivity time.Time
-	activityMu   sync.RWMutex
-	server       *grpc.Server
+	timeout           int
+	controllerAddress string
+	request           *Request
+	response          *Response
+	instanceId        string
+	functionId        string
+	handler           func(context.Context, *common.CallRequest) (*common.CallResponse, error)
+	lastActivity      time.Time
+	activityMu        sync.RWMutex
+	server            *grpc.Server
+	logger            *slog.Logger
 	functionpb.UnimplementedFunctionServiceServer
 }
 
 func New(timeout int) *Function {
-	address, ok := os.LookupEnv("CALLER_SERVER_ADDRESS")
+	controllerAddress, ok := os.LookupEnv("CONTROLLER_ADDRESS")
 	if !ok {
-		fmt.Printf("Environment variable CALLER_SERVER_ADDRESS not found")
+		fmt.Printf("Environment variable CONTROLLER_ADDRESS not found")
 	}
+
 	functionId, ok := os.LookupEnv("FUNCTION_ID")
 	if !ok {
 		fmt.Printf("Environment variable FUNCTION_ID not found")
 	}
-	fmt.Printf("CALLER_SERVER_ADDRESS: %s", address)
 
 	return &Function{
-		timeout:    timeout,
-		address:    address,
-		request:    &Request{},
-		response:   &Response{},
-		instanceId: getID(),
-		functionId: functionId,
+		timeout:           timeout,
+		controllerAddress: controllerAddress,
+		request:           &Request{},
+		response:          &Response{},
+		instanceId:        getID(),
+		functionId:        functionId,
 	}
 }
 
@@ -73,6 +76,7 @@ func (f *Function) Call(ctx context.Context, req *common.CallRequest) (*common.C
 func (f *Function) Ready(handler func(context.Context, *common.CallRequest) (*common.CallResponse, error)) {
 	logger := configLog(fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.instanceId))
 	f.handler = handler
+	f.logger = logger
 
 	f.server = grpc.NewServer()
 	f.lastActivity = time.Now()
@@ -88,7 +92,11 @@ func (f *Function) Ready(handler func(context.Context, *common.CallRequest) (*co
 	go f.monitorTimeout(logger)
 
 	logger.Info("Server starting", "timeout", f.timeout)
+
+	// Notify controller that the function is ready to serve requests
+	go f.sendReadySignal()
 	f.server.Serve(lis)
+
 }
 
 func (f *Function) monitorTimeout(logger *slog.Logger) {
@@ -143,4 +151,21 @@ func getID() string {
 		panic(err)
 	}
 	return id
+}
+
+func (f *Function) sendReadySignal() {
+
+	conn, err := grpc.NewClient(f.controllerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		f.logger.Error("Failed to connect to controller", "error", err)
+		os.Exit(1)
+	}
+
+	client := controller.NewControllerClient(conn)
+	_, err = client.SignalReady(context.Background(), &common.InstanceID{Id: f.instanceId})
+	if err != nil {
+		f.logger.Error("Failed to send ready signal", "error", err)
+		os.Exit(1)
+	}
+	f.logger.Info("Ready signal sent")
 }
