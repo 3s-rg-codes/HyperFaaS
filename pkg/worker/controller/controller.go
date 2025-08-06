@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -33,6 +34,7 @@ type Controller struct {
 	address         string
 	dbClient        kv.FunctionMetadataStore
 	functionIDCache map[string]kv.FunctionData
+	readySignals    *ReadySignals
 	mu              sync.RWMutex
 }
 
@@ -62,6 +64,7 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*contro
 
 	functionData := s.functionIDCache[req.Id]
 	s.logger.Debug("Starting container with params:", "tag", functionData.ImageTag, "memory", functionData.Config.Memory, "quota", functionData.Config.Cpu.Quota, "period", functionData.Config.Cpu.Period)
+
 	container, err := s.runtime.Start(ctx, req.Id, functionData.ImageTag.Tag, functionData.Config)
 
 	// Truncate the ID to the first 12 characters to match Docker's short ID format
@@ -69,6 +72,8 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*contro
 	if len(container.InstanceID) > 12 {
 		shortID = container.InstanceID[:12]
 	}
+	// Add the instance to the map to wait for the ready signal
+	s.readySignals.AddInstance(shortID)
 
 	if err != nil {
 		s.StatsManager.Enqueue(stats.Event().Function(req.Id).Container(shortID).Start().Failed())
@@ -85,7 +90,15 @@ func (s *Controller) Start(ctx context.Context, req *common.FunctionID) (*contro
 
 	s.logger.Debug("Created container", "functionID", req.Id, "instanceID", shortID, "instanceIP", container.InstanceIP)
 
+	// Block until the container is ready to serve requests
+	s.readySignals.WaitReady(shortID)
+
 	return &controller.StartResponse{InstanceId: &common.InstanceID{Id: shortID}, InstanceIp: container.InstanceIP, InstanceName: container.InstanceName}, nil
+}
+
+func (s *Controller) SignalReady(ctx context.Context, req *common.InstanceID) (*emptypb.Empty, error) {
+	s.readySignals.SignalReady(req.Id)
+	return &emptypb.Empty{}, nil
 }
 
 func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
@@ -180,6 +193,7 @@ func NewController(runtime cr.ContainerRuntime, statsManager *stats.StatsManager
 		callRouter:      network.NewCallRouter(logger),
 		dbClient:        client,
 		functionIDCache: make(map[string]kv.FunctionData),
+		readySignals:    NewReadySignals(),
 	}
 }
 

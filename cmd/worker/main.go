@@ -20,10 +20,9 @@ import (
 
 type WorkerConfig struct {
 	General struct {
-		Address             string `env:"WORKER_ADDRESS"`
-		CallerServerAddress string `env:"CALLER_SERVER_ADDRESS"`
-		DatabaseType        string `env:"DATABASE_TYPE"`
-		ListenerTimeout     int    `env:"LISTENER_TIMEOUT"`
+		Address         string `env:"WORKER_ADDRESS"`
+		DatabaseType    string `env:"DATABASE_TYPE"`
+		ListenerTimeout int    `env:"LISTENER_TIMEOUT"`
 	}
 	Runtime struct {
 		Type          string `env:"RUNTIME_TYPE"`
@@ -42,7 +41,6 @@ type WorkerConfig struct {
 
 func parseArgs() (wc WorkerConfig) {
 	flag.StringVar(&(wc.General.Address), "address", "", "Worker address. (Env: WORKER_ADDRESS)")
-	flag.StringVar(&(wc.General.CallerServerAddress), "caller-server-address", "", "Caller server address. (Env: CALLER_SERVER_ADDRESS)")
 	flag.StringVar(&(wc.General.DatabaseType), "database-type", "", "Type of the database. (Env: DATABASE_TYPE)")
 	flag.StringVar(&(wc.Runtime.Type), "runtime", "docker", "Container runtime type. (Env: RUNTIME_TYPE)")
 	flag.IntVar(&(wc.General.ListenerTimeout), "timeout", 20, "Timeout in seconds before leafnode listeners are removed from status stream updates. (Env: LISTENER_TIMEOUT)")

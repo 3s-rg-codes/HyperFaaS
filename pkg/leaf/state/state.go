@@ -109,7 +109,7 @@ func (a *Autoscaler) Scale(ctx context.Context) {
 			if concurrencyLevel == 0 {
 				continue
 			}
-			if concurrencyLevel/runningInstances > a.targetInstanceConcurrency {
+			if runningInstances == 0 || concurrencyLevel/runningInstances > a.targetInstanceConcurrency {
 				if runningInstances < a.maxRunningInstances && startingInstances < a.maxStartingInstances {
 					a.startingInstances.Add(1)
 					// TODO: pick a better way to pick a worker.

@@ -79,7 +79,7 @@ run-local-database:
 
 run-local-worker:
     @echo "Running local worker"
-    go run cmd/worker/main.go --address=0.0.0.0:50051 --runtime=fake --log-level=info --log-format=dev --auto-remove=true --containerized=false --caller-server-address=127.0.0.1:50052 --database-type=http
+    go run cmd/worker/main.go --address=0.0.0.0:50051 --runtime=fake --log-level=info --log-format=dev --auto-remove=true --containerized=false --database-type=http
 
 run-local-leaf:
     @echo "Running local leaf"

@@ -35,6 +35,7 @@ type DockerRuntime struct {
 	Cli             *client.Client
 	autoRemove      bool
 	containerized   bool
+	workerAddress   string
 	outputFolderAbs string
 	logger          *slog.Logger
 }
@@ -50,7 +51,7 @@ var (
 	forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 )
 
-func NewDockerRuntime(containerized bool, autoRemove bool, address string, logger *slog.Logger) *DockerRuntime {
+func NewDockerRuntime(containerized bool, autoRemove bool, workerAddress string, logger *slog.Logger) *DockerRuntime {
 	var clientOpt client.Opt
 	if containerized {
 		clientOpt = client.WithHost("unix:///var/run/docker.sock")
@@ -90,7 +91,7 @@ func NewDockerRuntime(containerized bool, autoRemove bool, address string, logge
 		}
 	}
 
-	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized}
+	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized, workerAddress: workerAddress}
 }
 
 // Start a container with the given image tag and configuration.
@@ -126,7 +127,13 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 	// only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed in the container name, just remove all forbidden characters
 	containerName = forbiddenChars.ReplaceAllString(containerName, "")
 
-	resp, err := d.Cli.ContainerCreate(ctx, d.createContainerConfig(imageTag, functionID), d.createHostConfig(config), &network.NetworkingConfig{}, nil, containerName)
+	resp, err := d.Cli.ContainerCreate(ctx,
+		d.createContainerConfig(imageTag, functionID),
+		d.createHostConfig(config),
+		&network.NetworkingConfig{},
+		nil,
+		containerName,
+	)
 
 	if err != nil {
 		d.logger.Error("Could not create container", "image", imageTag, "error", err)
@@ -260,6 +267,14 @@ func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) 
 }
 
 func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string) *container.Config {
+	var a string
+	port := strings.Split(d.workerAddress, ":")[1]
+	if d.containerized {
+		// this depends on the compose.yaml , the name of the service is worker
+		a = fmt.Sprintf("%s:%s", "worker", port)
+	} else {
+		a = fmt.Sprintf("%s:%s", "127.0.0.1", port)
+	}
 	return &container.Config{
 		Image: imageTag,
 		ExposedPorts: nat.PortSet{
@@ -267,6 +282,7 @@ func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string
 		},
 		Env: []string{
 			fmt.Sprintf("FUNCTION_ID=%s", functionID),
+			fmt.Sprintf("CONTROLLER_ADDRESS=%s", a),
 		},
 	}
 }
