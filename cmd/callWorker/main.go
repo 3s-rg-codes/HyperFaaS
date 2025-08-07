@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"os"
 	"time"
 
 	commonpb "github.com/3s-rg-codes/HyperFaaS/proto/common"
@@ -334,118 +333,100 @@ func getState(nodeId string, address string, timeout int) ([]functionState, erro
 }
 
 func test(leafAddress string, workerAddress string, nodeID string, image_tag string, data []byte, timeout int) {
-	fmt.Print("Testing callWorker.go\n")
+	fmt.Print(">Testing callWorker.go\n\n")
 
-	fmt.Print("Starting CreateAndCall-Test...")
+	fmt.Print("\n>Starting CreateAndCall-Test...\n\n")
 	createAndCallSuccess := testCreateAndCall(leafAddress, workerAddress, image_tag, data, timeout)
 	if createAndCallSuccess {
-		fmt.Print("CreateAndCall-Test passed!")
+		fmt.Print(">CreateAndCall-Test passed!\n\n")
 	} else {
-		fmt.Print("CreateAndCall-Test failed!")
+		fmt.Print(">CreateAndCall-Test failed!\n\n")
 	}
 
-	fmt.Print("Starting StateAndMetrics-Test...")
+	fmt.Print(">Starting StateAndMetrics-Test...\n")
 	stateAndMetricsSuccess := testStateAndMetrics(workerAddress, nodeID, timeout)
 	if stateAndMetricsSuccess {
-		fmt.Print("StateAndMetrics-Test passed!")
+		fmt.Print(">StateAndMetrics-Test passed!\n\n")
 	} else {
-		fmt.Print("StateAndMetrics-Test failed!")
+		fmt.Print(">StateAndMetrics-Test failed!\n\n")
 	}
 
 	if createAndCallSuccess && stateAndMetricsSuccess {
-		fmt.Print("Successfully passed all tests!e")
+		fmt.Print(">Successfully passed all tests!\n")
 	}
 
 }
 
 func testCreateAndCall(leafAddress string, workerAddress string, image_tag string, data []byte, timeout int) bool {
-	originalStdout := os.Stdout
 	noErrors := true
-	os.Stdout = os.NewFile(uintptr(0), "/dev/null") // Do not print functions outputs
 
 	fID, err := createFunc(image_tag, leafAddress, timeout)
-	os.Stdout = originalStdout
 	if err != nil {
-		fmt.Printf("Creating function: failed; error: %v\nExiting CreateAndCall-Tests...\n", err)
+		fmt.Printf("\n>Creating function: failed; error: %v\nExiting CreateAndCall-Tests...\n\n\n", err)
 		return false
 	}
-	fmt.Println("Creating function: passed")
+	fmt.Print("\n>Creating function: passed\n\n\n")
 
-	os.Stdout = os.NewFile(uintptr(0), "/dev/null") // Do not print functions outputs
 	instID, err := startFunc(fID, workerAddress, timeout)
-	os.Stdout = originalStdout
 	if err != nil {
-		fmt.Printf("Starting function: failed; error: %v\n", err)
+		fmt.Printf("\n>Starting function: failed; error: %v\n\n\n", err)
 		noErrors = false
 	} else {
-		fmt.Print("Starting function: passed\n")
+		fmt.Print("\n>Starting function: passed\n\n\n")
 
-		os.Stdout = os.NewFile(uintptr(0), "/dev/null") // Do not print functions outputs
 		_, err := callFunc(fID, workerAddress, instID, data, timeout)
-		os.Stdout = originalStdout
 		if err != nil {
-			fmt.Printf("Calling function: failed; error: %v\n", err)
+			fmt.Printf("\n>Calling function: failed; error: %v\n\n\n", err)
 			noErrors = false
 		} else {
-			fmt.Print("Calling function: passed\n")
+			fmt.Print("\n>Calling function: passed\n\n\n")
 		}
 
-		os.Stdout = os.NewFile(uintptr(0), "/dev/null") // Do not print functions outputs
 		_, err = stopInstance(instID, workerAddress, timeout)
-		os.Stdout = originalStdout
 		if err != nil {
-			fmt.Printf("Stopping instance: failed; error: %v\n", err)
+			fmt.Printf("\n>Stopping instance: failed; error: %v\n\n\n", err)
 			noErrors = false
 		} else {
-			fmt.Print("Stopping instance: passed\n")
+			fmt.Print("\n>Stopping instance: passed\n\n\n")
 		}
 	}
 
-	os.Stdout = os.NewFile(uintptr(0), "/dev/null") // Do not print functions outputs
 	_, err = scheduleCall(fID, leafAddress, data, timeout)
-	os.Stdout = originalStdout
 	if err != nil {
-		fmt.Printf("Scheduling call: failed; error: %v\n", err)
+		fmt.Printf("\n>Scheduling call: failed; error: %v\n\n\n", err)
 		noErrors = false
 	} else {
-		fmt.Print("Scheduling call: passed\n")
+		fmt.Print("\n>Scheduling call: passed\n\n\n")
 	}
 
 	return noErrors
 }
 
 func testStateAndMetrics(workerAddress string, nodeID string, timeout int) bool {
-	originalStdout := os.Stdout
 	noErrors := true
 
-	os.Stdout = os.NewFile(uintptr(0), "/dev/null") // Do not print functions outputs
 	_, err := getStatusUpdate(nodeID, workerAddress, timeout)
-	os.Stdout = originalStdout
 	if err != nil {
-		fmt.Printf("Getting Status: failed; error: %v\n", err)
+		fmt.Printf("\n>Getting Status: failed; error: %v\n\n\n", err)
 		noErrors = false
 	} else {
-		fmt.Print("Getting Status: passed\n")
+		fmt.Print("\n>Getting Status: passed\n\n\n")
 	}
 
-	os.Stdout = os.NewFile(uintptr(0), "/dev/null") // Do not print functions outputs
 	_, err = getMetricsUpdate(nodeID, workerAddress, timeout)
-	os.Stdout = originalStdout
 	if err != nil {
-		fmt.Printf("Getting Metrics: failed; error: %v\n", err)
+		fmt.Printf("\n>Getting Metrics: failed; error: %v\n\n\n", err)
 		noErrors = false
 	} else {
-		fmt.Print("Getting Metrics: passed\n")
+		fmt.Print("\n>Getting Metrics: passed\n\n\n")
 	}
 
-	os.Stdout = os.NewFile(uintptr(0), "/dev/null") // Do not print functions outputs
 	_, err = getState(nodeID, workerAddress, timeout)
-	os.Stdout = originalStdout
 	if err != nil {
-		fmt.Printf("Getting State: failed; error: %v\n", err)
+		fmt.Printf("\n>Getting State: failed; error: %v\n\n\n", err)
 		noErrors = false
 	} else {
-		fmt.Print("Getting State: passed\n")
+		fmt.Print("\n>Getting State: passed\n\n\n")
 	}
 
 	return noErrors
