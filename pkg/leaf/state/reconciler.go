@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )

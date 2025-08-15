@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
+	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -44,7 +44,7 @@ func main() {
 		"hyperfaas-bfs:latest",
 	}
 
-	functionIDs := make([]*common.FunctionID, len(imageTags))
+	functionIDs := make([]string, len(imageTags))
 
 	// Create functions and save their id:imagetag mapping
 	for i, imageTag := range imageTags {
@@ -56,7 +56,7 @@ func main() {
 	}
 
 	// Sequential calls
-	//testSequentialCalls(client, functionIDs[0])
+	testSequentialCalls(client, functionIDs[0])
 
 	// Concurrent calls for duration
 	//testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
@@ -83,7 +83,7 @@ func createClient() (pb.LeafClient, *grpc.ClientConn) {
 	return pb.NewLeafClient(conn), conn
 }
 
-func testConcurrentCalls(client pb.LeafClient, functionID *common.FunctionID, numCalls int) {
+func testConcurrentCalls(client pb.LeafClient, functionID string, numCalls int) {
 	// Create main context
 	ctx := context.Background()
 
@@ -119,7 +119,7 @@ func testConcurrentCalls(client pb.LeafClient, functionID *common.FunctionID, nu
 	fmt.Printf("Concurrent calls complete - Successful: %d, Failed: %d, AvgLatency: %v\n", successCount, failureCount, avgLatency)
 }
 
-func testConcurrentCallsForDuration(client pb.LeafClient, functionID *common.FunctionID, rps int, duration time.Duration) {
+func testConcurrentCallsForDuration(client pb.LeafClient, functionID string, rps int, duration time.Duration) {
 
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), duration+30*time.Second)
@@ -142,7 +142,7 @@ func testConcurrentCallsForDuration(client pb.LeafClient, functionID *common.Fun
 	}
 }
 
-func testRampingCallsForDuration(client pb.LeafClient, functionID *common.FunctionID, targetRPS int, duration time.Duration, rampUpTime time.Duration) {
+func testRampingCallsForDuration(client pb.LeafClient, functionID string, targetRPS int, duration time.Duration, rampUpTime time.Duration) {
 	var wg sync.WaitGroup
 	//seconds := int(duration.Seconds())
 
@@ -187,10 +187,10 @@ func testRampingCallsForDuration(client pb.LeafClient, functionID *common.Functi
 	}
 }
 
-func sendCall(client pb.LeafClient, functionID *common.FunctionID) (time.Duration, error) {
+func sendCall(client pb.LeafClient, functionID string) (time.Duration, error) {
 	//time.Sleep(time.Duration(rand.Intn(10)+100) * time.Millisecond)
-	startReq := &pb.ScheduleCallRequest{
-		FunctionID: functionID,
+	startReq := &common.CallRequest{
+		FunctionId: functionID,
 		Data:       []byte(""),
 	}
 	//ctx := context.WithValue(context.Background(), "RequestID", uuid.New().String())
@@ -210,10 +210,10 @@ func sendCall(client pb.LeafClient, functionID *common.FunctionID) (time.Duratio
 	return time.Since(start), nil
 }
 
-func testSequentialCalls(client pb.LeafClient, functionID *common.FunctionID) {
+func testSequentialCalls(client pb.LeafClient, functionID string) {
 	for i := 0; i < 100; i++ {
-		req := &pb.ScheduleCallRequest{
-			FunctionID: functionID,
+		req := &common.CallRequest{
+			FunctionId: functionID,
 			Data:       []byte(""),
 		}
 
@@ -225,21 +225,21 @@ func testSequentialCalls(client pb.LeafClient, functionID *common.FunctionID) {
 	}
 }
 
-func BuildMockClientHelper(controllerServerAddress string) (workerpb.ControllerClient, *grpc.ClientConn, error) {
+func BuildMockClientHelper(controllerServerAddress string) (workerpb.WorkerClient, *grpc.ClientConn, error) {
 	var err error
 	connection, err := grpc.NewClient(controllerServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, nil, err
 	}
 	//t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
-	testClient := workerpb.NewControllerClient(connection)
+	testClient := workerpb.NewWorkerClient(connection)
 
 	return testClient, connection, nil
 }
 
-func createFunction(imageTag string, client *pb.LeafClient) (*common.FunctionID, error) {
+func createFunction(imageTag string, client *pb.LeafClient) (string, error) {
 	createReq := &pb.CreateFunctionRequest{
-		ImageTag: &common.ImageTag{Tag: imageTag},
+		Image: &common.Image{Tag: imageTag},
 		Config: &common.Config{
 			Memory: RequestedMemory,
 			Cpu: &common.CPUConfig{
@@ -253,13 +253,13 @@ func createFunction(imageTag string, client *pb.LeafClient) (*common.FunctionID,
 
 	createFunctionResp, err := (*client).CreateFunction(context.Background(), createReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create function: %v", err)
+		return "", fmt.Errorf("failed to create function: %v", err)
 	}
 
-	return createFunctionResp.FunctionID, nil
+	return createFunctionResp.FunctionId, nil
 }
 
-func sendThumbnailRequest(client pb.LeafClient, functionID *common.FunctionID) (time.Duration, error) {
+func sendThumbnailRequest(client pb.LeafClient, functionID string) (time.Duration, error) {
 	resp, err := http.Get("https://picsum.photos/200/300")
 	if err != nil {
 		return 0, fmt.Errorf("failed to get image: %v", err)
@@ -295,8 +295,8 @@ func sendThumbnailRequest(client pb.LeafClient, functionID *common.FunctionID) (
 	}
 
 	start := time.Now()
-	r, err := client.ScheduleCall(context.Background(), &pb.ScheduleCallRequest{
-		FunctionID: functionID,
+	r, err := client.ScheduleCall(context.Background(), &common.CallRequest{
+		FunctionId: functionID,
 		Data:       buf.Bytes(),
 	})
 	if err != nil {
@@ -312,7 +312,7 @@ func sendThumbnailRequest(client pb.LeafClient, functionID *common.FunctionID) (
 	return time.Since(start), nil
 }
 
-func testBFS(client pb.LeafClient, functionID *common.FunctionID) {
+func testBFS(client pb.LeafClient, functionID string) {
 	input := struct {
 		Size int
 		Seed int
@@ -326,8 +326,8 @@ func testBFS(client pb.LeafClient, functionID *common.FunctionID) {
 		log.Fatalf("failed to encode input: %v", err)
 	}
 
-	r, err := client.ScheduleCall(context.Background(), &pb.ScheduleCallRequest{
-		FunctionID: functionID,
+	r, err := client.ScheduleCall(context.Background(), &common.CallRequest{
+		FunctionId: functionID,
 		Data:       buf.Bytes(),
 	})
 	if err != nil {
@@ -351,7 +351,7 @@ func testBFS(client pb.LeafClient, functionID *common.FunctionID) {
 }
 
 // this tests if the leaf is able to update its state to realise that a conatiner has timed out and it needs to scale up again.
-func testCallWithSleep(client pb.LeafClient, functionID *common.FunctionID, sleep time.Duration) {
+func testCallWithSleep(client pb.LeafClient, functionID string, sleep time.Duration) {
 	_, err := sendCall(client, functionID)
 	if err != nil {
 		log.Fatalf("failed to send call: %v", err)
