@@ -1,17 +1,19 @@
 syntax = "proto3";
-option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/controller";
 
-import "common/common.proto";
-import "google/protobuf/timestamp.proto";
-import "google/protobuf/empty.proto";
 package controller;
 
+import "common/common.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/controller";
+
 enum VirtualizationType {
-  TYPE_CONTAINER = 0;
+  VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED = 0;
 }
 
 enum Event {
-  EVENT_RESPONSE = 0;
+  EVENT_RESPONSE_UNSPECIFIED = 0;
   EVENT_DOWN = 1;
   EVENT_TIMEOUT = 2;
   EVENT_START = 3;
@@ -21,79 +23,70 @@ enum Event {
 }
 
 enum Status {
-  STATUS_SUCCESS = 0;
+  STATUS_SUCCESS_UNSPECIFIED = 0;
   STATUS_FAILED = 1;
 }
 
 message StatusUpdate {
-  common.InstanceID instance_id = 1;
+  string instance_id = 1;
   VirtualizationType type = 2;
   Event event = 3;
   Status status = 4;
-  common.FunctionID function_id = 5;
+  string function_id = 5;
   google.protobuf.Timestamp timestamp = 6;
 }
 
 message StatusRequest {
-  string nodeID = 1;
+  string node_id = 1;
 }
 
 message MetricsRequest {
-  string nodeID = 1;
+  string node_id = 1;
 }
 
 message MetricsUpdate{
   double used_ram_percent = 1;
-  repeated double cpu_percent_percpu = 2;
+  repeated double cpu_percent_percpus = 2;
 }
 
-message InstanceStateRequest {
-  common.FunctionID function_id = 1;
-  common.InstanceID instance_id = 2;
-  Event event = 3;
-}
-
-message InstanceState {
-  string instance_id = 1;
-  bool is_active = 2;
-  // Duration fields stored in milliseconds
-  int64 time_since_last_work = 3;
-  int64 uptime = 4;
-}
-
-message FunctionState {
-  common.FunctionID function_id = 1;
-  repeated InstanceState running = 2;
-  repeated InstanceState idle = 3;
-}
-
-message InstanceStateResponse {
-  // List of function states for this worker
-  repeated FunctionState functions = 1;
-}
 message StartResponse {
-  common.InstanceID instance_id = 1;
+  string instance_id = 1;
   string instance_ip = 2;
   string instance_name = 3;
 }
 
+message StartRequest {
+  string function_id = 1;
+}
 
-service Controller {
+message StopRequest {
+  string instance_id = 1;
+}
+
+message StopResponse {
+  string instance_id = 1;
+}
+
+message SignalReadyRequest {
+  string instance_id = 1;
+}
+
+service Worker {
   // Start a new instance for the given function ID. 
   // The function must be registered in the database.
   // A response with status code OK means that the instance is 
   // created and ready to serve requests.
-  rpc Start (common.FunctionID) returns (StartResponse);
+  rpc Start (StartRequest) returns (StartResponse);
 
   // Call an instance of a function with the given function ID.
   // The instance must be running.
   rpc Call (common.CallRequest) returns (common.CallResponse);
-  rpc Stop (common.InstanceID) returns (common.InstanceID);
+  rpc Stop (StopRequest) returns (StopResponse);
   // Returns a stream of status events, like container crashes and timeouts.
   rpc Status (StatusRequest) returns (stream StatusUpdate);
   // Returns resource usage metrics.
   rpc Metrics (MetricsRequest) returns (MetricsUpdate);
   // Signal that the instance is ready to serve requests. 
   // Instances must call this endpoint upon startup.
-  rpc SignalReady (common.InstanceID) returns (google.protobuf.Empty);
+  rpc SignalReady (SignalReadyRequest) returns (google.protobuf.Empty);
 }

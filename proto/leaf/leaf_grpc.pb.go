@@ -8,6 +8,7 @@ package leaf
 
 import (
 	context "context"
+	common "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -28,7 +29,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type LeafClient interface {
 	// Schedules a function call on the worker identified by the provided function ID.
-	ScheduleCall(ctx context.Context, in *ScheduleCallRequest, opts ...grpc.CallOption) (*ScheduleCallResponse, error)
+	ScheduleCall(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error)
 	// Creates a function on the LeafLeader (e.g. writes it to the cache, which is currently not purged)
 	CreateFunction(ctx context.Context, in *CreateFunctionRequest, opts ...grpc.CallOption) (*CreateFunctionResponse, error)
 }
@@ -41,9 +42,9 @@ func NewLeafClient(cc grpc.ClientConnInterface) LeafClient {
 	return &leafClient{cc}
 }
 
-func (c *leafClient) ScheduleCall(ctx context.Context, in *ScheduleCallRequest, opts ...grpc.CallOption) (*ScheduleCallResponse, error) {
+func (c *leafClient) ScheduleCall(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ScheduleCallResponse)
+	out := new(common.CallResponse)
 	err := c.cc.Invoke(ctx, Leaf_ScheduleCall_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -66,7 +67,7 @@ func (c *leafClient) CreateFunction(ctx context.Context, in *CreateFunctionReque
 // for forward compatibility.
 type LeafServer interface {
 	// Schedules a function call on the worker identified by the provided function ID.
-	ScheduleCall(context.Context, *ScheduleCallRequest) (*ScheduleCallResponse, error)
+	ScheduleCall(context.Context, *common.CallRequest) (*common.CallResponse, error)
 	// Creates a function on the LeafLeader (e.g. writes it to the cache, which is currently not purged)
 	CreateFunction(context.Context, *CreateFunctionRequest) (*CreateFunctionResponse, error)
 	mustEmbedUnimplementedLeafServer()
@@ -79,7 +80,7 @@ type LeafServer interface {
 // pointer dereference when methods are called.
 type UnimplementedLeafServer struct{}
 
-func (UnimplementedLeafServer) ScheduleCall(context.Context, *ScheduleCallRequest) (*ScheduleCallResponse, error) {
+func (UnimplementedLeafServer) ScheduleCall(context.Context, *common.CallRequest) (*common.CallResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ScheduleCall not implemented")
 }
 func (UnimplementedLeafServer) CreateFunction(context.Context, *CreateFunctionRequest) (*CreateFunctionResponse, error) {
@@ -107,7 +108,7 @@ func RegisterLeafServer(s grpc.ServiceRegistrar, srv LeafServer) {
 }
 
 func _Leaf_ScheduleCall_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ScheduleCallRequest)
+	in := new(common.CallRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -119,7 +120,7 @@ func _Leaf_ScheduleCall_Handler(srv interface{}, ctx context.Context, dec func(i
 		FullMethod: Leaf_ScheduleCall_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LeafServer).ScheduleCall(ctx, req.(*ScheduleCallRequest))
+		return srv.(LeafServer).ScheduleCall(ctx, req.(*common.CallRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

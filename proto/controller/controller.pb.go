@@ -27,16 +27,16 @@ const (
 type VirtualizationType int32
 
 const (
-	VirtualizationType_TYPE_CONTAINER VirtualizationType = 0
+	VirtualizationType_VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED VirtualizationType = 0
 )
 
 // Enum value maps for VirtualizationType.
 var (
 	VirtualizationType_name = map[int32]string{
-		0: "TYPE_CONTAINER",
+		0: "VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED",
 	}
 	VirtualizationType_value = map[string]int32{
-		"TYPE_CONTAINER": 0,
+		"VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED": 0,
 	}
 )
 
@@ -70,19 +70,19 @@ func (VirtualizationType) EnumDescriptor() ([]byte, []int) {
 type Event int32
 
 const (
-	Event_EVENT_RESPONSE Event = 0
-	Event_EVENT_DOWN     Event = 1
-	Event_EVENT_TIMEOUT  Event = 2
-	Event_EVENT_START    Event = 3
-	Event_EVENT_STOP     Event = 4
-	Event_EVENT_CALL     Event = 5
-	Event_EVENT_RUNNING  Event = 6
+	Event_EVENT_RESPONSE_UNSPECIFIED Event = 0
+	Event_EVENT_DOWN                 Event = 1
+	Event_EVENT_TIMEOUT              Event = 2
+	Event_EVENT_START                Event = 3
+	Event_EVENT_STOP                 Event = 4
+	Event_EVENT_CALL                 Event = 5
+	Event_EVENT_RUNNING              Event = 6
 )
 
 // Enum value maps for Event.
 var (
 	Event_name = map[int32]string{
-		0: "EVENT_RESPONSE",
+		0: "EVENT_RESPONSE_UNSPECIFIED",
 		1: "EVENT_DOWN",
 		2: "EVENT_TIMEOUT",
 		3: "EVENT_START",
@@ -91,13 +91,13 @@ var (
 		6: "EVENT_RUNNING",
 	}
 	Event_value = map[string]int32{
-		"EVENT_RESPONSE": 0,
-		"EVENT_DOWN":     1,
-		"EVENT_TIMEOUT":  2,
-		"EVENT_START":    3,
-		"EVENT_STOP":     4,
-		"EVENT_CALL":     5,
-		"EVENT_RUNNING":  6,
+		"EVENT_RESPONSE_UNSPECIFIED": 0,
+		"EVENT_DOWN":                 1,
+		"EVENT_TIMEOUT":              2,
+		"EVENT_START":                3,
+		"EVENT_STOP":                 4,
+		"EVENT_CALL":                 5,
+		"EVENT_RUNNING":              6,
 	}
 )
 
@@ -131,19 +131,19 @@ func (Event) EnumDescriptor() ([]byte, []int) {
 type Status int32
 
 const (
-	Status_STATUS_SUCCESS Status = 0
-	Status_STATUS_FAILED  Status = 1
+	Status_STATUS_SUCCESS_UNSPECIFIED Status = 0
+	Status_STATUS_FAILED              Status = 1
 )
 
 // Enum value maps for Status.
 var (
 	Status_name = map[int32]string{
-		0: "STATUS_SUCCESS",
+		0: "STATUS_SUCCESS_UNSPECIFIED",
 		1: "STATUS_FAILED",
 	}
 	Status_value = map[string]int32{
-		"STATUS_SUCCESS": 0,
-		"STATUS_FAILED":  1,
+		"STATUS_SUCCESS_UNSPECIFIED": 0,
+		"STATUS_FAILED":              1,
 	}
 )
 
@@ -176,11 +176,11 @@ func (Status) EnumDescriptor() ([]byte, []int) {
 
 type StatusUpdate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId    *common.InstanceID     `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
 	Type          VirtualizationType     `protobuf:"varint,2,opt,name=type,proto3,enum=controller.VirtualizationType" json:"type,omitempty"`
 	Event         Event                  `protobuf:"varint,3,opt,name=event,proto3,enum=controller.Event" json:"event,omitempty"`
 	Status        Status                 `protobuf:"varint,4,opt,name=status,proto3,enum=controller.Status" json:"status,omitempty"`
-	FunctionId    *common.FunctionID     `protobuf:"bytes,5,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	FunctionId    string                 `protobuf:"bytes,5,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -216,39 +216,39 @@ func (*StatusUpdate) Descriptor() ([]byte, []int) {
 	return file_controller_controller_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *StatusUpdate) GetInstanceId() *common.InstanceID {
+func (x *StatusUpdate) GetInstanceId() string {
 	if x != nil {
 		return x.InstanceId
 	}
-	return nil
+	return ""
 }
 
 func (x *StatusUpdate) GetType() VirtualizationType {
 	if x != nil {
 		return x.Type
 	}
-	return VirtualizationType_TYPE_CONTAINER
+	return VirtualizationType_VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED
 }
 
 func (x *StatusUpdate) GetEvent() Event {
 	if x != nil {
 		return x.Event
 	}
-	return Event_EVENT_RESPONSE
+	return Event_EVENT_RESPONSE_UNSPECIFIED
 }
 
 func (x *StatusUpdate) GetStatus() Status {
 	if x != nil {
 		return x.Status
 	}
-	return Status_STATUS_SUCCESS
+	return Status_STATUS_SUCCESS_UNSPECIFIED
 }
 
-func (x *StatusUpdate) GetFunctionId() *common.FunctionID {
+func (x *StatusUpdate) GetFunctionId() string {
 	if x != nil {
 		return x.FunctionId
 	}
-	return nil
+	return ""
 }
 
 func (x *StatusUpdate) GetTimestamp() *timestamppb.Timestamp {
@@ -260,7 +260,7 @@ func (x *StatusUpdate) GetTimestamp() *timestamppb.Timestamp {
 
 type StatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeID        string                 `protobuf:"bytes,1,opt,name=nodeID,proto3" json:"nodeID,omitempty"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -295,16 +295,16 @@ func (*StatusRequest) Descriptor() ([]byte, []int) {
 	return file_controller_controller_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *StatusRequest) GetNodeID() string {
+func (x *StatusRequest) GetNodeId() string {
 	if x != nil {
-		return x.NodeID
+		return x.NodeId
 	}
 	return ""
 }
 
 type MetricsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeID        string                 `protobuf:"bytes,1,opt,name=nodeID,proto3" json:"nodeID,omitempty"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -339,19 +339,19 @@ func (*MetricsRequest) Descriptor() ([]byte, []int) {
 	return file_controller_controller_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *MetricsRequest) GetNodeID() string {
+func (x *MetricsRequest) GetNodeId() string {
 	if x != nil {
-		return x.NodeID
+		return x.NodeId
 	}
 	return ""
 }
 
 type MetricsUpdate struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	UsedRamPercent   float64                `protobuf:"fixed64,1,opt,name=used_ram_percent,json=usedRamPercent,proto3" json:"used_ram_percent,omitempty"`
-	CpuPercentPercpu []float64              `protobuf:"fixed64,2,rep,packed,name=cpu_percent_percpu,json=cpuPercentPercpu,proto3" json:"cpu_percent_percpu,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	UsedRamPercent    float64                `protobuf:"fixed64,1,opt,name=used_ram_percent,json=usedRamPercent,proto3" json:"used_ram_percent,omitempty"`
+	CpuPercentPercpus []float64              `protobuf:"fixed64,2,rep,packed,name=cpu_percent_percpus,json=cpuPercentPercpus,proto3" json:"cpu_percent_percpus,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *MetricsUpdate) Reset() {
@@ -391,250 +391,16 @@ func (x *MetricsUpdate) GetUsedRamPercent() float64 {
 	return 0
 }
 
-func (x *MetricsUpdate) GetCpuPercentPercpu() []float64 {
+func (x *MetricsUpdate) GetCpuPercentPercpus() []float64 {
 	if x != nil {
-		return x.CpuPercentPercpu
-	}
-	return nil
-}
-
-type InstanceStateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FunctionId    *common.FunctionID     `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
-	InstanceId    *common.InstanceID     `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	Event         Event                  `protobuf:"varint,3,opt,name=event,proto3,enum=controller.Event" json:"event,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *InstanceStateRequest) Reset() {
-	*x = InstanceStateRequest{}
-	mi := &file_controller_controller_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *InstanceStateRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*InstanceStateRequest) ProtoMessage() {}
-
-func (x *InstanceStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use InstanceStateRequest.ProtoReflect.Descriptor instead.
-func (*InstanceStateRequest) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *InstanceStateRequest) GetFunctionId() *common.FunctionID {
-	if x != nil {
-		return x.FunctionId
-	}
-	return nil
-}
-
-func (x *InstanceStateRequest) GetInstanceId() *common.InstanceID {
-	if x != nil {
-		return x.InstanceId
-	}
-	return nil
-}
-
-func (x *InstanceStateRequest) GetEvent() Event {
-	if x != nil {
-		return x.Event
-	}
-	return Event_EVENT_RESPONSE
-}
-
-type InstanceState struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	IsActive   bool                   `protobuf:"varint,2,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`
-	// Duration fields stored in milliseconds
-	TimeSinceLastWork int64 `protobuf:"varint,3,opt,name=time_since_last_work,json=timeSinceLastWork,proto3" json:"time_since_last_work,omitempty"`
-	Uptime            int64 `protobuf:"varint,4,opt,name=uptime,proto3" json:"uptime,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *InstanceState) Reset() {
-	*x = InstanceState{}
-	mi := &file_controller_controller_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *InstanceState) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*InstanceState) ProtoMessage() {}
-
-func (x *InstanceState) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use InstanceState.ProtoReflect.Descriptor instead.
-func (*InstanceState) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *InstanceState) GetInstanceId() string {
-	if x != nil {
-		return x.InstanceId
-	}
-	return ""
-}
-
-func (x *InstanceState) GetIsActive() bool {
-	if x != nil {
-		return x.IsActive
-	}
-	return false
-}
-
-func (x *InstanceState) GetTimeSinceLastWork() int64 {
-	if x != nil {
-		return x.TimeSinceLastWork
-	}
-	return 0
-}
-
-func (x *InstanceState) GetUptime() int64 {
-	if x != nil {
-		return x.Uptime
-	}
-	return 0
-}
-
-type FunctionState struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FunctionId    *common.FunctionID     `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
-	Running       []*InstanceState       `protobuf:"bytes,2,rep,name=running,proto3" json:"running,omitempty"`
-	Idle          []*InstanceState       `protobuf:"bytes,3,rep,name=idle,proto3" json:"idle,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *FunctionState) Reset() {
-	*x = FunctionState{}
-	mi := &file_controller_controller_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FunctionState) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FunctionState) ProtoMessage() {}
-
-func (x *FunctionState) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FunctionState.ProtoReflect.Descriptor instead.
-func (*FunctionState) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *FunctionState) GetFunctionId() *common.FunctionID {
-	if x != nil {
-		return x.FunctionId
-	}
-	return nil
-}
-
-func (x *FunctionState) GetRunning() []*InstanceState {
-	if x != nil {
-		return x.Running
-	}
-	return nil
-}
-
-func (x *FunctionState) GetIdle() []*InstanceState {
-	if x != nil {
-		return x.Idle
-	}
-	return nil
-}
-
-type InstanceStateResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// List of function states for this worker
-	Functions     []*FunctionState `protobuf:"bytes,1,rep,name=functions,proto3" json:"functions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *InstanceStateResponse) Reset() {
-	*x = InstanceStateResponse{}
-	mi := &file_controller_controller_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *InstanceStateResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*InstanceStateResponse) ProtoMessage() {}
-
-func (x *InstanceStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use InstanceStateResponse.ProtoReflect.Descriptor instead.
-func (*InstanceStateResponse) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *InstanceStateResponse) GetFunctions() []*FunctionState {
-	if x != nil {
-		return x.Functions
+		return x.CpuPercentPercpus
 	}
 	return nil
 }
 
 type StartResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId    *common.InstanceID     `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
 	InstanceIp    string                 `protobuf:"bytes,2,opt,name=instance_ip,json=instanceIp,proto3" json:"instance_ip,omitempty"`
 	InstanceName  string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -643,7 +409,7 @@ type StartResponse struct {
 
 func (x *StartResponse) Reset() {
 	*x = StartResponse{}
-	mi := &file_controller_controller_proto_msgTypes[8]
+	mi := &file_controller_controller_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -655,7 +421,7 @@ func (x *StartResponse) String() string {
 func (*StartResponse) ProtoMessage() {}
 
 func (x *StartResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[8]
+	mi := &file_controller_controller_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -668,14 +434,14 @@ func (x *StartResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartResponse.ProtoReflect.Descriptor instead.
 func (*StartResponse) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{8}
+	return file_controller_controller_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *StartResponse) GetInstanceId() *common.InstanceID {
+func (x *StartResponse) GetInstanceId() string {
 	if x != nil {
 		return x.InstanceId
 	}
-	return nil
+	return ""
 }
 
 func (x *StartResponse) GetInstanceIp() string {
@@ -692,57 +458,226 @@ func (x *StartResponse) GetInstanceName() string {
 	return ""
 }
 
+type StartRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FunctionId    string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartRequest) Reset() {
+	*x = StartRequest{}
+	mi := &file_controller_controller_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartRequest) ProtoMessage() {}
+
+func (x *StartRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_controller_controller_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartRequest.ProtoReflect.Descriptor instead.
+func (*StartRequest) Descriptor() ([]byte, []int) {
+	return file_controller_controller_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *StartRequest) GetFunctionId() string {
+	if x != nil {
+		return x.FunctionId
+	}
+	return ""
+}
+
+type StopRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopRequest) Reset() {
+	*x = StopRequest{}
+	mi := &file_controller_controller_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopRequest) ProtoMessage() {}
+
+func (x *StopRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_controller_controller_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
+func (*StopRequest) Descriptor() ([]byte, []int) {
+	return file_controller_controller_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *StopRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+type StopResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopResponse) Reset() {
+	*x = StopResponse{}
+	mi := &file_controller_controller_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopResponse) ProtoMessage() {}
+
+func (x *StopResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_controller_controller_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
+func (*StopResponse) Descriptor() ([]byte, []int) {
+	return file_controller_controller_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *StopResponse) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+type SignalReadyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignalReadyRequest) Reset() {
+	*x = SignalReadyRequest{}
+	mi := &file_controller_controller_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignalReadyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignalReadyRequest) ProtoMessage() {}
+
+func (x *SignalReadyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_controller_controller_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignalReadyRequest.ProtoReflect.Descriptor instead.
+func (*SignalReadyRequest) Descriptor() ([]byte, []int) {
+	return file_controller_controller_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *SignalReadyRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
 var File_controller_controller_proto protoreflect.FileDescriptor
 
 const file_controller_controller_proto_rawDesc = "" +
 	"\n" +
 	"\x1bcontroller/controller.proto\x12\n" +
-	"controller\x1a\x13common/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1bgoogle/protobuf/empty.proto\"\xbb\x02\n" +
-	"\fStatusUpdate\x123\n" +
-	"\vinstance_id\x18\x01 \x01(\v2\x12.common.InstanceIDR\n" +
+	"controller\x1a\x13common/common.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x93\x02\n" +
+	"\fStatusUpdate\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x122\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x1e.controller.VirtualizationTypeR\x04type\x12'\n" +
 	"\x05event\x18\x03 \x01(\x0e2\x11.controller.EventR\x05event\x12*\n" +
-	"\x06status\x18\x04 \x01(\x0e2\x12.controller.StatusR\x06status\x123\n" +
-	"\vfunction_id\x18\x05 \x01(\v2\x12.common.FunctionIDR\n" +
+	"\x06status\x18\x04 \x01(\x0e2\x12.controller.StatusR\x06status\x12\x1f\n" +
+	"\vfunction_id\x18\x05 \x01(\tR\n" +
 	"functionId\x128\n" +
-	"\ttimestamp\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"'\n" +
-	"\rStatusRequest\x12\x16\n" +
-	"\x06nodeID\x18\x01 \x01(\tR\x06nodeID\"(\n" +
-	"\x0eMetricsRequest\x12\x16\n" +
-	"\x06nodeID\x18\x01 \x01(\tR\x06nodeID\"g\n" +
+	"\ttimestamp\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"(\n" +
+	"\rStatusRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\")\n" +
+	"\x0eMetricsRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"i\n" +
 	"\rMetricsUpdate\x12(\n" +
-	"\x10used_ram_percent\x18\x01 \x01(\x01R\x0eusedRamPercent\x12,\n" +
-	"\x12cpu_percent_percpu\x18\x02 \x03(\x01R\x10cpuPercentPercpu\"\xa9\x01\n" +
-	"\x14InstanceStateRequest\x123\n" +
-	"\vfunction_id\x18\x01 \x01(\v2\x12.common.FunctionIDR\n" +
-	"functionId\x123\n" +
-	"\vinstance_id\x18\x02 \x01(\v2\x12.common.InstanceIDR\n" +
-	"instanceId\x12'\n" +
-	"\x05event\x18\x03 \x01(\x0e2\x11.controller.EventR\x05event\"\x96\x01\n" +
-	"\rInstanceState\x12\x1f\n" +
+	"\x10used_ram_percent\x18\x01 \x01(\x01R\x0eusedRamPercent\x12.\n" +
+	"\x13cpu_percent_percpus\x18\x02 \x03(\x01R\x11cpuPercentPercpus\"v\n" +
+	"\rStartResponse\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
-	"instanceId\x12\x1b\n" +
-	"\tis_active\x18\x02 \x01(\bR\bisActive\x12/\n" +
-	"\x14time_since_last_work\x18\x03 \x01(\x03R\x11timeSinceLastWork\x12\x16\n" +
-	"\x06uptime\x18\x04 \x01(\x03R\x06uptime\"\xa8\x01\n" +
-	"\rFunctionState\x123\n" +
-	"\vfunction_id\x18\x01 \x01(\v2\x12.common.FunctionIDR\n" +
-	"functionId\x123\n" +
-	"\arunning\x18\x02 \x03(\v2\x19.controller.InstanceStateR\arunning\x12-\n" +
-	"\x04idle\x18\x03 \x03(\v2\x19.controller.InstanceStateR\x04idle\"P\n" +
-	"\x15InstanceStateResponse\x127\n" +
-	"\tfunctions\x18\x01 \x03(\v2\x19.controller.FunctionStateR\tfunctions\"\x8a\x01\n" +
-	"\rStartResponse\x123\n" +
-	"\vinstance_id\x18\x01 \x01(\v2\x12.common.InstanceIDR\n" +
 	"instanceId\x12\x1f\n" +
 	"\vinstance_ip\x18\x02 \x01(\tR\n" +
 	"instanceIp\x12#\n" +
-	"\rinstance_name\x18\x03 \x01(\tR\finstanceName*(\n" +
-	"\x12VirtualizationType\x12\x12\n" +
-	"\x0eTYPE_CONTAINER\x10\x00*\x82\x01\n" +
-	"\x05Event\x12\x12\n" +
-	"\x0eEVENT_RESPONSE\x10\x00\x12\x0e\n" +
+	"\rinstance_name\x18\x03 \x01(\tR\finstanceName\"/\n" +
+	"\fStartRequest\x12\x1f\n" +
+	"\vfunction_id\x18\x01 \x01(\tR\n" +
+	"functionId\".\n" +
+	"\vStopRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\"/\n" +
+	"\fStopResponse\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\"5\n" +
+	"\x12SignalReadyRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId*H\n" +
+	"\x12VirtualizationType\x122\n" +
+	".VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED\x10\x00*\x8e\x01\n" +
+	"\x05Event\x12\x1e\n" +
+	"\x1aEVENT_RESPONSE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"EVENT_DOWN\x10\x01\x12\x11\n" +
 	"\rEVENT_TIMEOUT\x10\x02\x12\x0f\n" +
@@ -751,18 +686,17 @@ const file_controller_controller_proto_rawDesc = "" +
 	"EVENT_STOP\x10\x04\x12\x0e\n" +
 	"\n" +
 	"EVENT_CALL\x10\x05\x12\x11\n" +
-	"\rEVENT_RUNNING\x10\x06*/\n" +
-	"\x06Status\x12\x12\n" +
-	"\x0eSTATUS_SUCCESS\x10\x00\x12\x11\n" +
-	"\rSTATUS_FAILED\x10\x012\xe5\x02\n" +
-	"\n" +
-	"Controller\x126\n" +
-	"\x05Start\x12\x12.common.FunctionID\x1a\x19.controller.StartResponse\x121\n" +
-	"\x04Call\x12\x13.common.CallRequest\x1a\x14.common.CallResponse\x12.\n" +
-	"\x04Stop\x12\x12.common.InstanceID\x1a\x12.common.InstanceID\x12?\n" +
+	"\rEVENT_RUNNING\x10\x06*;\n" +
+	"\x06Status\x12\x1e\n" +
+	"\x1aSTATUS_SUCCESS_UNSPECIFIED\x10\x00\x12\x11\n" +
+	"\rSTATUS_FAILED\x10\x012\xfe\x02\n" +
+	"\x06Worker\x12<\n" +
+	"\x05Start\x12\x18.controller.StartRequest\x1a\x19.controller.StartResponse\x121\n" +
+	"\x04Call\x12\x13.common.CallRequest\x1a\x14.common.CallResponse\x129\n" +
+	"\x04Stop\x12\x17.controller.StopRequest\x1a\x18.controller.StopResponse\x12?\n" +
 	"\x06Status\x12\x19.controller.StatusRequest\x1a\x18.controller.StatusUpdate0\x01\x12@\n" +
-	"\aMetrics\x12\x1a.controller.MetricsRequest\x1a\x19.controller.MetricsUpdate\x129\n" +
-	"\vSignalReady\x12\x12.common.InstanceID\x1a\x16.google.protobuf.EmptyB3Z1github.com/3s-rg-codes/HyperFaaS/proto/controllerb\x06proto3"
+	"\aMetrics\x12\x1a.controller.MetricsRequest\x1a\x19.controller.MetricsUpdate\x12E\n" +
+	"\vSignalReady\x12\x1e.controller.SignalReadyRequest\x1a\x16.google.protobuf.EmptyB3Z1github.com/3s-rg-codes/HyperFaaS/proto/controllerb\x06proto3"
 
 var (
 	file_controller_controller_proto_rawDescOnce sync.Once
@@ -786,50 +720,38 @@ var file_controller_controller_proto_goTypes = []any{
 	(*StatusRequest)(nil),         // 4: controller.StatusRequest
 	(*MetricsRequest)(nil),        // 5: controller.MetricsRequest
 	(*MetricsUpdate)(nil),         // 6: controller.MetricsUpdate
-	(*InstanceStateRequest)(nil),  // 7: controller.InstanceStateRequest
-	(*InstanceState)(nil),         // 8: controller.InstanceState
-	(*FunctionState)(nil),         // 9: controller.FunctionState
-	(*InstanceStateResponse)(nil), // 10: controller.InstanceStateResponse
-	(*StartResponse)(nil),         // 11: controller.StartResponse
-	(*common.InstanceID)(nil),     // 12: common.InstanceID
-	(*common.FunctionID)(nil),     // 13: common.FunctionID
-	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
-	(*common.CallRequest)(nil),    // 15: common.CallRequest
-	(*common.CallResponse)(nil),   // 16: common.CallResponse
-	(*emptypb.Empty)(nil),         // 17: google.protobuf.Empty
+	(*StartResponse)(nil),         // 7: controller.StartResponse
+	(*StartRequest)(nil),          // 8: controller.StartRequest
+	(*StopRequest)(nil),           // 9: controller.StopRequest
+	(*StopResponse)(nil),          // 10: controller.StopResponse
+	(*SignalReadyRequest)(nil),    // 11: controller.SignalReadyRequest
+	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
+	(*common.CallRequest)(nil),    // 13: common.CallRequest
+	(*common.CallResponse)(nil),   // 14: common.CallResponse
+	(*emptypb.Empty)(nil),         // 15: google.protobuf.Empty
 }
 var file_controller_controller_proto_depIdxs = []int32{
-	12, // 0: controller.StatusUpdate.instance_id:type_name -> common.InstanceID
-	0,  // 1: controller.StatusUpdate.type:type_name -> controller.VirtualizationType
-	1,  // 2: controller.StatusUpdate.event:type_name -> controller.Event
-	2,  // 3: controller.StatusUpdate.status:type_name -> controller.Status
-	13, // 4: controller.StatusUpdate.function_id:type_name -> common.FunctionID
-	14, // 5: controller.StatusUpdate.timestamp:type_name -> google.protobuf.Timestamp
-	13, // 6: controller.InstanceStateRequest.function_id:type_name -> common.FunctionID
-	12, // 7: controller.InstanceStateRequest.instance_id:type_name -> common.InstanceID
-	1,  // 8: controller.InstanceStateRequest.event:type_name -> controller.Event
-	13, // 9: controller.FunctionState.function_id:type_name -> common.FunctionID
-	8,  // 10: controller.FunctionState.running:type_name -> controller.InstanceState
-	8,  // 11: controller.FunctionState.idle:type_name -> controller.InstanceState
-	9,  // 12: controller.InstanceStateResponse.functions:type_name -> controller.FunctionState
-	12, // 13: controller.StartResponse.instance_id:type_name -> common.InstanceID
-	13, // 14: controller.Controller.Start:input_type -> common.FunctionID
-	15, // 15: controller.Controller.Call:input_type -> common.CallRequest
-	12, // 16: controller.Controller.Stop:input_type -> common.InstanceID
-	4,  // 17: controller.Controller.Status:input_type -> controller.StatusRequest
-	5,  // 18: controller.Controller.Metrics:input_type -> controller.MetricsRequest
-	12, // 19: controller.Controller.SignalReady:input_type -> common.InstanceID
-	11, // 20: controller.Controller.Start:output_type -> controller.StartResponse
-	16, // 21: controller.Controller.Call:output_type -> common.CallResponse
-	12, // 22: controller.Controller.Stop:output_type -> common.InstanceID
-	3,  // 23: controller.Controller.Status:output_type -> controller.StatusUpdate
-	6,  // 24: controller.Controller.Metrics:output_type -> controller.MetricsUpdate
-	17, // 25: controller.Controller.SignalReady:output_type -> google.protobuf.Empty
-	20, // [20:26] is the sub-list for method output_type
-	14, // [14:20] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	0,  // 0: controller.StatusUpdate.type:type_name -> controller.VirtualizationType
+	1,  // 1: controller.StatusUpdate.event:type_name -> controller.Event
+	2,  // 2: controller.StatusUpdate.status:type_name -> controller.Status
+	12, // 3: controller.StatusUpdate.timestamp:type_name -> google.protobuf.Timestamp
+	8,  // 4: controller.Worker.Start:input_type -> controller.StartRequest
+	13, // 5: controller.Worker.Call:input_type -> common.CallRequest
+	9,  // 6: controller.Worker.Stop:input_type -> controller.StopRequest
+	4,  // 7: controller.Worker.Status:input_type -> controller.StatusRequest
+	5,  // 8: controller.Worker.Metrics:input_type -> controller.MetricsRequest
+	11, // 9: controller.Worker.SignalReady:input_type -> controller.SignalReadyRequest
+	7,  // 10: controller.Worker.Start:output_type -> controller.StartResponse
+	14, // 11: controller.Worker.Call:output_type -> common.CallResponse
+	10, // 12: controller.Worker.Stop:output_type -> controller.StopResponse
+	3,  // 13: controller.Worker.Status:output_type -> controller.StatusUpdate
+	6,  // 14: controller.Worker.Metrics:output_type -> controller.MetricsUpdate
+	15, // 15: controller.Worker.SignalReady:output_type -> google.protobuf.Empty
+	10, // [10:16] is the sub-list for method output_type
+	4,  // [4:10] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_controller_controller_proto_init() }

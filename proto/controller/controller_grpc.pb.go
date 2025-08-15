@@ -21,71 +21,77 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Controller_Start_FullMethodName       = "/controller.Controller/Start"
-	Controller_Call_FullMethodName        = "/controller.Controller/Call"
-	Controller_Stop_FullMethodName        = "/controller.Controller/Stop"
-	Controller_Status_FullMethodName      = "/controller.Controller/Status"
-	Controller_Metrics_FullMethodName     = "/controller.Controller/Metrics"
-	Controller_SignalReady_FullMethodName = "/controller.Controller/SignalReady"
+	Worker_Start_FullMethodName       = "/controller.Worker/Start"
+	Worker_Call_FullMethodName        = "/controller.Worker/Call"
+	Worker_Stop_FullMethodName        = "/controller.Worker/Stop"
+	Worker_Status_FullMethodName      = "/controller.Worker/Status"
+	Worker_Metrics_FullMethodName     = "/controller.Worker/Metrics"
+	Worker_SignalReady_FullMethodName = "/controller.Worker/SignalReady"
 )
 
-// ControllerClient is the client API for Controller service.
+// WorkerClient is the client API for Worker service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type ControllerClient interface {
+type WorkerClient interface {
 	// Start a new instance for the given function ID.
 	// The function must be registered in the database.
 	// A response with status code OK means that the instance is
 	// created and ready to serve requests.
-	Start(ctx context.Context, in *common.FunctionID, opts ...grpc.CallOption) (*StartResponse, error)
+	Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StartResponse, error)
+	// Call an instance of a function with the given function ID.
+	// The instance must be running.
 	Call(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error)
-	Stop(ctx context.Context, in *common.InstanceID, opts ...grpc.CallOption) (*common.InstanceID, error)
+	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
+	// Returns a stream of status events, like container crashes and timeouts.
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusUpdate], error)
+	// Returns resource usage metrics.
 	Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsUpdate, error)
-	SignalReady(ctx context.Context, in *common.InstanceID, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Signal that the instance is ready to serve requests.
+	// Instances must call this endpoint upon startup.
+	SignalReady(ctx context.Context, in *SignalReadyRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
-type controllerClient struct {
+type workerClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewControllerClient(cc grpc.ClientConnInterface) ControllerClient {
-	return &controllerClient{cc}
+func NewWorkerClient(cc grpc.ClientConnInterface) WorkerClient {
+	return &workerClient{cc}
 }
 
-func (c *controllerClient) Start(ctx context.Context, in *common.FunctionID, opts ...grpc.CallOption) (*StartResponse, error) {
+func (c *workerClient) Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StartResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartResponse)
-	err := c.cc.Invoke(ctx, Controller_Start_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, Worker_Start_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerClient) Call(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error) {
+func (c *workerClient) Call(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(common.CallResponse)
-	err := c.cc.Invoke(ctx, Controller_Call_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, Worker_Call_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerClient) Stop(ctx context.Context, in *common.InstanceID, opts ...grpc.CallOption) (*common.InstanceID, error) {
+func (c *workerClient) Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(common.InstanceID)
-	err := c.cc.Invoke(ctx, Controller_Stop_FullMethodName, in, out, cOpts...)
+	out := new(StopResponse)
+	err := c.cc.Invoke(ctx, Worker_Stop_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusUpdate], error) {
+func (c *workerClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusUpdate], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Controller_ServiceDesc.Streams[0], Controller_Status_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Worker_ServiceDesc.Streams[0], Worker_Status_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -100,224 +106,230 @@ func (c *controllerClient) Status(ctx context.Context, in *StatusRequest, opts .
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Controller_StatusClient = grpc.ServerStreamingClient[StatusUpdate]
+type Worker_StatusClient = grpc.ServerStreamingClient[StatusUpdate]
 
-func (c *controllerClient) Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsUpdate, error) {
+func (c *workerClient) Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsUpdate, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MetricsUpdate)
-	err := c.cc.Invoke(ctx, Controller_Metrics_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, Worker_Metrics_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *controllerClient) SignalReady(ctx context.Context, in *common.InstanceID, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *workerClient) SignalReady(ctx context.Context, in *SignalReadyRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Controller_SignalReady_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, Worker_SignalReady_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// ControllerServer is the server API for Controller service.
-// All implementations must embed UnimplementedControllerServer
+// WorkerServer is the server API for Worker service.
+// All implementations must embed UnimplementedWorkerServer
 // for forward compatibility.
-type ControllerServer interface {
+type WorkerServer interface {
 	// Start a new instance for the given function ID.
 	// The function must be registered in the database.
 	// A response with status code OK means that the instance is
 	// created and ready to serve requests.
-	Start(context.Context, *common.FunctionID) (*StartResponse, error)
+	Start(context.Context, *StartRequest) (*StartResponse, error)
+	// Call an instance of a function with the given function ID.
+	// The instance must be running.
 	Call(context.Context, *common.CallRequest) (*common.CallResponse, error)
-	Stop(context.Context, *common.InstanceID) (*common.InstanceID, error)
+	Stop(context.Context, *StopRequest) (*StopResponse, error)
+	// Returns a stream of status events, like container crashes and timeouts.
 	Status(*StatusRequest, grpc.ServerStreamingServer[StatusUpdate]) error
+	// Returns resource usage metrics.
 	Metrics(context.Context, *MetricsRequest) (*MetricsUpdate, error)
-	SignalReady(context.Context, *common.InstanceID) (*emptypb.Empty, error)
-	mustEmbedUnimplementedControllerServer()
+	// Signal that the instance is ready to serve requests.
+	// Instances must call this endpoint upon startup.
+	SignalReady(context.Context, *SignalReadyRequest) (*emptypb.Empty, error)
+	mustEmbedUnimplementedWorkerServer()
 }
 
-// UnimplementedControllerServer must be embedded to have
+// UnimplementedWorkerServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedControllerServer struct{}
+type UnimplementedWorkerServer struct{}
 
-func (UnimplementedControllerServer) Start(context.Context, *common.FunctionID) (*StartResponse, error) {
+func (UnimplementedWorkerServer) Start(context.Context, *StartRequest) (*StartResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Start not implemented")
 }
-func (UnimplementedControllerServer) Call(context.Context, *common.CallRequest) (*common.CallResponse, error) {
+func (UnimplementedWorkerServer) Call(context.Context, *common.CallRequest) (*common.CallResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Call not implemented")
 }
-func (UnimplementedControllerServer) Stop(context.Context, *common.InstanceID) (*common.InstanceID, error) {
+func (UnimplementedWorkerServer) Stop(context.Context, *StopRequest) (*StopResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Stop not implemented")
 }
-func (UnimplementedControllerServer) Status(*StatusRequest, grpc.ServerStreamingServer[StatusUpdate]) error {
+func (UnimplementedWorkerServer) Status(*StatusRequest, grpc.ServerStreamingServer[StatusUpdate]) error {
 	return status.Errorf(codes.Unimplemented, "method Status not implemented")
 }
-func (UnimplementedControllerServer) Metrics(context.Context, *MetricsRequest) (*MetricsUpdate, error) {
+func (UnimplementedWorkerServer) Metrics(context.Context, *MetricsRequest) (*MetricsUpdate, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Metrics not implemented")
 }
-func (UnimplementedControllerServer) SignalReady(context.Context, *common.InstanceID) (*emptypb.Empty, error) {
+func (UnimplementedWorkerServer) SignalReady(context.Context, *SignalReadyRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SignalReady not implemented")
 }
-func (UnimplementedControllerServer) mustEmbedUnimplementedControllerServer() {}
-func (UnimplementedControllerServer) testEmbeddedByValue()                    {}
+func (UnimplementedWorkerServer) mustEmbedUnimplementedWorkerServer() {}
+func (UnimplementedWorkerServer) testEmbeddedByValue()                {}
 
-// UnsafeControllerServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to ControllerServer will
+// UnsafeWorkerServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to WorkerServer will
 // result in compilation errors.
-type UnsafeControllerServer interface {
-	mustEmbedUnimplementedControllerServer()
+type UnsafeWorkerServer interface {
+	mustEmbedUnimplementedWorkerServer()
 }
 
-func RegisterControllerServer(s grpc.ServiceRegistrar, srv ControllerServer) {
-	// If the following call pancis, it indicates UnimplementedControllerServer was
+func RegisterWorkerServer(s grpc.ServiceRegistrar, srv WorkerServer) {
+	// If the following call pancis, it indicates UnimplementedWorkerServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&Controller_ServiceDesc, srv)
+	s.RegisterService(&Worker_ServiceDesc, srv)
 }
 
-func _Controller_Start_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(common.FunctionID)
+func _Worker_Start_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServer).Start(ctx, in)
+		return srv.(WorkerServer).Start(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Controller_Start_FullMethodName,
+		FullMethod: Worker_Start_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServer).Start(ctx, req.(*common.FunctionID))
+		return srv.(WorkerServer).Start(ctx, req.(*StartRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Controller_Call_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Worker_Call_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(common.CallRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServer).Call(ctx, in)
+		return srv.(WorkerServer).Call(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Controller_Call_FullMethodName,
+		FullMethod: Worker_Call_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServer).Call(ctx, req.(*common.CallRequest))
+		return srv.(WorkerServer).Call(ctx, req.(*common.CallRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Controller_Stop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(common.InstanceID)
+func _Worker_Stop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServer).Stop(ctx, in)
+		return srv.(WorkerServer).Stop(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Controller_Stop_FullMethodName,
+		FullMethod: Worker_Stop_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServer).Stop(ctx, req.(*common.InstanceID))
+		return srv.(WorkerServer).Stop(ctx, req.(*StopRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Controller_Status_Handler(srv interface{}, stream grpc.ServerStream) error {
+func _Worker_Status_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StatusRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(ControllerServer).Status(m, &grpc.GenericServerStream[StatusRequest, StatusUpdate]{ServerStream: stream})
+	return srv.(WorkerServer).Status(m, &grpc.GenericServerStream[StatusRequest, StatusUpdate]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Controller_StatusServer = grpc.ServerStreamingServer[StatusUpdate]
+type Worker_StatusServer = grpc.ServerStreamingServer[StatusUpdate]
 
-func _Controller_Metrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Worker_Metrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MetricsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServer).Metrics(ctx, in)
+		return srv.(WorkerServer).Metrics(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Controller_Metrics_FullMethodName,
+		FullMethod: Worker_Metrics_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServer).Metrics(ctx, req.(*MetricsRequest))
+		return srv.(WorkerServer).Metrics(ctx, req.(*MetricsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Controller_SignalReady_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(common.InstanceID)
+func _Worker_SignalReady_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignalReadyRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControllerServer).SignalReady(ctx, in)
+		return srv.(WorkerServer).SignalReady(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Controller_SignalReady_FullMethodName,
+		FullMethod: Worker_SignalReady_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControllerServer).SignalReady(ctx, req.(*common.InstanceID))
+		return srv.(WorkerServer).SignalReady(ctx, req.(*SignalReadyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// Controller_ServiceDesc is the grpc.ServiceDesc for Controller service.
+// Worker_ServiceDesc is the grpc.ServiceDesc for Worker service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var Controller_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "controller.Controller",
-	HandlerType: (*ControllerServer)(nil),
+var Worker_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "controller.Worker",
+	HandlerType: (*WorkerServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "Start",
-			Handler:    _Controller_Start_Handler,
+			Handler:    _Worker_Start_Handler,
 		},
 		{
 			MethodName: "Call",
-			Handler:    _Controller_Call_Handler,
+			Handler:    _Worker_Call_Handler,
 		},
 		{
 			MethodName: "Stop",
-			Handler:    _Controller_Stop_Handler,
+			Handler:    _Worker_Stop_Handler,
 		},
 		{
 			MethodName: "Metrics",
-			Handler:    _Controller_Metrics_Handler,
+			Handler:    _Worker_Metrics_Handler,
 		},
 		{
 			MethodName: "SignalReady",
-			Handler:    _Controller_SignalReady_Handler,
+			Handler:    _Worker_SignalReady_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Status",
-			Handler:       _Controller_Status_Handler,
+			Handler:       _Worker_Status_Handler,
 			ServerStreams: true,
 		},
 	},

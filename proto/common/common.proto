@@ -1,50 +1,43 @@
 syntax = "proto3";
-
+package common;
 option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/common";
 
-package common;
-
 message Error {
-    string message = 1;
+  string message = 1;
 }
 
-message InstanceID {
-    string id = 1;
-}
-
-message FunctionID {
-    string id = 1;
-}
-
-message ImageTag {
-    string tag = 1;
+message Image {
+  string tag = 1;
 }
 
 message CallRequest {
-    int64 request_id = 1;
-    InstanceID instance_id = 2;
-    bytes data = 3;
-    FunctionID function_id = 4;
+  // The unique identifier of the function to invoke.
+  string function_id = 1;
+  // The data to pass to the function.
+  bytes data = 2;
 }
   
 message CallResponse {
-    int64 request_id = 1;
-    bytes data = 2;
-    Error error = 3;
+  // The result data from the function call.
+  bytes data = 1;
+  // An error that happened in the function (the user code), if any.
+  Error error = 2;
 }
 
 message Config {
-    // container memory limit in bytes
-    int64 memory = 1;
-    CPUConfig cpu = 2;
-    int32 timeout = 3;
-    int32 max_concurrency = 4;
+  // container memory limit in bytes
+  int64 memory = 1;
+  CPUConfig cpu = 2;
+  int32 timeout = 3;
+  int32 max_concurrency = 4;
 }
 
-// Container CPU configuration. If the host has 2 CPUs and the container should only use 1 CPU, set period to 100000 and quota to 50000.
+// Container CPU configuration. 
+// If the host has 2 CPUs and the container should only use 1 CPU,
+// set period to 100000 and quota to 50000.
 message CPUConfig {
-    // CPU CFS (Completely Fair Scheduler) period
-    int64 period = 1;
-    // CPU CFS (Completely Fair Scheduler) quota
-    int64 quota = 2;
+  // CPU CFS (Completely Fair Scheduler) period
+  int64 period = 1;
+  // CPU CFS (Completely Fair Scheduler) quota
+  int64 quota = 2;
 }

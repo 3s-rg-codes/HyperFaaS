@@ -22,117 +22,9 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ScheduleCallRequest represents a request to the Leaf Node Server to schedule a call to a worker with a given function ID.
-type ScheduleCallRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The unique identifier of the function to invoke.
-	FunctionID *common.FunctionID `protobuf:"bytes,1,opt,name=functionID,proto3" json:"functionID,omitempty"`
-	// The data to pass to the function.
-	Data          []byte `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ScheduleCallRequest) Reset() {
-	*x = ScheduleCallRequest{}
-	mi := &file_leaf_leaf_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ScheduleCallRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ScheduleCallRequest) ProtoMessage() {}
-
-func (x *ScheduleCallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leaf_leaf_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ScheduleCallRequest.ProtoReflect.Descriptor instead.
-func (*ScheduleCallRequest) Descriptor() ([]byte, []int) {
-	return file_leaf_leaf_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *ScheduleCallRequest) GetFunctionID() *common.FunctionID {
-	if x != nil {
-		return x.FunctionID
-	}
-	return nil
-}
-
-func (x *ScheduleCallRequest) GetData() []byte {
-	if x != nil {
-		return x.Data
-	}
-	return nil
-}
-
-type ScheduleCallResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The result data from the scheduled function call.
-	Data          []byte        `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
-	Error         *common.Error `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ScheduleCallResponse) Reset() {
-	*x = ScheduleCallResponse{}
-	mi := &file_leaf_leaf_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ScheduleCallResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ScheduleCallResponse) ProtoMessage() {}
-
-func (x *ScheduleCallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_leaf_leaf_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ScheduleCallResponse.ProtoReflect.Descriptor instead.
-func (*ScheduleCallResponse) Descriptor() ([]byte, []int) {
-	return file_leaf_leaf_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *ScheduleCallResponse) GetData() []byte {
-	if x != nil {
-		return x.Data
-	}
-	return nil
-}
-
-func (x *ScheduleCallResponse) GetError() *common.Error {
-	if x != nil {
-		return x.Error
-	}
-	return nil
-}
-
 type CreateFunctionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ImageTag      *common.ImageTag       `protobuf:"bytes,1,opt,name=image_tag,json=imageTag,proto3" json:"image_tag,omitempty"`
+	Image         *common.Image          `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
 	Config        *common.Config         `protobuf:"bytes,2,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -140,7 +32,7 @@ type CreateFunctionRequest struct {
 
 func (x *CreateFunctionRequest) Reset() {
 	*x = CreateFunctionRequest{}
-	mi := &file_leaf_leaf_proto_msgTypes[2]
+	mi := &file_leaf_leaf_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -152,7 +44,7 @@ func (x *CreateFunctionRequest) String() string {
 func (*CreateFunctionRequest) ProtoMessage() {}
 
 func (x *CreateFunctionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leaf_leaf_proto_msgTypes[2]
+	mi := &file_leaf_leaf_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -165,12 +57,12 @@ func (x *CreateFunctionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFunctionRequest.ProtoReflect.Descriptor instead.
 func (*CreateFunctionRequest) Descriptor() ([]byte, []int) {
-	return file_leaf_leaf_proto_rawDescGZIP(), []int{2}
+	return file_leaf_leaf_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *CreateFunctionRequest) GetImageTag() *common.ImageTag {
+func (x *CreateFunctionRequest) GetImage() *common.Image {
 	if x != nil {
-		return x.ImageTag
+		return x.Image
 	}
 	return nil
 }
@@ -184,14 +76,14 @@ func (x *CreateFunctionRequest) GetConfig() *common.Config {
 
 type CreateFunctionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	FunctionID    *common.FunctionID     `protobuf:"bytes,1,opt,name=functionID,proto3" json:"functionID,omitempty"`
+	FunctionId    string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateFunctionResponse) Reset() {
 	*x = CreateFunctionResponse{}
-	mi := &file_leaf_leaf_proto_msgTypes[3]
+	mi := &file_leaf_leaf_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -203,7 +95,7 @@ func (x *CreateFunctionResponse) String() string {
 func (*CreateFunctionResponse) ProtoMessage() {}
 
 func (x *CreateFunctionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_leaf_leaf_proto_msgTypes[3]
+	mi := &file_leaf_leaf_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -216,38 +108,29 @@ func (x *CreateFunctionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFunctionResponse.ProtoReflect.Descriptor instead.
 func (*CreateFunctionResponse) Descriptor() ([]byte, []int) {
-	return file_leaf_leaf_proto_rawDescGZIP(), []int{3}
+	return file_leaf_leaf_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *CreateFunctionResponse) GetFunctionID() *common.FunctionID {
+func (x *CreateFunctionResponse) GetFunctionId() string {
 	if x != nil {
-		return x.FunctionID
+		return x.FunctionId
 	}
-	return nil
+	return ""
 }
 
 var File_leaf_leaf_proto protoreflect.FileDescriptor
 
 const file_leaf_leaf_proto_rawDesc = "" +
 	"\n" +
-	"\x0fleaf/leaf.proto\x12\x04leaf\x1a\x13common/common.proto\"]\n" +
-	"\x13ScheduleCallRequest\x122\n" +
-	"\n" +
-	"functionID\x18\x01 \x01(\v2\x12.common.FunctionIDR\n" +
-	"functionID\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\"O\n" +
-	"\x14ScheduleCallResponse\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\x12#\n" +
-	"\x05error\x18\x02 \x01(\v2\r.common.ErrorR\x05error\"n\n" +
-	"\x15CreateFunctionRequest\x12-\n" +
-	"\timage_tag\x18\x01 \x01(\v2\x10.common.ImageTagR\bimageTag\x12&\n" +
-	"\x06config\x18\x02 \x01(\v2\x0e.common.ConfigR\x06config\"L\n" +
-	"\x16CreateFunctionResponse\x122\n" +
-	"\n" +
-	"functionID\x18\x01 \x01(\v2\x12.common.FunctionIDR\n" +
-	"functionID2\x9a\x01\n" +
-	"\x04Leaf\x12E\n" +
-	"\fScheduleCall\x12\x19.leaf.ScheduleCallRequest\x1a\x1a.leaf.ScheduleCallResponse\x12K\n" +
+	"\x0fleaf/leaf.proto\x12\x04leaf\x1a\x13common/common.proto\"d\n" +
+	"\x15CreateFunctionRequest\x12#\n" +
+	"\x05image\x18\x01 \x01(\v2\r.common.ImageR\x05image\x12&\n" +
+	"\x06config\x18\x02 \x01(\v2\x0e.common.ConfigR\x06config\"9\n" +
+	"\x16CreateFunctionResponse\x12\x1f\n" +
+	"\vfunction_id\x18\x01 \x01(\tR\n" +
+	"functionId2\x8e\x01\n" +
+	"\x04Leaf\x129\n" +
+	"\fScheduleCall\x12\x13.common.CallRequest\x1a\x14.common.CallResponse\x12K\n" +
 	"\x0eCreateFunction\x12\x1b.leaf.CreateFunctionRequest\x1a\x1c.leaf.CreateFunctionResponseB-Z+github.com/3s-rg-codes/HyperFaaS/proto/leafb\x06proto3"
 
 var (
@@ -262,32 +145,27 @@ func file_leaf_leaf_proto_rawDescGZIP() []byte {
 	return file_leaf_leaf_proto_rawDescData
 }
 
-var file_leaf_leaf_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_leaf_leaf_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_leaf_leaf_proto_goTypes = []any{
-	(*ScheduleCallRequest)(nil),    // 0: leaf.ScheduleCallRequest
-	(*ScheduleCallResponse)(nil),   // 1: leaf.ScheduleCallResponse
-	(*CreateFunctionRequest)(nil),  // 2: leaf.CreateFunctionRequest
-	(*CreateFunctionResponse)(nil), // 3: leaf.CreateFunctionResponse
-	(*common.FunctionID)(nil),      // 4: common.FunctionID
-	(*common.Error)(nil),           // 5: common.Error
-	(*common.ImageTag)(nil),        // 6: common.ImageTag
-	(*common.Config)(nil),          // 7: common.Config
+	(*CreateFunctionRequest)(nil),  // 0: leaf.CreateFunctionRequest
+	(*CreateFunctionResponse)(nil), // 1: leaf.CreateFunctionResponse
+	(*common.Image)(nil),           // 2: common.Image
+	(*common.Config)(nil),          // 3: common.Config
+	(*common.CallRequest)(nil),     // 4: common.CallRequest
+	(*common.CallResponse)(nil),    // 5: common.CallResponse
 }
 var file_leaf_leaf_proto_depIdxs = []int32{
-	4, // 0: leaf.ScheduleCallRequest.functionID:type_name -> common.FunctionID
-	5, // 1: leaf.ScheduleCallResponse.error:type_name -> common.Error
-	6, // 2: leaf.CreateFunctionRequest.image_tag:type_name -> common.ImageTag
-	7, // 3: leaf.CreateFunctionRequest.config:type_name -> common.Config
-	4, // 4: leaf.CreateFunctionResponse.functionID:type_name -> common.FunctionID
-	0, // 5: leaf.Leaf.ScheduleCall:input_type -> leaf.ScheduleCallRequest
-	2, // 6: leaf.Leaf.CreateFunction:input_type -> leaf.CreateFunctionRequest
-	1, // 7: leaf.Leaf.ScheduleCall:output_type -> leaf.ScheduleCallResponse
-	3, // 8: leaf.Leaf.CreateFunction:output_type -> leaf.CreateFunctionResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	2, // 0: leaf.CreateFunctionRequest.image:type_name -> common.Image
+	3, // 1: leaf.CreateFunctionRequest.config:type_name -> common.Config
+	4, // 2: leaf.Leaf.ScheduleCall:input_type -> common.CallRequest
+	0, // 3: leaf.Leaf.CreateFunction:input_type -> leaf.CreateFunctionRequest
+	5, // 4: leaf.Leaf.ScheduleCall:output_type -> common.CallResponse
+	1, // 5: leaf.Leaf.CreateFunction:output_type -> leaf.CreateFunctionResponse
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_leaf_leaf_proto_init() }
@@ -301,7 +179,7 @@ func file_leaf_leaf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leaf_leaf_proto_rawDesc), len(file_leaf_leaf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

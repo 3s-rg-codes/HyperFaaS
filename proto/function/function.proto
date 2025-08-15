@@ -1,10 +1,11 @@
 syntax = "proto3";
 
-option go_package = "github.com/3s-rg-codes/hyperfaas";
 package function;
 
 import "common/common.proto";
 
+option go_package = "github.com/3s-rg-codes/hyperfaas";
+
 service FunctionService {
-    rpc Call (common.CallRequest) returns (common.CallResponse);
+  rpc Call (common.CallRequest) returns (common.CallResponse);
 }

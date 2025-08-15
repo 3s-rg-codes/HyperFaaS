@@ -65,116 +65,28 @@ func (x *Error) GetMessage() string {
 	return ""
 }
 
-type InstanceID struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *InstanceID) Reset() {
-	*x = InstanceID{}
-	mi := &file_common_common_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *InstanceID) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*InstanceID) ProtoMessage() {}
-
-func (x *InstanceID) ProtoReflect() protoreflect.Message {
-	mi := &file_common_common_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use InstanceID.ProtoReflect.Descriptor instead.
-func (*InstanceID) Descriptor() ([]byte, []int) {
-	return file_common_common_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *InstanceID) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type FunctionID struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *FunctionID) Reset() {
-	*x = FunctionID{}
-	mi := &file_common_common_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FunctionID) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FunctionID) ProtoMessage() {}
-
-func (x *FunctionID) ProtoReflect() protoreflect.Message {
-	mi := &file_common_common_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FunctionID.ProtoReflect.Descriptor instead.
-func (*FunctionID) Descriptor() ([]byte, []int) {
-	return file_common_common_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *FunctionID) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type ImageTag struct {
+type Image struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Tag           string                 `protobuf:"bytes,1,opt,name=tag,proto3" json:"tag,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ImageTag) Reset() {
-	*x = ImageTag{}
-	mi := &file_common_common_proto_msgTypes[3]
+func (x *Image) Reset() {
+	*x = Image{}
+	mi := &file_common_common_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ImageTag) String() string {
+func (x *Image) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ImageTag) ProtoMessage() {}
+func (*Image) ProtoMessage() {}
 
-func (x *ImageTag) ProtoReflect() protoreflect.Message {
-	mi := &file_common_common_proto_msgTypes[3]
+func (x *Image) ProtoReflect() protoreflect.Message {
+	mi := &file_common_common_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -185,12 +97,12 @@ func (x *ImageTag) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ImageTag.ProtoReflect.Descriptor instead.
-func (*ImageTag) Descriptor() ([]byte, []int) {
-	return file_common_common_proto_rawDescGZIP(), []int{3}
+// Deprecated: Use Image.ProtoReflect.Descriptor instead.
+func (*Image) Descriptor() ([]byte, []int) {
+	return file_common_common_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ImageTag) GetTag() string {
+func (x *Image) GetTag() string {
 	if x != nil {
 		return x.Tag
 	}
@@ -198,18 +110,18 @@ func (x *ImageTag) GetTag() string {
 }
 
 type CallRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     int64                  `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	InstanceId    *InstanceID            `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
-	FunctionId    *FunctionID            `protobuf:"bytes,4,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The unique identifier of the function to invoke.
+	FunctionId string `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	// The data to pass to the function.
+	Data          []byte `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CallRequest) Reset() {
 	*x = CallRequest{}
-	mi := &file_common_common_proto_msgTypes[4]
+	mi := &file_common_common_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -221,7 +133,7 @@ func (x *CallRequest) String() string {
 func (*CallRequest) ProtoMessage() {}
 
 func (x *CallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_common_common_proto_msgTypes[4]
+	mi := &file_common_common_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -234,21 +146,14 @@ func (x *CallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallRequest.ProtoReflect.Descriptor instead.
 func (*CallRequest) Descriptor() ([]byte, []int) {
-	return file_common_common_proto_rawDescGZIP(), []int{4}
+	return file_common_common_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *CallRequest) GetRequestId() int64 {
+func (x *CallRequest) GetFunctionId() string {
 	if x != nil {
-		return x.RequestId
+		return x.FunctionId
 	}
-	return 0
-}
-
-func (x *CallRequest) GetInstanceId() *InstanceID {
-	if x != nil {
-		return x.InstanceId
-	}
-	return nil
+	return ""
 }
 
 func (x *CallRequest) GetData() []byte {
@@ -258,25 +163,19 @@ func (x *CallRequest) GetData() []byte {
 	return nil
 }
 
-func (x *CallRequest) GetFunctionId() *FunctionID {
-	if x != nil {
-		return x.FunctionId
-	}
-	return nil
-}
-
 type CallResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     int64                  `protobuf:"varint,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
-	Error         *Error                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The result data from the function call.
+	Data []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	// An error that happened in the function (the user code), if any.
+	Error         *Error `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CallResponse) Reset() {
 	*x = CallResponse{}
-	mi := &file_common_common_proto_msgTypes[5]
+	mi := &file_common_common_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -288,7 +187,7 @@ func (x *CallResponse) String() string {
 func (*CallResponse) ProtoMessage() {}
 
 func (x *CallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_common_common_proto_msgTypes[5]
+	mi := &file_common_common_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -301,14 +200,7 @@ func (x *CallResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallResponse.ProtoReflect.Descriptor instead.
 func (*CallResponse) Descriptor() ([]byte, []int) {
-	return file_common_common_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *CallResponse) GetRequestId() int64 {
-	if x != nil {
-		return x.RequestId
-	}
-	return 0
+	return file_common_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CallResponse) GetData() []byte {
@@ -338,7 +230,7 @@ type Config struct {
 
 func (x *Config) Reset() {
 	*x = Config{}
-	mi := &file_common_common_proto_msgTypes[6]
+	mi := &file_common_common_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -350,7 +242,7 @@ func (x *Config) String() string {
 func (*Config) ProtoMessage() {}
 
 func (x *Config) ProtoReflect() protoreflect.Message {
-	mi := &file_common_common_proto_msgTypes[6]
+	mi := &file_common_common_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -363,7 +255,7 @@ func (x *Config) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Config.ProtoReflect.Descriptor instead.
 func (*Config) Descriptor() ([]byte, []int) {
-	return file_common_common_proto_rawDescGZIP(), []int{6}
+	return file_common_common_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Config) GetMemory() int64 {
@@ -394,7 +286,9 @@ func (x *Config) GetMaxConcurrency() int32 {
 	return 0
 }
 
-// Container CPU configuration. If the host has 2 CPUs and the container should only use 1 CPU, set period to 100000 and quota to 50000.
+// Container CPU configuration.
+// If the host has 2 CPUs and the container should only use 1 CPU,
+// set period to 100000 and quota to 50000.
 type CPUConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// CPU CFS (Completely Fair Scheduler) period
@@ -407,7 +301,7 @@ type CPUConfig struct {
 
 func (x *CPUConfig) Reset() {
 	*x = CPUConfig{}
-	mi := &file_common_common_proto_msgTypes[7]
+	mi := &file_common_common_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -419,7 +313,7 @@ func (x *CPUConfig) String() string {
 func (*CPUConfig) ProtoMessage() {}
 
 func (x *CPUConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_common_common_proto_msgTypes[7]
+	mi := &file_common_common_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -432,7 +326,7 @@ func (x *CPUConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CPUConfig.ProtoReflect.Descriptor instead.
 func (*CPUConfig) Descriptor() ([]byte, []int) {
-	return file_common_common_proto_rawDescGZIP(), []int{7}
+	return file_common_common_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CPUConfig) GetPeriod() int64 {
@@ -455,28 +349,16 @@ const file_common_common_proto_rawDesc = "" +
 	"\n" +
 	"\x13common/common.proto\x12\x06common\"!\n" +
 	"\x05Error\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage\"\x1c\n" +
-	"\n" +
-	"InstanceID\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x1c\n" +
-	"\n" +
-	"FunctionID\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x1c\n" +
-	"\bImageTag\x12\x10\n" +
-	"\x03tag\x18\x01 \x01(\tR\x03tag\"\xaa\x01\n" +
-	"\vCallRequest\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x01 \x01(\x03R\trequestId\x123\n" +
-	"\vinstance_id\x18\x02 \x01(\v2\x12.common.InstanceIDR\n" +
-	"instanceId\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\fR\x04data\x123\n" +
-	"\vfunction_id\x18\x04 \x01(\v2\x12.common.FunctionIDR\n" +
-	"functionId\"f\n" +
-	"\fCallResponse\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x01 \x01(\x03R\trequestId\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\x12#\n" +
-	"\x05error\x18\x03 \x01(\v2\r.common.ErrorR\x05error\"\x88\x01\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\"\x19\n" +
+	"\x05Image\x12\x10\n" +
+	"\x03tag\x18\x01 \x01(\tR\x03tag\"B\n" +
+	"\vCallRequest\x12\x1f\n" +
+	"\vfunction_id\x18\x01 \x01(\tR\n" +
+	"functionId\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"G\n" +
+	"\fCallResponse\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x12#\n" +
+	"\x05error\x18\x02 \x01(\v2\r.common.ErrorR\x05error\"\x88\x01\n" +
 	"\x06Config\x12\x16\n" +
 	"\x06memory\x18\x01 \x01(\x03R\x06memory\x12#\n" +
 	"\x03cpu\x18\x02 \x01(\v2\x11.common.CPUConfigR\x03cpu\x12\x18\n" +
@@ -498,27 +380,23 @@ func file_common_common_proto_rawDescGZIP() []byte {
 	return file_common_common_proto_rawDescData
 }
 
-var file_common_common_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_common_common_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_common_common_proto_goTypes = []any{
 	(*Error)(nil),        // 0: common.Error
-	(*InstanceID)(nil),   // 1: common.InstanceID
-	(*FunctionID)(nil),   // 2: common.FunctionID
-	(*ImageTag)(nil),     // 3: common.ImageTag
-	(*CallRequest)(nil),  // 4: common.CallRequest
-	(*CallResponse)(nil), // 5: common.CallResponse
-	(*Config)(nil),       // 6: common.Config
-	(*CPUConfig)(nil),    // 7: common.CPUConfig
+	(*Image)(nil),        // 1: common.Image
+	(*CallRequest)(nil),  // 2: common.CallRequest
+	(*CallResponse)(nil), // 3: common.CallResponse
+	(*Config)(nil),       // 4: common.Config
+	(*CPUConfig)(nil),    // 5: common.CPUConfig
 }
 var file_common_common_proto_depIdxs = []int32{
-	1, // 0: common.CallRequest.instance_id:type_name -> common.InstanceID
-	2, // 1: common.CallRequest.function_id:type_name -> common.FunctionID
-	0, // 2: common.CallResponse.error:type_name -> common.Error
-	7, // 3: common.Config.cpu:type_name -> common.CPUConfig
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	0, // 0: common.CallResponse.error:type_name -> common.Error
+	5, // 1: common.Config.cpu:type_name -> common.CPUConfig
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_common_common_proto_init() }
@@ -532,7 +410,7 @@ func file_common_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_common_common_proto_rawDesc), len(file_common_common_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
