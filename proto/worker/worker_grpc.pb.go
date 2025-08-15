@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v6.31.1
-// source: controller/controller.proto
+// source: worker/worker.proto
 
-package controller
+package worker
 
 import (
 	context "context"
@@ -21,12 +21,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Worker_Start_FullMethodName       = "/controller.Worker/Start"
-	Worker_Call_FullMethodName        = "/controller.Worker/Call"
-	Worker_Stop_FullMethodName        = "/controller.Worker/Stop"
-	Worker_Status_FullMethodName      = "/controller.Worker/Status"
-	Worker_Metrics_FullMethodName     = "/controller.Worker/Metrics"
-	Worker_SignalReady_FullMethodName = "/controller.Worker/SignalReady"
+	Worker_Start_FullMethodName       = "/worker.Worker/Start"
+	Worker_Call_FullMethodName        = "/worker.Worker/Call"
+	Worker_Stop_FullMethodName        = "/worker.Worker/Stop"
+	Worker_Status_FullMethodName      = "/worker.Worker/Status"
+	Worker_Metrics_FullMethodName     = "/worker.Worker/Metrics"
+	Worker_SignalReady_FullMethodName = "/worker.Worker/SignalReady"
 )
 
 // WorkerClient is the client API for Worker service.
@@ -302,7 +302,7 @@ func _Worker_SignalReady_Handler(srv interface{}, ctx context.Context, dec func(
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Worker_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "controller.Worker",
+	ServiceName: "worker.Worker",
 	HandlerType: (*WorkerServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -333,5 +333,5 @@ var Worker_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "controller/controller.proto",
+	Metadata: "worker/worker.proto",
 }

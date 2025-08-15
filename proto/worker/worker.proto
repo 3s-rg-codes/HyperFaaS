@@ -1,15 +1,15 @@
 syntax = "proto3";
 
-package controller;
+package worker;
 
 import "common/common.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/controller";
+option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/worker";
 
 enum VirtualizationType {
-  VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED = 0;
+  CONTAINER = 0;
 }
 
 enum Event {

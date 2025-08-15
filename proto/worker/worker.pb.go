@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v6.31.1
-// source: controller/controller.proto
+// source: worker/worker.proto
 
-package controller
+package worker
 
 import (
 	common "github.com/3s-rg-codes/HyperFaaS/proto/common"
@@ -27,16 +27,16 @@ const (
 type VirtualizationType int32
 
 const (
-	VirtualizationType_VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED VirtualizationType = 0
+	VirtualizationType_CONTAINER VirtualizationType = 0
 )
 
 // Enum value maps for VirtualizationType.
 var (
 	VirtualizationType_name = map[int32]string{
-		0: "VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED",
+		0: "CONTAINER",
 	}
 	VirtualizationType_value = map[string]int32{
-		"VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED": 0,
+		"CONTAINER": 0,
 	}
 )
 
@@ -51,11 +51,11 @@ func (x VirtualizationType) String() string {
 }
 
 func (VirtualizationType) Descriptor() protoreflect.EnumDescriptor {
-	return file_controller_controller_proto_enumTypes[0].Descriptor()
+	return file_worker_worker_proto_enumTypes[0].Descriptor()
 }
 
 func (VirtualizationType) Type() protoreflect.EnumType {
-	return &file_controller_controller_proto_enumTypes[0]
+	return &file_worker_worker_proto_enumTypes[0]
 }
 
 func (x VirtualizationType) Number() protoreflect.EnumNumber {
@@ -64,7 +64,7 @@ func (x VirtualizationType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VirtualizationType.Descriptor instead.
 func (VirtualizationType) EnumDescriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{0}
+	return file_worker_worker_proto_rawDescGZIP(), []int{0}
 }
 
 type Event int32
@@ -112,11 +112,11 @@ func (x Event) String() string {
 }
 
 func (Event) Descriptor() protoreflect.EnumDescriptor {
-	return file_controller_controller_proto_enumTypes[1].Descriptor()
+	return file_worker_worker_proto_enumTypes[1].Descriptor()
 }
 
 func (Event) Type() protoreflect.EnumType {
-	return &file_controller_controller_proto_enumTypes[1]
+	return &file_worker_worker_proto_enumTypes[1]
 }
 
 func (x Event) Number() protoreflect.EnumNumber {
@@ -125,7 +125,7 @@ func (x Event) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Event.Descriptor instead.
 func (Event) EnumDescriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{1}
+	return file_worker_worker_proto_rawDescGZIP(), []int{1}
 }
 
 type Status int32
@@ -158,11 +158,11 @@ func (x Status) String() string {
 }
 
 func (Status) Descriptor() protoreflect.EnumDescriptor {
-	return file_controller_controller_proto_enumTypes[2].Descriptor()
+	return file_worker_worker_proto_enumTypes[2].Descriptor()
 }
 
 func (Status) Type() protoreflect.EnumType {
-	return &file_controller_controller_proto_enumTypes[2]
+	return &file_worker_worker_proto_enumTypes[2]
 }
 
 func (x Status) Number() protoreflect.EnumNumber {
@@ -171,15 +171,15 @@ func (x Status) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Status.Descriptor instead.
 func (Status) EnumDescriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{2}
+	return file_worker_worker_proto_rawDescGZIP(), []int{2}
 }
 
 type StatusUpdate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	Type          VirtualizationType     `protobuf:"varint,2,opt,name=type,proto3,enum=controller.VirtualizationType" json:"type,omitempty"`
-	Event         Event                  `protobuf:"varint,3,opt,name=event,proto3,enum=controller.Event" json:"event,omitempty"`
-	Status        Status                 `protobuf:"varint,4,opt,name=status,proto3,enum=controller.Status" json:"status,omitempty"`
+	Type          VirtualizationType     `protobuf:"varint,2,opt,name=type,proto3,enum=worker.VirtualizationType" json:"type,omitempty"`
+	Event         Event                  `protobuf:"varint,3,opt,name=event,proto3,enum=worker.Event" json:"event,omitempty"`
+	Status        Status                 `protobuf:"varint,4,opt,name=status,proto3,enum=worker.Status" json:"status,omitempty"`
 	FunctionId    string                 `protobuf:"bytes,5,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -188,7 +188,7 @@ type StatusUpdate struct {
 
 func (x *StatusUpdate) Reset() {
 	*x = StatusUpdate{}
-	mi := &file_controller_controller_proto_msgTypes[0]
+	mi := &file_worker_worker_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -200,7 +200,7 @@ func (x *StatusUpdate) String() string {
 func (*StatusUpdate) ProtoMessage() {}
 
 func (x *StatusUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[0]
+	mi := &file_worker_worker_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -213,7 +213,7 @@ func (x *StatusUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusUpdate.ProtoReflect.Descriptor instead.
 func (*StatusUpdate) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{0}
+	return file_worker_worker_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *StatusUpdate) GetInstanceId() string {
@@ -227,7 +227,7 @@ func (x *StatusUpdate) GetType() VirtualizationType {
 	if x != nil {
 		return x.Type
 	}
-	return VirtualizationType_VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED
+	return VirtualizationType_CONTAINER
 }
 
 func (x *StatusUpdate) GetEvent() Event {
@@ -267,7 +267,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_controller_controller_proto_msgTypes[1]
+	mi := &file_worker_worker_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -279,7 +279,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[1]
+	mi := &file_worker_worker_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -292,7 +292,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{1}
+	return file_worker_worker_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *StatusRequest) GetNodeId() string {
@@ -311,7 +311,7 @@ type MetricsRequest struct {
 
 func (x *MetricsRequest) Reset() {
 	*x = MetricsRequest{}
-	mi := &file_controller_controller_proto_msgTypes[2]
+	mi := &file_worker_worker_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -323,7 +323,7 @@ func (x *MetricsRequest) String() string {
 func (*MetricsRequest) ProtoMessage() {}
 
 func (x *MetricsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[2]
+	mi := &file_worker_worker_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -336,7 +336,7 @@ func (x *MetricsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsRequest.ProtoReflect.Descriptor instead.
 func (*MetricsRequest) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{2}
+	return file_worker_worker_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *MetricsRequest) GetNodeId() string {
@@ -356,7 +356,7 @@ type MetricsUpdate struct {
 
 func (x *MetricsUpdate) Reset() {
 	*x = MetricsUpdate{}
-	mi := &file_controller_controller_proto_msgTypes[3]
+	mi := &file_worker_worker_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -368,7 +368,7 @@ func (x *MetricsUpdate) String() string {
 func (*MetricsUpdate) ProtoMessage() {}
 
 func (x *MetricsUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[3]
+	mi := &file_worker_worker_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -381,7 +381,7 @@ func (x *MetricsUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsUpdate.ProtoReflect.Descriptor instead.
 func (*MetricsUpdate) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{3}
+	return file_worker_worker_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *MetricsUpdate) GetUsedRamPercent() float64 {
@@ -409,7 +409,7 @@ type StartResponse struct {
 
 func (x *StartResponse) Reset() {
 	*x = StartResponse{}
-	mi := &file_controller_controller_proto_msgTypes[4]
+	mi := &file_worker_worker_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -421,7 +421,7 @@ func (x *StartResponse) String() string {
 func (*StartResponse) ProtoMessage() {}
 
 func (x *StartResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[4]
+	mi := &file_worker_worker_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -434,7 +434,7 @@ func (x *StartResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartResponse.ProtoReflect.Descriptor instead.
 func (*StartResponse) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{4}
+	return file_worker_worker_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *StartResponse) GetInstanceId() string {
@@ -467,7 +467,7 @@ type StartRequest struct {
 
 func (x *StartRequest) Reset() {
 	*x = StartRequest{}
-	mi := &file_controller_controller_proto_msgTypes[5]
+	mi := &file_worker_worker_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -479,7 +479,7 @@ func (x *StartRequest) String() string {
 func (*StartRequest) ProtoMessage() {}
 
 func (x *StartRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[5]
+	mi := &file_worker_worker_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -492,7 +492,7 @@ func (x *StartRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRequest.ProtoReflect.Descriptor instead.
 func (*StartRequest) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{5}
+	return file_worker_worker_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StartRequest) GetFunctionId() string {
@@ -511,7 +511,7 @@ type StopRequest struct {
 
 func (x *StopRequest) Reset() {
 	*x = StopRequest{}
-	mi := &file_controller_controller_proto_msgTypes[6]
+	mi := &file_worker_worker_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -523,7 +523,7 @@ func (x *StopRequest) String() string {
 func (*StopRequest) ProtoMessage() {}
 
 func (x *StopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[6]
+	mi := &file_worker_worker_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -536,7 +536,7 @@ func (x *StopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
 func (*StopRequest) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{6}
+	return file_worker_worker_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *StopRequest) GetInstanceId() string {
@@ -555,7 +555,7 @@ type StopResponse struct {
 
 func (x *StopResponse) Reset() {
 	*x = StopResponse{}
-	mi := &file_controller_controller_proto_msgTypes[7]
+	mi := &file_worker_worker_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -567,7 +567,7 @@ func (x *StopResponse) String() string {
 func (*StopResponse) ProtoMessage() {}
 
 func (x *StopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[7]
+	mi := &file_worker_worker_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -580,7 +580,7 @@ func (x *StopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
 func (*StopResponse) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{7}
+	return file_worker_worker_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *StopResponse) GetInstanceId() string {
@@ -599,7 +599,7 @@ type SignalReadyRequest struct {
 
 func (x *SignalReadyRequest) Reset() {
 	*x = SignalReadyRequest{}
-	mi := &file_controller_controller_proto_msgTypes[8]
+	mi := &file_worker_worker_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -611,7 +611,7 @@ func (x *SignalReadyRequest) String() string {
 func (*SignalReadyRequest) ProtoMessage() {}
 
 func (x *SignalReadyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controller_controller_proto_msgTypes[8]
+	mi := &file_worker_worker_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -624,7 +624,7 @@ func (x *SignalReadyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignalReadyRequest.ProtoReflect.Descriptor instead.
 func (*SignalReadyRequest) Descriptor() ([]byte, []int) {
-	return file_controller_controller_proto_rawDescGZIP(), []int{8}
+	return file_worker_worker_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SignalReadyRequest) GetInstanceId() string {
@@ -634,18 +634,17 @@ func (x *SignalReadyRequest) GetInstanceId() string {
 	return ""
 }
 
-var File_controller_controller_proto protoreflect.FileDescriptor
+var File_worker_worker_proto protoreflect.FileDescriptor
 
-const file_controller_controller_proto_rawDesc = "" +
+const file_worker_worker_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcontroller/controller.proto\x12\n" +
-	"controller\x1a\x13common/common.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x93\x02\n" +
+	"\x13worker/worker.proto\x12\x06worker\x1a\x13common/common.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x87\x02\n" +
 	"\fStatusUpdate\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
-	"instanceId\x122\n" +
-	"\x04type\x18\x02 \x01(\x0e2\x1e.controller.VirtualizationTypeR\x04type\x12'\n" +
-	"\x05event\x18\x03 \x01(\x0e2\x11.controller.EventR\x05event\x12*\n" +
-	"\x06status\x18\x04 \x01(\x0e2\x12.controller.StatusR\x06status\x12\x1f\n" +
+	"instanceId\x12.\n" +
+	"\x04type\x18\x02 \x01(\x0e2\x1a.worker.VirtualizationTypeR\x04type\x12#\n" +
+	"\x05event\x18\x03 \x01(\x0e2\r.worker.EventR\x05event\x12&\n" +
+	"\x06status\x18\x04 \x01(\x0e2\x0e.worker.StatusR\x06status\x12\x1f\n" +
 	"\vfunction_id\x18\x05 \x01(\tR\n" +
 	"functionId\x128\n" +
 	"\ttimestamp\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"(\n" +
@@ -673,9 +672,9 @@ const file_controller_controller_proto_rawDesc = "" +
 	"instanceId\"5\n" +
 	"\x12SignalReadyRequest\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
-	"instanceId*H\n" +
-	"\x12VirtualizationType\x122\n" +
-	".VIRTUALIZATION_TYPE_TYPE_CONTAINER_UNSPECIFIED\x10\x00*\x8e\x01\n" +
+	"instanceId*#\n" +
+	"\x12VirtualizationType\x12\r\n" +
+	"\tCONTAINER\x10\x00*\x8e\x01\n" +
 	"\x05Event\x12\x1e\n" +
 	"\x1aEVENT_RESPONSE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
@@ -689,64 +688,64 @@ const file_controller_controller_proto_rawDesc = "" +
 	"\rEVENT_RUNNING\x10\x06*;\n" +
 	"\x06Status\x12\x1e\n" +
 	"\x1aSTATUS_SUCCESS_UNSPECIFIED\x10\x00\x12\x11\n" +
-	"\rSTATUS_FAILED\x10\x012\xfe\x02\n" +
-	"\x06Worker\x12<\n" +
-	"\x05Start\x12\x18.controller.StartRequest\x1a\x19.controller.StartResponse\x121\n" +
-	"\x04Call\x12\x13.common.CallRequest\x1a\x14.common.CallResponse\x129\n" +
-	"\x04Stop\x12\x17.controller.StopRequest\x1a\x18.controller.StopResponse\x12?\n" +
-	"\x06Status\x12\x19.controller.StatusRequest\x1a\x18.controller.StatusUpdate0\x01\x12@\n" +
-	"\aMetrics\x12\x1a.controller.MetricsRequest\x1a\x19.controller.MetricsUpdate\x12E\n" +
-	"\vSignalReady\x12\x1e.controller.SignalReadyRequest\x1a\x16.google.protobuf.EmptyB3Z1github.com/3s-rg-codes/HyperFaaS/proto/controllerb\x06proto3"
+	"\rSTATUS_FAILED\x10\x012\xda\x02\n" +
+	"\x06Worker\x124\n" +
+	"\x05Start\x12\x14.worker.StartRequest\x1a\x15.worker.StartResponse\x121\n" +
+	"\x04Call\x12\x13.common.CallRequest\x1a\x14.common.CallResponse\x121\n" +
+	"\x04Stop\x12\x13.worker.StopRequest\x1a\x14.worker.StopResponse\x127\n" +
+	"\x06Status\x12\x15.worker.StatusRequest\x1a\x14.worker.StatusUpdate0\x01\x128\n" +
+	"\aMetrics\x12\x16.worker.MetricsRequest\x1a\x15.worker.MetricsUpdate\x12A\n" +
+	"\vSignalReady\x12\x1a.worker.SignalReadyRequest\x1a\x16.google.protobuf.EmptyB/Z-github.com/3s-rg-codes/HyperFaaS/proto/workerb\x06proto3"
 
 var (
-	file_controller_controller_proto_rawDescOnce sync.Once
-	file_controller_controller_proto_rawDescData []byte
+	file_worker_worker_proto_rawDescOnce sync.Once
+	file_worker_worker_proto_rawDescData []byte
 )
 
-func file_controller_controller_proto_rawDescGZIP() []byte {
-	file_controller_controller_proto_rawDescOnce.Do(func() {
-		file_controller_controller_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_controller_controller_proto_rawDesc), len(file_controller_controller_proto_rawDesc)))
+func file_worker_worker_proto_rawDescGZIP() []byte {
+	file_worker_worker_proto_rawDescOnce.Do(func() {
+		file_worker_worker_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_worker_worker_proto_rawDesc), len(file_worker_worker_proto_rawDesc)))
 	})
-	return file_controller_controller_proto_rawDescData
+	return file_worker_worker_proto_rawDescData
 }
 
-var file_controller_controller_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_controller_controller_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
-var file_controller_controller_proto_goTypes = []any{
-	(VirtualizationType)(0),       // 0: controller.VirtualizationType
-	(Event)(0),                    // 1: controller.Event
-	(Status)(0),                   // 2: controller.Status
-	(*StatusUpdate)(nil),          // 3: controller.StatusUpdate
-	(*StatusRequest)(nil),         // 4: controller.StatusRequest
-	(*MetricsRequest)(nil),        // 5: controller.MetricsRequest
-	(*MetricsUpdate)(nil),         // 6: controller.MetricsUpdate
-	(*StartResponse)(nil),         // 7: controller.StartResponse
-	(*StartRequest)(nil),          // 8: controller.StartRequest
-	(*StopRequest)(nil),           // 9: controller.StopRequest
-	(*StopResponse)(nil),          // 10: controller.StopResponse
-	(*SignalReadyRequest)(nil),    // 11: controller.SignalReadyRequest
+var file_worker_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_worker_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_worker_worker_proto_goTypes = []any{
+	(VirtualizationType)(0),       // 0: worker.VirtualizationType
+	(Event)(0),                    // 1: worker.Event
+	(Status)(0),                   // 2: worker.Status
+	(*StatusUpdate)(nil),          // 3: worker.StatusUpdate
+	(*StatusRequest)(nil),         // 4: worker.StatusRequest
+	(*MetricsRequest)(nil),        // 5: worker.MetricsRequest
+	(*MetricsUpdate)(nil),         // 6: worker.MetricsUpdate
+	(*StartResponse)(nil),         // 7: worker.StartResponse
+	(*StartRequest)(nil),          // 8: worker.StartRequest
+	(*StopRequest)(nil),           // 9: worker.StopRequest
+	(*StopResponse)(nil),          // 10: worker.StopResponse
+	(*SignalReadyRequest)(nil),    // 11: worker.SignalReadyRequest
 	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 	(*common.CallRequest)(nil),    // 13: common.CallRequest
 	(*common.CallResponse)(nil),   // 14: common.CallResponse
 	(*emptypb.Empty)(nil),         // 15: google.protobuf.Empty
 }
-var file_controller_controller_proto_depIdxs = []int32{
-	0,  // 0: controller.StatusUpdate.type:type_name -> controller.VirtualizationType
-	1,  // 1: controller.StatusUpdate.event:type_name -> controller.Event
-	2,  // 2: controller.StatusUpdate.status:type_name -> controller.Status
-	12, // 3: controller.StatusUpdate.timestamp:type_name -> google.protobuf.Timestamp
-	8,  // 4: controller.Worker.Start:input_type -> controller.StartRequest
-	13, // 5: controller.Worker.Call:input_type -> common.CallRequest
-	9,  // 6: controller.Worker.Stop:input_type -> controller.StopRequest
-	4,  // 7: controller.Worker.Status:input_type -> controller.StatusRequest
-	5,  // 8: controller.Worker.Metrics:input_type -> controller.MetricsRequest
-	11, // 9: controller.Worker.SignalReady:input_type -> controller.SignalReadyRequest
-	7,  // 10: controller.Worker.Start:output_type -> controller.StartResponse
-	14, // 11: controller.Worker.Call:output_type -> common.CallResponse
-	10, // 12: controller.Worker.Stop:output_type -> controller.StopResponse
-	3,  // 13: controller.Worker.Status:output_type -> controller.StatusUpdate
-	6,  // 14: controller.Worker.Metrics:output_type -> controller.MetricsUpdate
-	15, // 15: controller.Worker.SignalReady:output_type -> google.protobuf.Empty
+var file_worker_worker_proto_depIdxs = []int32{
+	0,  // 0: worker.StatusUpdate.type:type_name -> worker.VirtualizationType
+	1,  // 1: worker.StatusUpdate.event:type_name -> worker.Event
+	2,  // 2: worker.StatusUpdate.status:type_name -> worker.Status
+	12, // 3: worker.StatusUpdate.timestamp:type_name -> google.protobuf.Timestamp
+	8,  // 4: worker.Worker.Start:input_type -> worker.StartRequest
+	13, // 5: worker.Worker.Call:input_type -> common.CallRequest
+	9,  // 6: worker.Worker.Stop:input_type -> worker.StopRequest
+	4,  // 7: worker.Worker.Status:input_type -> worker.StatusRequest
+	5,  // 8: worker.Worker.Metrics:input_type -> worker.MetricsRequest
+	11, // 9: worker.Worker.SignalReady:input_type -> worker.SignalReadyRequest
+	7,  // 10: worker.Worker.Start:output_type -> worker.StartResponse
+	14, // 11: worker.Worker.Call:output_type -> common.CallResponse
+	10, // 12: worker.Worker.Stop:output_type -> worker.StopResponse
+	3,  // 13: worker.Worker.Status:output_type -> worker.StatusUpdate
+	6,  // 14: worker.Worker.Metrics:output_type -> worker.MetricsUpdate
+	15, // 15: worker.Worker.SignalReady:output_type -> google.protobuf.Empty
 	10, // [10:16] is the sub-list for method output_type
 	4,  // [4:10] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
@@ -754,27 +753,27 @@ var file_controller_controller_proto_depIdxs = []int32{
 	0,  // [0:4] is the sub-list for field type_name
 }
 
-func init() { file_controller_controller_proto_init() }
-func file_controller_controller_proto_init() {
-	if File_controller_controller_proto != nil {
+func init() { file_worker_worker_proto_init() }
+func file_worker_worker_proto_init() {
+	if File_worker_worker_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_controller_controller_proto_rawDesc), len(file_controller_controller_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_worker_worker_proto_rawDesc), len(file_worker_worker_proto_rawDesc)),
 			NumEnums:      3,
 			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_controller_controller_proto_goTypes,
-		DependencyIndexes: file_controller_controller_proto_depIdxs,
-		EnumInfos:         file_controller_controller_proto_enumTypes,
-		MessageInfos:      file_controller_controller_proto_msgTypes,
+		GoTypes:           file_worker_worker_proto_goTypes,
+		DependencyIndexes: file_worker_worker_proto_depIdxs,
+		EnumInfos:         file_worker_worker_proto_enumTypes,
+		MessageInfos:      file_worker_worker_proto_msgTypes,
 	}.Build()
-	File_controller_controller_proto = out.File
-	file_controller_controller_proto_goTypes = nil
-	file_controller_controller_proto_depIdxs = nil
+	File_worker_worker_proto = out.File
+	file_worker_worker_proto_goTypes = nil
+	file_worker_worker_proto_depIdxs = nil
 }
