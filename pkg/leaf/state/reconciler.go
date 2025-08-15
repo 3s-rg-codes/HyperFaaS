@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	controllerpb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -45,7 +45,7 @@ func (s *SmallState) RunReconciler(ctx context.Context) {
 	}
 }
 
-func (s *SmallState) getStatusUpdateStream(ctx context.Context, workerID WorkerID) (controllerpb.Controller_StatusClient, *grpc.ClientConn, error) {
+func (s *SmallState) getStatusUpdateStream(ctx context.Context, workerID WorkerID) (workerPB.Worker_StatusClient, *grpc.ClientConn, error) {
 
 	conn, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -53,9 +53,9 @@ func (s *SmallState) getStatusUpdateStream(ctx context.Context, workerID WorkerI
 		return nil, nil, err
 	}
 
-	client := controllerpb.NewControllerClient(conn)
+	client := workerPB.NewWorkerClient(conn)
 
-	statusUpdates, err := client.Status(ctx, &controllerpb.StatusRequest{NodeID: leafNodeID})
+	statusUpdates, err := client.Status(ctx, &workerPB.StatusRequest{NodeId: leafNodeID})
 	if err != nil {
 		s.logger.Error("Failed to get status updates", "error", err)
 		return nil, nil, err
@@ -88,16 +88,16 @@ func (s *SmallState) ListenToWorkerStatusUpdates(ctx context.Context, workerID W
 			}
 
 			switch update.Type {
-			case controllerpb.VirtualizationType_TYPE_CONTAINER:
+			case workerPB.VirtualizationType_CONTAINER:
 				switch update.Event {
-				case controllerpb.Event_EVENT_TIMEOUT:
-					s.handleContainerTimeout(workerID, FunctionID(update.FunctionId.Id), InstanceID(update.InstanceId.Id))
-				case controllerpb.Event_EVENT_DOWN:
-					s.handleContainerDown(workerID, FunctionID(update.FunctionId.Id), InstanceID(update.InstanceId.Id))
-				case controllerpb.Event_EVENT_START:
-				case controllerpb.Event_EVENT_STOP:
-				case controllerpb.Event_EVENT_RUNNING:
-				case controllerpb.Event_EVENT_CALL:
+				case workerPB.Event_EVENT_TIMEOUT:
+					s.handleContainerTimeout(workerID, FunctionID(update.FunctionId), InstanceID(update.InstanceId))
+				case workerPB.Event_EVENT_DOWN:
+					s.handleContainerDown(workerID, FunctionID(update.FunctionId), InstanceID(update.InstanceId))
+				case workerPB.Event_EVENT_START:
+				case workerPB.Event_EVENT_STOP:
+				case workerPB.Event_EVENT_RUNNING:
+				case workerPB.Event_EVENT_CALL:
 				default:
 					//r.logger.Warn("Received status update of unknown event", "event", update.Event)
 				}

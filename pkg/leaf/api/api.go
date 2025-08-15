@@ -13,8 +13,8 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	controllerPB "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/leaf"
+	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -43,28 +43,28 @@ type workerClients struct {
 
 type workerClient struct {
 	conn   *grpc.ClientConn
-	client controllerPB.ControllerClient
+	client workerPB.WorkerClient
 }
 
 // CreateFunction should only create the function, e.g. save its Config and image tag in local cache
 func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctionRequest) (*leaf.CreateFunctionResponse, error) {
 
-	functionID, err := s.database.Put(req.ImageTag, req.Config)
+	functionID, err := s.database.Put(req.Image, req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to store function in database: %w", err)
 	}
 
-	s.functionIdCache[functionID.Id] = kv.FunctionData{
-		Config:   req.Config, //Also needed here for scheduling decisions
-		ImageTag: req.ImageTag,
+	s.functionIdCache[functionID] = kv.FunctionData{
+		Config: req.Config, //Also needed here for scheduling decisions
+		Image:  req.Image,
 	}
 
 	s.functionMetricChansMutex.Lock()
-	s.functionMetricChans[state.FunctionID(functionID.Id)] = make(chan bool, 10000)
+	s.functionMetricChans[state.FunctionID(functionID)] = make(chan bool, 10000)
 	s.functionMetricChansMutex.Unlock()
 
-	s.state.AddFunction(state.FunctionID(functionID.Id),
-		s.functionMetricChans[state.FunctionID(functionID.Id)],
+	s.state.AddFunction(state.FunctionID(functionID),
+		s.functionMetricChans[state.FunctionID(functionID)],
 		func(ctx context.Context, functionID state.FunctionID, workerID state.WorkerID) error {
 			_, err := s.startInstance(ctx, workerID, functionID)
 			if err != nil {
@@ -74,13 +74,13 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 		})
 
 	return &leaf.CreateFunctionResponse{
-		FunctionID: functionID,
+		FunctionId: functionID,
 	}, nil
 
 }
 
-func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
-	autoscaler, ok := s.state.GetAutoscaler(state.FunctionID(req.FunctionID.Id))
+func (s *LeafServer) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
+	autoscaler, ok := s.state.GetAutoscaler(state.FunctionID(req.FunctionId))
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "function id not found")
 	}
@@ -114,11 +114,11 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *leaf.ScheduleCallReq
 	randWorker := s.workerIds[rand.Intn(len(s.workerIds))]
 
 	s.functionMetricChansMutex.RLock()
-	metricChan := s.functionMetricChans[state.FunctionID(req.FunctionID.Id)]
+	metricChan := s.functionMetricChans[state.FunctionID(req.FunctionId)]
 	s.functionMetricChansMutex.RUnlock()
 	metricChan <- true
 	// Note: we send function id as instance id because I havent updated the proto yet. But the call instance endpoint is now call function. worker handles the instance id.
-	resp, err := s.callWorker(ctx, randWorker, state.FunctionID(req.FunctionID.Id), state.InstanceID(req.FunctionID.Id), req)
+	resp, err := s.callWorker(ctx, randWorker, state.FunctionID(req.FunctionId), state.InstanceID(req.FunctionId), req)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +147,7 @@ func NewLeafServer(
 	return &ls
 }
 
-func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, req *leaf.ScheduleCallRequest) (*leaf.ScheduleCallResponse, error) {
+func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, req *common.CallRequest) (*common.CallResponse, error) {
 	client, err := s.getOrCreateWorkerClient(workerID)
 	if err != nil {
 		return nil, err
@@ -155,8 +155,7 @@ func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, fu
 
 	var resp *common.CallResponse
 	callReq := &common.CallRequest{
-		InstanceId: &common.InstanceID{Id: string(instanceID)},
-		FunctionId: &common.FunctionID{Id: string(functionID)},
+		FunctionId: string(functionID),
 		Data:       req.Data,
 	}
 
@@ -169,7 +168,7 @@ func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, fu
 		return nil, err
 	}
 
-	return &leaf.ScheduleCallResponse{Data: resp.Data, Error: resp.Error}, nil
+	return resp, nil
 }
 
 func (s *LeafServer) startInstance(ctx context.Context, workerID state.WorkerID, functionId state.FunctionID) (state.InstanceID, error) {
@@ -177,15 +176,15 @@ func (s *LeafServer) startInstance(ctx context.Context, workerID state.WorkerID,
 	if err != nil {
 		return "", err
 	}
-	resp, err := client.Start(ctx, &common.FunctionID{Id: string(functionId)})
+	resp, err := client.Start(ctx, &workerPB.StartRequest{FunctionId: string(functionId)})
 	if err != nil {
 		return "", err
 	}
 
-	return state.InstanceID(resp.InstanceId.Id), nil
+	return state.InstanceID(resp.InstanceId), nil
 }
 
-func (s *LeafServer) getOrCreateWorkerClient(workerID state.WorkerID) (controllerPB.ControllerClient, error) {
+func (s *LeafServer) getOrCreateWorkerClient(workerID state.WorkerID) (workerPB.WorkerClient, error) {
 	s.workerClients.mu.RLock()
 	client, ok := s.workerClients.clients[workerID]
 	s.workerClients.mu.RUnlock()
@@ -195,7 +194,7 @@ func (s *LeafServer) getOrCreateWorkerClient(workerID state.WorkerID) (controlle
 		if err != nil {
 			return nil, fmt.Errorf("failed to create gRPC client: %w", err)
 		}
-		cl := controllerPB.NewControllerClient(c)
+		cl := workerPB.NewWorkerClient(c)
 		s.workerClients.mu.Lock()
 		s.workerClients.clients[workerID] = workerClient{
 			conn:   c,

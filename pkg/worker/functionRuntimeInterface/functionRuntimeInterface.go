@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
+	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -161,8 +161,8 @@ func (f *Function) sendReadySignal() {
 		os.Exit(1)
 	}
 
-	client := controller.NewControllerClient(conn)
-	_, err = client.SignalReady(context.Background(), &common.InstanceID{Id: f.instanceId})
+	client := workerPB.NewWorkerClient(conn)
+	_, err = client.SignalReady(context.Background(), &workerPB.SignalReadyRequest{InstanceId: f.instanceId})
 	if err != nil {
 		f.logger.Error("Failed to send ready signal", "error", err)
 		os.Exit(1)
