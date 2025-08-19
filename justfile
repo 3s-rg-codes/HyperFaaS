@@ -50,9 +50,9 @@ build: build-functions-go build-worker
 
 # run the worker with default configurations. Make sure to run just build every time you change the code
 # Alternatively, run just dev if you want to make sure you are always running the latest code
-start-rebuild:
-    @echo "Starting docker service"
-    docker compose up --build
+start-rebuild service:
+    docker compose up -d --no-deps --build {{service}}
+alias sr := start-rebuild
 
 start:
     @echo "Starting docker service"
@@ -130,6 +130,11 @@ metrics-analyse:
 ############################
 # Misc. Stuff
 ############################
+# Update all go deps
+update-deps:
+    go get -u ./...
+    go mod tidy
+
 # Remove all docker containers/images, and all logs
 delete-logs:
     rm -rf log/*

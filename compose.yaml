@@ -2,7 +2,9 @@ services:
   worker:
     build:
       context: .
-      dockerfile: worker.Dockerfile
+      dockerfile: Dockerfile
+      args:
+        COMPONENT: worker
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - function-logs:/root/functions/logs
@@ -12,21 +14,27 @@ services:
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./main", "-address=0.0.0.0:50051", "-runtime=docker", "-log-level=info", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000"]
+    command: ["./app", "-address=0.0.0.0:50051", "-runtime=docker", "-log-level=info", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000"]
     develop:
       watch:
         - action: rebuild
           path: .
           target: .
     healthcheck:
-      test: ["CMD", "sleep", "5"]
-      interval: 6s
-      timeout: 6s
-      retries: 1
+      test: ["CMD", "nc", "-z", "localhost", "50051"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      database:
+        condition: service_healthy
   leaf:
     build:
       context: .
-      dockerfile: leaf.Dockerfile
+      dockerfile: Dockerfile
+      args:
+        COMPONENT: leaf
     volumes:
       - ./log/:/root/log/
     ports:
@@ -34,7 +42,7 @@ services:
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./leaf", "--address=0.0.0.0:50050",
+    command: ["./app", "--address=0.0.0.0:50050",
      "--log-level=info", "--log-format=text", "--log-file=/root/log/leaf.log",
      "--worker-ids=worker:50051",
      "--database-address=http://database:8999",
@@ -49,18 +57,63 @@ services:
             - action: rebuild
               path: .
               target: .
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50050"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     depends_on:
       worker:
         condition: service_healthy
+      database:
+        condition: service_healthy
+  lb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        COMPONENT: lb
+    ports:
+      - "50052:50052"
+    volumes:
+      - ./log/:/root/log/
+    networks:
+      - hyperfaas-network
+    command: ["./app",
+     "--log-level=debug",
+     "--log-format=text",
+     "--log-file=/root/log/lb.log",
+     "--leaf-addr=leaf:50050",
+     "--strategy=hyperfaas_round_robin"]
+    depends_on:
+      worker:
+        condition: service_healthy
+      leaf:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50052"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
   database:
     build:
       context: .
-      dockerfile: database.Dockerfile
+      dockerfile: Dockerfile
+      args:
+        COMPONENT: database
     ports:
       - "8999:8999"
     #network_mode: host
     networks:
       - hyperfaas-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "8999"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
 volumes:
   function-logs:

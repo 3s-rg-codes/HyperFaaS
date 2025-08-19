@@ -1,13 +1,11 @@
 package functionRuntimeInterface
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -131,26 +129,11 @@ func configLog(logFile string) *slog.Logger {
 }
 
 func getID() string {
-	var id string
-	file, err := os.Open(".env")
+	hostname, err := os.Hostname()
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprintf("Failed to get hostname: %v", err))
 	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "CONTAINER_ID=") {
-			id = strings.TrimPrefix(line, "CONTAINER_ID=")
-			break
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		panic(err)
-	}
-	return id
+	return hostname
 }
 
 func (f *Function) sendReadySignal() {
