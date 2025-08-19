@@ -2,12 +2,10 @@ package keyValueStore
 
 import (
 	"fmt"
-
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 )
 
 type NoSuchKeyError struct {
-	Key *common.FunctionID
+	Key string
 }
 
 func (e NoSuchKeyError) Error() string {

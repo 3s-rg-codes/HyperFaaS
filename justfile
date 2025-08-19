@@ -16,9 +16,10 @@ default:
 proto:
     @echo "Generating proto files"
     protoc --proto_path=proto "proto/function/function.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
-    protoc --proto_path=proto "proto/controller/controller.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
+    protoc --proto_path=proto "proto/worker/worker.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
     protoc --proto_path=proto "proto/leaf/leaf.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
     protoc --proto_path=proto "proto/common/common.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
+    protoc --proto_path=proto "proto/lb/lb.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
 
 # build the worker binary
 build-worker:
@@ -49,9 +50,9 @@ build: build-functions-go build-worker
 
 # run the worker with default configurations. Make sure to run just build every time you change the code
 # Alternatively, run just dev if you want to make sure you are always running the latest code
-start-rebuild:
-    @echo "Starting docker service"
-    docker compose up --build
+start-rebuild service:
+    docker compose up -d --no-deps --build {{service}}
+alias sr := start-rebuild
 
 start:
     @echo "Starting docker service"
@@ -129,6 +130,11 @@ metrics-analyse:
 ############################
 # Misc. Stuff
 ############################
+# Update all go deps
+update-deps:
+    go get -u ./...
+    go mod tidy
+
 # Remove all docker containers/images, and all logs
 delete-logs:
     rm -rf log/*

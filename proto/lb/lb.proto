@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package lb;
+
+import "common/common.proto";
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/lb";
+
+service LB {
+  // Sends a call request down the load balancing chain
+  rpc ScheduleCall(common.CallRequest) returns (common.CallResponse);
+}

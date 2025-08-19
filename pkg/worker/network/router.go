@@ -95,7 +95,7 @@ func DebugCallAddr(addr string) {
 	}
 	client := function.NewFunctionServiceClient(conn)
 	log.Printf(" DEBUG: Calling function at %s", addr)
-	resp, err := client.Call(context.Background(), &common.CallRequest{FunctionId: &common.FunctionID{Id: "test"}})
+	resp, err := client.Call(context.Background(), &common.CallRequest{FunctionId: "test"})
 	if err != nil {
 		log.Fatalf("failed to debugcall function: %v", err)
 	}

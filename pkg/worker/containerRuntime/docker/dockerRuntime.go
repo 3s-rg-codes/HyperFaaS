@@ -15,8 +15,6 @@ import (
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
-	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
@@ -24,9 +22,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
@@ -152,63 +148,31 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 	}
 	shortID := resp.ID[:12]
 
-	return cr.Container{InstanceID: shortID, InstanceName: containerName, InstanceIP: addr}, nil
+	return cr.Container{Id: shortID, Name: containerName, IP: addr}, nil
 }
 
-func (d *DockerRuntime) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-	return nil, nil
-
-	containerIP, err := d.resolveContainerAddr(ctx, req.InstanceId.Id, req.InstanceId.Id)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := grpc.NewClient(containerIP, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	d.logger.Debug("Calling container", "id", req.InstanceId.Id, "address", containerIP)
-	functionClient := functionpb.NewFunctionServiceClient(conn)
-
-	response, err := functionClient.Call(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	return response, nil
-
-}
-
-func (d *DockerRuntime) Stop(ctx context.Context, req *common.InstanceID) (*common.InstanceID, error) {
+func (d *DockerRuntime) Stop(ctx context.Context, instanceID string) error {
 	// Check if the container exists
-	_, err := d.Cli.ContainerInspect(ctx, req.Id)
+	_, err := d.Cli.ContainerInspect(ctx, instanceID)
 	if err != nil {
-		d.logger.Error("Container does not exist", "id", req.Id)
-		return nil, status.Errorf(codes.NotFound, err.Error())
+		d.logger.Error("Container does not exist", "id", instanceID)
+		return status.Errorf(codes.NotFound, err.Error())
 	}
 
 	// Stop the container
-	if err := d.Cli.ContainerStop(ctx, req.Id, container.StopOptions{}); err != nil {
-		return nil, err
+	if err := d.Cli.ContainerStop(ctx, instanceID, container.StopOptions{}); err != nil {
+		return err
 	}
 
-	d.logger.Debug("Stopped container", "id", req.Id)
-
-	return req, nil
-}
-
-// TODO Status over docker Volume
-
-func (d *DockerRuntime) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
+	d.logger.Debug("Stopped container", "id", instanceID)
 
 	return nil
 }
 
 // NotifyCrash notifies the caller if the container crashes. It hangs forever until the container either returns (where it returns nil) or crashes (where it returns an error)
-func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId *common.InstanceID) error {
+func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) error {
 	opt := events.ListOptions{
-		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId.Id}),
+		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId}),
 	}
 	eventsChan, errChan := d.Cli.Events(ctx, opt)
 
@@ -337,9 +301,9 @@ func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID st
 
 // MonitorContainer monitors a container and returns when it exits
 // Returns nil for timeout, error for crash
-func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId *common.InstanceID, functionId string) (cr.ContainerEvent, error) {
+func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId string, functionId string) (cr.ContainerEvent, error) {
 	opt := events.ListOptions{
-		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId.Id}),
+		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId}),
 	}
 	eventsChan, errChan := d.Cli.Events(ctx, opt)
 
@@ -350,24 +314,24 @@ func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId *common
 			switch event.Action {
 			case events.ActionDie:
 				// Get container exit code to determine if it was timeout or crash
-				containerJSON, err := d.Cli.ContainerInspect(ctx, instanceId.Id)
+				containerJSON, err := d.Cli.ContainerInspect(ctx, instanceId)
 				if err != nil {
-					d.logger.Error("Failed to inspect container", "id", instanceId.Id, "error", err)
+					d.logger.Error("Failed to inspect container", "id", instanceId, "error", err)
 					return cr.ContainerEventExit, fmt.Errorf("container died but failed to inspect: %v", err)
 				}
 
 				exitCode := containerJSON.State.ExitCode
 				if exitCode == 0 {
 					// Exit code 0 = graceful shutdown = timeout
-					d.logger.Debug("Container timed out gracefully", "id", instanceId.Id, "exitCode", exitCode)
+					d.logger.Debug("Container timed out gracefully", "id", instanceId, "exitCode", exitCode)
 					return cr.ContainerEventTimeout, nil
 				} else {
 					// Non-zero exit code = crash
-					d.logger.Debug("Container crashed", "id", instanceId.Id, "exitCode", exitCode)
+					d.logger.Debug("Container crashed", "id", instanceId, "exitCode", exitCode)
 					return cr.ContainerEventCrash, nil
 				}
 			case events.ActionOOM:
-				d.logger.Debug("Container ran out of memory", "id", instanceId.Id)
+				d.logger.Debug("Container ran out of memory", "id", instanceId)
 				return cr.ContainerEventOOM, nil
 			}
 		case <-errChan:

@@ -2,14 +2,15 @@ package keyValueStore
 
 import (
 	"fmt"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
 	"log/slog"
 	"math/rand"
 	"os"
 	"sync"
 	"testing"
+
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 const ADDRESS = "http://localhost:8080/"
@@ -57,7 +58,7 @@ func TestHttpDBClient_Get(t *testing.T) {
 	id := idList[50]
 	data := sampleData[id]
 
-	tag, c, err := dbClient.Get(&common.FunctionID{Id: id})
+	tag, c, err := dbClient.Get(id)
 	if err != nil {
 		t.Errorf("error calling GET, %v", err)
 	}
@@ -81,12 +82,12 @@ func TestHttpDBClient_Put(t *testing.T) {
 		},
 	}
 
-	functionID, err := dbClient.Put(&common.ImageTag{Tag: postRequest.ImageTag}, parsedConfig)
+	functionID, err := dbClient.Put(&common.Image{Tag: postRequest.ImageTag}, parsedConfig)
 	if err != nil {
 		t.Errorf("error calling PUT, %v", err)
 	}
 
-	assert.True(t, uuid.Validate(functionID.Id) == nil, "returned non-valid function id")
+	assert.True(t, uuid.Validate(functionID) == nil, "returned non-valid function id")
 }
 
 func generateRandomConfig() PostRequest {
@@ -100,8 +101,8 @@ func generateRandomConfig() PostRequest {
 	}
 }
 
-func fieldsEqual(data PostRequest, tag *common.ImageTag, c *common.Config) bool {
-	if data.ImageTag != tag.Tag {
+func fieldsEqual(data PostRequest, tag string, c *common.Config) bool {
+	if data.ImageTag != tag {
 		return false
 	}
 	if data.Config.CpuQuota != int(c.Cpu.Quota) {

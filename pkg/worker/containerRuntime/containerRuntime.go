@@ -5,31 +5,23 @@ import (
 	"io"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 )
 
 type Container struct {
-	InstanceID   string
-	InstanceIP   string
-	InstanceName string
+	Id   string
+	IP   string
+	Name string
 }
 
 // ContainerRuntime is an interface for starting and stopping containers.
 type ContainerRuntime interface {
-	// Start a container with the given image tag and configuration. returns the instance id, the instance ip and the instance name
+	// Start a container with the given image tag and configuration. returns the container id, the container ip and the container name
 	Start(ctx context.Context, functionID string, imageTag string, config *common.Config) (Container, error)
 
-	// Call a container with the given request.
-	Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error)
-
 	// Stop a container with the given instance ID.
-	Stop(ctx context.Context, req *common.InstanceID) (*common.InstanceID, error)
-
-	// Status returns the status of a container with the given instance ID.
-	Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error
-
+	Stop(ctx context.Context, instanceID string) error
 	// MonitorContainer monitors a container and returns a specific event according to the container's exit status. Blocks until the container exits.
-	MonitorContainer(ctx context.Context, instanceId *common.InstanceID, functionId string) (ContainerEvent, error)
+	MonitorContainer(ctx context.Context, instanceId string, functionId string) (ContainerEvent, error)
 
 	//RemoveImage checks if the provided image exists locally and removes it if it does
 	RemoveImage(ctx context.Context, imageID string) error

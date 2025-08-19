@@ -1,19 +1,17 @@
 package functionRuntimeInterface
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
+	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -131,26 +129,11 @@ func configLog(logFile string) *slog.Logger {
 }
 
 func getID() string {
-	var id string
-	file, err := os.Open(".env")
+	hostname, err := os.Hostname()
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprintf("Failed to get hostname: %v", err))
 	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "CONTAINER_ID=") {
-			id = strings.TrimPrefix(line, "CONTAINER_ID=")
-			break
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		panic(err)
-	}
-	return id
+	return hostname
 }
 
 func (f *Function) sendReadySignal() {
@@ -161,8 +144,8 @@ func (f *Function) sendReadySignal() {
 		os.Exit(1)
 	}
 
-	client := controller.NewControllerClient(conn)
-	_, err = client.SignalReady(context.Background(), &common.InstanceID{Id: f.instanceId})
+	client := workerPB.NewWorkerClient(conn)
+	_, err = client.SignalReady(context.Background(), &workerPB.SignalReadyRequest{InstanceId: f.instanceId})
 	if err != nil {
 		f.logger.Error("Failed to send ready signal", "error", err)
 		os.Exit(1)

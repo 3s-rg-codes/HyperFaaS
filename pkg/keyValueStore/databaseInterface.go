@@ -5,6 +5,6 @@ import (
 )
 
 type FunctionMetadataStore interface {
-	Put(tag *common.ImageTag, config *common.Config) (id *common.FunctionID, err error)
-	Get(functionID *common.FunctionID) (imageTag *common.ImageTag, config *common.Config, err error)
+	Put(image *common.Image, config *common.Config) (id string, err error)
+	Get(functionID string) (imageTag string, config *common.Config, err error)
 }

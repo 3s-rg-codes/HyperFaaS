@@ -26,15 +26,15 @@ func NewHttpClient(address string, logger *slog.Logger) *HttpDBClient {
 }
 
 type FunctionData struct {
-	Config   *common.Config
-	ImageTag *common.ImageTag
+	Config *common.Config
+	Image  *common.Image
 }
 
 // Put is called Put because we use it as a key-value-store, but from a REST POV its POST
-func (db *HttpDBClient) Put(imageTag *common.ImageTag, config *common.Config) (*common.FunctionID, error) {
+func (db *HttpDBClient) Put(image *common.Image, config *common.Config) (string, error) {
 
 	postData := PostRequest{
-		ImageTag: imageTag.Tag,
+		ImageTag: image.Tag,
 		Config: Config{
 			CpuPeriod:      int(config.Cpu.Period),
 			CpuQuota:       int(config.Cpu.Quota),
@@ -47,13 +47,13 @@ func (db *HttpDBClient) Put(imageTag *common.ImageTag, config *common.Config) (*
 	jsonData, err := json.Marshal(postData)
 	if err != nil {
 		db.logger.Error("error marshaling JSON", "error", err)
-		return &common.FunctionID{}, err
+		return "", err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, db.address, bytes.NewBuffer(jsonData))
 	if err != nil {
 		db.logger.Error("error creating POST request", "error", err)
-		return &common.FunctionID{}, err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -61,7 +61,7 @@ func (db *HttpDBClient) Put(imageTag *common.ImageTag, config *common.Config) (*
 	resp, err := db.client.Do(req)
 	if err != nil {
 		db.logger.Error("error sending POST request", "error", err)
-		return &common.FunctionID{}, err
+		return "", err
 	}
 
 	defer func(Body io.ReadCloser) {
@@ -73,39 +73,39 @@ func (db *HttpDBClient) Put(imageTag *common.ImageTag, config *common.Config) (*
 
 	if resp.StatusCode != http.StatusCreated {
 		db.logger.Error("POST request failed with status code", "error", resp.StatusCode)
-		return &common.FunctionID{}, err
+		return "", err
 	}
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return &common.FunctionID{}, err
+		return "", err
 	}
 
 	var r PostResponse
 	err = json.Unmarshal(b, &r)
 	if err != nil {
 		db.logger.Error("error unmarshaling json response", "error", err)
-		return &common.FunctionID{}, err
+		return "", err
 	}
 
-	return &common.FunctionID{Id: r.FunctionID}, nil
+	return r.FunctionID, nil
 }
 
-func (db *HttpDBClient) Get(functionID *common.FunctionID) (*common.ImageTag, *common.Config, error) {
+func (db *HttpDBClient) Get(functionID string) (string, *common.Config, error) {
 
-	req, err := http.NewRequest(http.MethodGet, db.address, bytes.NewBuffer([]byte(functionID.Id)))
+	req, err := http.NewRequest(http.MethodGet, db.address, bytes.NewBuffer([]byte(functionID)))
 	if err != nil {
 		db.logger.Error("error creating GET request", "error", err)
-		return &common.ImageTag{}, &common.Config{}, err
+		return "", &common.Config{}, err
 	}
 
 	resp, err := db.client.Do(req)
 	if err != nil {
 		db.logger.Error("error sending GET request", "error", err)
-		return &common.ImageTag{}, &common.Config{}, err
+		return "", &common.Config{}, err
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return &common.ImageTag{}, &common.Config{}, &NoSuchKeyError{Key: functionID}
+		return "", &common.Config{}, &NoSuchKeyError{Key: functionID}
 	}
 
 	defer func(Body io.ReadCloser) {
@@ -118,19 +118,19 @@ func (db *HttpDBClient) Get(functionID *common.FunctionID) (*common.ImageTag, *c
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		db.logger.Error("error reading response", "error", err)
-		return &common.ImageTag{}, &common.Config{}, err
+		return "", &common.Config{}, err
 	}
 
 	var r PostRequest
 	err = json.Unmarshal(b, &r)
 	if err != nil {
 		db.logger.Error("error unmarshaling json", "error", err)
-		return &common.ImageTag{}, &common.Config{}, err
+		return "", &common.Config{}, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		db.logger.Error("GET request failed with status code", "error", resp.StatusCode)
-		return &common.ImageTag{}, &common.Config{}, err
+		return "", &common.Config{}, err
 	}
 
 	c := &common.Config{
@@ -143,7 +143,7 @@ func (db *HttpDBClient) Get(functionID *common.FunctionID) (*common.ImageTag, *c
 		MaxConcurrency: int32(r.Config.MaxConcurrency),
 	}
 
-	id := &common.ImageTag{Tag: r.ImageTag}
+	id := r.ImageTag
 
 	return id, c, nil
 }
