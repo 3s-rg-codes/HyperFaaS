@@ -8,24 +8,11 @@ import (
 	"time"
 
 	commonpb "github.com/3s-rg-codes/HyperFaaS/proto/common"
-	controllerpb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
-	_ "github.com/mattn/go-sqlite3"
+	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
-
-type functionState struct {
-	fID     string
-	running []instanceState
-	idle    []instanceState
-}
-
-type instanceState struct {
-	instID            string
-	uptime            string
-	timeSinceLastWork string
-}
 
 func main() {
 	commandPtr := flag.String("c", "create", "command what to do")
@@ -157,7 +144,7 @@ func startFunc(id string, address string, timeout int) (string, error) { //calls
 		return "", err
 	}
 	defer conn.Close()
-	client := controllerpb.NewControllerClient(conn)
+	client := workerpb.NewControllerClient(conn)
 	funcID := commonpb.FunctionID{
 		Id: id,
 	}
@@ -180,7 +167,7 @@ func callFunc(funcID string, address string, instanceID string, data []byte, tim
 		return "", err
 	}
 	defer conn.Close()
-	client := controllerpb.NewControllerClient(conn)
+	client := workerpb.NewControllerClient(conn)
 
 	function_id := commonpb.FunctionID{
 		Id: funcID,
@@ -215,7 +202,7 @@ func stopInstance(id string, address string, timeout int) (string, error) {
 		return "", err
 	}
 	defer conn.Close()
-	client := controllerpb.NewControllerClient(conn)
+	client := workerpb.NewControllerClient(conn)
 
 	instID := &commonpb.InstanceID{
 		Id: id,
@@ -240,9 +227,9 @@ func getStatusUpdate(nodeId string, address string, timeout int) (string, error)
 		return "", nil
 	}
 	defer conn.Close()
-	client := controllerpb.NewControllerClient(conn)
+	client := workerpb.NewControllerClient(conn)
 
-	statusReq := &controllerpb.StatusRequest{
+	statusReq := &workerpb.StatusRequest{
 		NodeID: nodeId,
 	}
 
@@ -265,9 +252,9 @@ func getMetricsUpdate(nodeId string, address string, timeout int) ([]string, err
 		return nil, err
 	}
 	defer conn.Close()
-	client := controllerpb.NewControllerClient(conn)
+	client := workerpb.NewControllerClient(conn)
 
-	metricsReq := &controllerpb.MetricsRequest{
+	metricsReq := &workerpb.MetricsRequest{
 		NodeID: nodeId,
 	}
 
@@ -281,55 +268,6 @@ func getMetricsUpdate(nodeId string, address string, timeout int) ([]string, err
 	}
 	fmt.Printf("Successfully requested metrics update\nCPU percentages: [%v]\nRAM usage: %v%%\n", metricsResp.CpuPercentPercpu, metricsResp.UsedRamPercent)
 	return []string{fmt.Sprintf("%v", metricsResp.CpuPercentPercpu), fmt.Sprintf("%v", metricsResp.UsedRamPercent)}, nil
-}
-
-func getState(nodeId string, address string, timeout int) ([]functionState, error) {
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials())) //connect to worker
-	if err != nil {
-		fmt.Printf("Failed to connect: %v", err)
-		return nil, err
-	}
-	defer conn.Close()
-	client := controllerpb.NewControllerClient(conn)
-
-	stateReq := &controllerpb.StateRequest{
-		NodeId: nodeId,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(timeout))
-	defer cancel()
-
-	stateResp, err := client.State(ctx, stateReq)
-	if err != nil {
-		fmt.Printf("Error getting metrics: %v\n", err)
-		return nil, err
-	}
-	fmt.Print("Successfully requested node state!")
-
-	fStates := []functionState{}
-	funcs := stateResp.Functions
-	for _, funcState := range funcs {
-		fmt.Println("Function ID:", funcState.FunctionId.Id)
-		idle := []instanceState{}
-		running := []instanceState{}
-		fState := functionState{fID: funcState.FunctionId.Id, idle: idle, running: running}
-		fmt.Println("\tRunning instances:")
-		for _, instance := range funcState.Running {
-			fmt.Printf("\t\t - instance ID:%v\tuptime:%v\ttime since last work:%v", instance.InstanceId, instance.Uptime, instance.TimeSinceLastWork)
-			running = append(running, instanceState{instID: instance.InstanceId, uptime: fmt.Sprintf("%v", instance.Uptime), timeSinceLastWork: fmt.Sprintf("%v", instance.TimeSinceLastWork)})
-		}
-
-		fmt.Println("\t\tIdle instances:")
-		for _, instance := range funcState.Idle {
-			fmt.Printf("\t\t - instance ID:%v\tuptime:%v\ttime since last work:%v", instance.InstanceId, instance.Uptime, instance.TimeSinceLastWork)
-			idle = append(idle, instanceState{instID: instance.InstanceId, uptime: fmt.Sprintf("%v", instance.Uptime), timeSinceLastWork: fmt.Sprintf("%v", instance.TimeSinceLastWork)})
-
-		}
-
-		fmt.Println("---------------------------------------------")
-		fStates = append(fStates, fState)
-	}
-	return fStates, nil
 }
 
 func test(leafAddress string, workerAddress string, nodeID string, image_tag string, data []byte, timeout int) {
