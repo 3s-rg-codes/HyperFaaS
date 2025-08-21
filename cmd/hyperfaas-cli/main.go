@@ -34,6 +34,8 @@ var timeoutFlag = &cli.DurationFlag{
 
 func main() {
 	cmd := &cli.Command{
+		Name:  "hyperfaas-cli",
+		Usage: "talk to the HyperFaaS API",
 		Commands: []*cli.Command{
 			{
 				Name:    "worker",
