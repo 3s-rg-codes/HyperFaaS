@@ -48,14 +48,13 @@ type workerClient struct {
 
 // CreateFunction should only create the function, e.g. save its Config and image tag in local cache
 func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctionRequest) (*leaf.CreateFunctionResponse, error) {
-
 	functionID, err := s.database.Put(req.Image, req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to store function in database: %w", err)
 	}
 
 	s.functionIdCache[functionID] = kv.FunctionData{
-		Config: req.Config, //Also needed here for scheduling decisions
+		Config: req.Config, // Also needed here for scheduling decisions
 		Image:  req.Image,
 	}
 
@@ -76,7 +75,6 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 	return &leaf.CreateFunctionResponse{
 		FunctionId: functionID,
 	}, nil
-
 }
 
 func (s *LeafServer) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
@@ -96,7 +94,7 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *common.CallRequest) 
 				return s.ScheduleCall(ctx, req)
 			}
 			if errors.As(err, &state.ScaleUpFailedError{}) {
-				//TODO improve error message with better info.
+				// TODO improve error message with better info.
 				return nil, status.Errorf(codes.ResourceExhausted, "failed to scale up function")
 			}
 		}
@@ -189,7 +187,6 @@ func (s *LeafServer) getOrCreateWorkerClient(workerID state.WorkerID) (workerPB.
 	client, ok := s.workerClients.clients[workerID]
 	s.workerClients.mu.RUnlock()
 	if !ok {
-
 		c, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create gRPC client: %w", err)

@@ -31,7 +31,6 @@ func NewStatsManager(logger *slog.Logger, listenerTimeout time.Duration, sampleR
 }
 
 func (s *StatsManager) Enqueue(su *StatusUpdate) {
-
 	// If its a timeout or a crash, we must always send the update
 	if su.Event == EventTimeout || su.Event == EventDown {
 		select {
@@ -60,13 +59,10 @@ func (s *StatsManager) AddListener(nodeID string, listener chan StatusUpdate) {
 	defer s.mu.Unlock()
 
 	// Clean up any existing listener for this node
-	if _, exists := s.listeners[nodeID]; exists {
-		// Don't close the channel here as it might be in use elsewhere
-		delete(s.listeners, nodeID)
-	}
+	delete(s.listeners, nodeID)
 
 	s.listeners[nodeID] = listener
-	s.logger.Info("Added listener with ID", "id", nodeID)
+	s.logger.Info("Added stats listener with ID", "id", nodeID)
 }
 
 func (s *StatsManager) RemoveListener(nodeID string) {
@@ -74,10 +70,7 @@ func (s *StatsManager) RemoveListener(nodeID string) {
 	defer s.mu.Unlock()
 
 	// Remove from termination map if present
-	if _, exists := s.toBeTerminated[nodeID]; exists {
-		delete(s.toBeTerminated, nodeID)
-		// Don't close the channel here as it might be in use elsewhere
-	}
+	delete(s.toBeTerminated, nodeID)
 
 	// Remove from listeners
 	delete(s.listeners, nodeID)
@@ -120,10 +113,7 @@ func (s *StatsManager) RemoveListenerAfterTimeout(nodeID string) {
 
 	s.mu.Lock()
 	// Clean up any existing termination channel
-	if _, exists := s.toBeTerminated[nodeID]; exists {
-		delete(s.toBeTerminated, nodeID)
-		// Don't close here as it might be in use
-	}
+	delete(s.toBeTerminated, nodeID)
 
 	s.toBeTerminated[nodeID] = terminationCh
 	s.logger.Info("Node set to be terminated", "id", nodeID)

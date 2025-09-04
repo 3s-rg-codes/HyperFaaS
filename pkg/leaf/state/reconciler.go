@@ -46,7 +46,6 @@ func (s *SmallState) RunReconciler(ctx context.Context) {
 }
 
 func (s *SmallState) getStatusUpdateStream(ctx context.Context, workerID WorkerID) (workerPB.Worker_StatusClient, *grpc.ClientConn, error) {
-
 	conn, err := grpc.NewClient(string(workerID), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		s.logger.Error("Failed to create gRPC client", "error", err)
@@ -62,19 +61,22 @@ func (s *SmallState) getStatusUpdateStream(ctx context.Context, workerID WorkerI
 	}
 
 	return statusUpdates, conn, nil
-
 }
 
 func (s *SmallState) ListenToWorkerStatusUpdates(ctx context.Context, workerID WorkerID) {
 	for {
 		statusUpdates, conn, err := s.getStatusUpdateStream(ctx, workerID)
-		defer conn.Close()
 		if err != nil {
 			s.logger.Error("Failed to get status update stream", "workerID", workerID, "error", err)
 			// Wait a bit before retrying
 			time.Sleep(5 * time.Second)
 			continue
 		}
+		defer func() {
+			if err := conn.Close(); err != nil {
+				s.logger.Error("Failed to close connection", "error", err)
+			}
+		}()
 
 		for {
 			update, err := statusUpdates.Recv()
@@ -99,7 +101,7 @@ func (s *SmallState) ListenToWorkerStatusUpdates(ctx context.Context, workerID W
 				case workerPB.Event_EVENT_RUNNING:
 				case workerPB.Event_EVENT_CALL:
 				default:
-					//r.logger.Warn("Received status update of unknown event", "event", update.Event)
+					// r.logger.Warn("Received status update of unknown event", "event", update.Event)
 				}
 			default:
 				s.logger.Warn("Received status update of unknown type", "type", update.Type)

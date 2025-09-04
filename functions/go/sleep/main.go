@@ -9,15 +9,13 @@ import (
 )
 
 func main() {
-
 	f := functionRuntimeInterface.New(10)
 
 	f.Ready(handler)
 }
 
 func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
-
-	//sleep for 20 seconds
+	// sleep for 20 seconds
 	time.Sleep(20 * time.Second)
 
 	resp := &common.CallResponse{

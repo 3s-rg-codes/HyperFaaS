@@ -23,13 +23,13 @@ type ContainerRuntime interface {
 	// MonitorContainer monitors a container and returns a specific event according to the container's exit status. Blocks until the container exits.
 	MonitorContainer(ctx context.Context, instanceId string, functionId string) (ContainerEvent, error)
 
-	//RemoveImage checks if the provided image exists locally and removes it if it does
+	// RemoveImage checks if the provided image exists locally and removes it if it does
 	RemoveImage(ctx context.Context, imageID string) error
 
-	//ContainerExists checks if a container with the given ID currently exists (running or not)
+	// ContainerExists checks if a container with the given ID currently exists (running or not)
 	ContainerExists(ctx context.Context, instanceID string) bool
 
-	//ContainerStats returns the stats for the container with the provided id
+	// ContainerStats returns the stats for the container with the provided id
 	ContainerStats(ctx context.Context, containerID string) io.ReadCloser
 }
 

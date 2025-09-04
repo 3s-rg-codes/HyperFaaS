@@ -166,13 +166,7 @@ func setupLogger(logLevel string, logFormat string, logFilePath string) *slog.Lo
 	return logger
 }
 
-var serviceConfig = `{
-	"loadBalancingPolicy": "round_robin",
-	"healthCheckConfig": {
-		"serviceName": ""
-	}
-}`
-
+//nolint:all
 func healthCheckWorker(workerID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

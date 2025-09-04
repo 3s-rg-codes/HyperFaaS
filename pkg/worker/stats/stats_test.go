@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"io"
 	"log/slog"
 	"math/rand"
 	"os"
@@ -16,8 +17,15 @@ const (
 	listenerTimeout = 10 * time.Second
 )
 
+// Set LOG_ALL=true to enable logging for the stats manager. It produces a lot of noise in the tests.
 func createTestStatsManager() *StatsManager {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	var handler slog.Handler
+	if logAll, _ := strconv.ParseBool(os.Getenv("LOG_ALL")); logAll {
+		handler = slog.NewTextHandler(os.Stdout, nil)
+	} else {
+		handler = slog.NewTextHandler(io.Discard, nil)
+	}
+	logger := slog.New(handler)
 	return NewStatsManager(logger, listenerTimeout, 1.0, 100000)
 }
 
@@ -53,7 +61,7 @@ func TestDequeue_Multiple(t *testing.T) {
 	sm := createTestStatsManager()
 
 	var arrIn []*StatusUpdate
-	count := 101 //CAREFUL: Only works for uneven numbers
+	count := 101 // CAREFUL: Only works for uneven numbers
 
 	for i := 1; i <= count; i++ {
 		var su *StatusUpdate
@@ -124,7 +132,7 @@ func TestAddListeners_Multiple(t *testing.T) {
 
 	for key, value := range m {
 		val, ok := sm.listeners[key]
-		if !(ok && val == value) {
+		if !ok || val != value {
 			b = false
 		}
 	}
@@ -153,37 +161,28 @@ func TestRemoveListener(t *testing.T) {
 
 func TestRemoveListener_Multiple(t *testing.T) {
 	sm := createTestStatsManager()
-
-	var arrID []string
 	count := 200
 
-	for i := 1; i <= count-1; i++ {
-		s := strconv.Itoa(i)
-		arrID = append(arrID, s)
+	// Add listeners
+	for i := 1; i < count; i++ {
+		id := strconv.Itoa(i)
 		ch := make(chan StatusUpdate)
-		sm.AddListener(s, ch)
+		sm.AddListener(id, ch)
 	}
 
+	// Remove listeners concurrently
 	wg := sync.WaitGroup{}
-
-	for i := 1; i <= count-1; i++ {
-		wg.Add(1)
-		s := strconv.Itoa(i)
-		go func(id string) {
-			time.Sleep(100 * (time.Duration(rand.Intn(1000000))))
-			sm.RemoveListener(id)
-			wg.Done()
-		}(s)
+	for i := 1; i < count; i++ {
+		wg.Go(
+			func() {
+				time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
+				sm.RemoveListener(strconv.Itoa(i))
+			},
+		)
 	}
 	wg.Wait()
 
-	i := 0
-
-	for _, _ = range sm.listeners {
-		i++
-	}
-
-	assert.Equal(t, 0, i, "Not all listeners where removed")
+	assert.Empty(t, sm.listeners, "Not all listeners were removed")
 }
 
 func TestGetListenerByID_Multiple(t *testing.T) {
@@ -213,7 +212,7 @@ func TestStartStreamingToListeners(t *testing.T) {
 	sm := createTestStatsManager()
 
 	chListener := make(chan StatusUpdate, 10)
-	count := 5 //FOR THIS CASE: count < cap(ch)
+	count := 5 // FOR THIS CASE: count < cap(ch)
 	var arrIn []StatusUpdate
 
 	for i := 0; i <= count; i++ {
@@ -295,7 +294,7 @@ func TestStartStreamingToListeners_Concurrent(t *testing.T) {
 
 	sm := createTestStatsManager()
 
-	chListener := make(chan StatusUpdate, 10000) //use same buffer we defined in main
+	chListener := make(chan StatusUpdate, 10000) // use same buffer we defined in main
 	resChanExpect := make(chan []StatusUpdate, 1)
 
 	sm.AddListener("1", chListener)
@@ -306,7 +305,6 @@ func TestStartStreamingToListeners_Concurrent(t *testing.T) {
 
 	wg.Add(1)
 	go func(resChan chan []StatusUpdate, wg *sync.WaitGroup) {
-
 		count := 200
 		var arrIn []StatusUpdate
 
@@ -325,7 +323,6 @@ func TestStartStreamingToListeners_Concurrent(t *testing.T) {
 
 	wg.Add(1)
 	go func(resChan chan []StatusUpdate, wg *sync.WaitGroup) {
-
 		count := 200
 		var arrOut []StatusUpdate
 
@@ -357,5 +354,4 @@ func TestStartStreamingToListeners_Concurrent(t *testing.T) {
 	}
 
 	assert.True(t, b, "Expected and equal are not equal")
-
 }

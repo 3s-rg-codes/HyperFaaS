@@ -96,8 +96,7 @@ func (t *Store) handleGet(w http.ResponseWriter, r *http.Request) {
 	t.Lock.RLock()
 	defer t.Lock.RUnlock()
 
-	functionID := string(b)                 //get requested id
-	if data, ok := t.Data[functionID]; ok { //look in db to see if we have data for id
+	if data, ok := t.Data[string(b)]; ok { //look in db to see if we have data for id
 		w.WriteHeader(http.StatusOK)
 		jsonData, err := json.Marshal(data)
 		if err != nil {

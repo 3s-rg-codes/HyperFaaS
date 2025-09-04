@@ -93,8 +93,11 @@ func (f *Function) Ready(handler func(context.Context, *common.CallRequest) (*co
 
 	// Notify controller that the function is ready to serve requests
 	go f.sendReadySignal()
-	f.server.Serve(lis)
-
+	err = f.server.Serve(lis)
+	if err != nil {
+		logger.Error("Failed to serve", "error", err)
+		os.Exit(1)
+	}
 }
 
 func (f *Function) monitorTimeout(logger *slog.Logger) {
@@ -117,8 +120,7 @@ func (f *Function) monitorTimeout(logger *slog.Logger) {
 }
 
 func configLog(logFile string) *slog.Logger {
-	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-
+	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
 	if err != nil {
 		console := slog.New(slog.NewTextHandler(os.Stdout, nil))
 		console.Error("Failed to create log file, using stdout", "error", err)
@@ -137,7 +139,6 @@ func getID() string {
 }
 
 func (f *Function) sendReadySignal() {
-
 	conn, err := grpc.NewClient(f.controllerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		f.logger.Error("Failed to connect to controller", "error", err)

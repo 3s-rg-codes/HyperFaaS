@@ -204,7 +204,9 @@ func main() {
 							if err != nil {
 								return err
 							}
-							CreateFunction(client, imageTag, cpuPeriod, cpuQuota, memory, timeout)
+							if _, err := CreateFunction(client, imageTag, cpuPeriod, cpuQuota, memory, timeout); err != nil {
+								return err
+							}
 							return nil
 						},
 					},

@@ -16,5 +16,5 @@ type InstanceNotFoundError struct {
 }
 
 func (e *InstanceNotFoundError) Error() string {
-	return fmt.Sprintf("instance not found for instance ID: %s", e.InstanceID)
+	return "instance not found for instance ID: " + e.InstanceID
 }

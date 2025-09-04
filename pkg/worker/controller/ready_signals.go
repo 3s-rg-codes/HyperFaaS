@@ -28,7 +28,6 @@ func (s *ReadySignals) SignalReady(instanceID string) {
 		delete(s.readySignals, instanceID)
 		s.mu.Unlock()
 	}
-
 }
 
 func (s *ReadySignals) WaitReady(instanceID string) {

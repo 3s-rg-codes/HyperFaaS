@@ -24,8 +24,7 @@ func main() {
 	f.Ready(handler)
 }
 
-//Inspired by https://github.com/spcl/serverless-benchmarks/blob/master/benchmarks/200.multimedia/210.thumbnailer/python/function.py
-
+// Inspired by https://github.com/spcl/serverless-benchmarks/blob/master/benchmarks/200.multimedia/210.thumbnailer/python/function.py
 func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
 	var input InputData
 	if err := gob.NewDecoder(bytes.NewReader(in.Data)).Decode(&input); err != nil {
