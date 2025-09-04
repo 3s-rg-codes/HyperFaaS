@@ -2,6 +2,7 @@ package dockerRuntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -42,10 +43,8 @@ const (
 	imagePrefix     = "hyperfaas-"
 )
 
-var (
-	// Regex that matches all chars that are not valid in a container names
-	forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
-)
+// Regex that matches all chars that are not valid in a container names
+var forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 
 func NewDockerRuntime(containerized bool, autoRemove bool, workerAddress string, logger *slog.Logger) *DockerRuntime {
 	var clientOpt client.Opt
@@ -81,7 +80,7 @@ func NewDockerRuntime(containerized bool, autoRemove bool, workerAddress string,
 
 	// Create the logs directory
 	if _, err := os.Stat(outputFolderAbs); os.IsNotExist(err) {
-		if err := os.MkdirAll(outputFolderAbs, 0755); err != nil {
+		if err := os.MkdirAll(outputFolderAbs, 0o755); err != nil {
 			logger.Error("Could not create logs directory", "error", err)
 			return nil
 		}
@@ -96,7 +95,6 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 	imageListArgs := filters.NewArgs()
 	imageListArgs.Add("reference", imageTag)
 	images, err := d.Cli.ImageList(ctx, image.ListOptions{Filters: imageListArgs})
-
 	if err != nil {
 		return cr.Container{}, fmt.Errorf("could not list Docker images: %v", err)
 	}
@@ -105,10 +103,9 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 		// Pull the image from docker hub if necessary.
 		d.logger.Debug("Pulling image", "image", imageTag)
 		reader, err := d.Cli.ImagePull(ctx, imageTag, image.PullOptions{})
-
 		if err != nil {
 			d.logger.Error("Could not pull image", "image", imageTag, "error", err)
-			return cr.Container{}, status.Errorf(codes.NotFound, err.Error())
+			return cr.Container{}, status.Error(codes.NotFound, err.Error())
 		}
 
 		_, _ = io.Copy(os.Stdout, reader)
@@ -130,7 +127,6 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 		nil,
 		containerName,
 	)
-
 	if err != nil {
 		d.logger.Error("Could not create container", "image", imageTag, "error", err)
 		return cr.Container{}, err
@@ -156,7 +152,7 @@ func (d *DockerRuntime) Stop(ctx context.Context, instanceID string) error {
 	_, err := d.Cli.ContainerInspect(ctx, instanceID)
 	if err != nil {
 		d.logger.Error("Container does not exist", "id", instanceID)
-		return status.Errorf(codes.NotFound, err.Error())
+		return status.Error(codes.NotFound, err.Error())
 	}
 
 	// Stop the container
@@ -180,7 +176,7 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) erro
 		select {
 		case event := <-eventsChan:
 			if event.Action == "die" {
-				return fmt.Errorf("container died")
+				return errors.New("container died")
 			}
 		case <-errChan:
 			// Ignore Docker event errors as they're usually not critical
@@ -193,13 +189,11 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) erro
 }
 
 func (d *DockerRuntime) RemoveImage(ctx context.Context, imageTag string) error {
-
 	opt := image.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "reference", Value: imageTag}),
 	}
 
 	localImages, err := d.Cli.ImageList(ctx, opt)
-
 	if err != nil {
 		d.logger.Error("Could not list local images", "error", err)
 		return fmt.Errorf("could not list local images, error: %v", err)
@@ -207,7 +201,7 @@ func (d *DockerRuntime) RemoveImage(ctx context.Context, imageTag string) error 
 
 	if len(localImages) > 0 {
 		d.logger.Debug("Image already exists locally", "image", imageTag)
-		//erase image
+		// erase image
 		_, err := d.Cli.ImageRemove(ctx, localImages[0].ID, image.RemoveOptions{
 			Force: true,
 		})
@@ -225,7 +219,7 @@ func (d *DockerRuntime) ContainerExists(ctx context.Context, instanceID string) 
 	return err == nil
 }
 
-func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) io.ReadCloser { //TODO: we need to find a return type that is compatible with all container runtimes and makes sense
+func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) io.ReadCloser { // TODO: we need to find a return type that is compatible with all container runtimes and makes sense
 	st, _ := d.Cli.ContainerStats(ctx, containerID, false)
 	return st.Body
 }
@@ -245,8 +239,8 @@ func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string
 			"50052/tcp": struct{}{},
 		},
 		Env: []string{
-			fmt.Sprintf("FUNCTION_ID=%s", functionID),
-			fmt.Sprintf("CONTROLLER_ADDRESS=%s", a),
+			"FUNCTION_ID=" + functionID,
+			"CONTROLLER_ADDRESS=" + a,
 		},
 	}
 }
@@ -255,9 +249,9 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 	var networkMode string
 	if d.containerized {
 		networkMode = "hyperfaas-network"
-		//networkMode = "host"
+		// networkMode = "host"
 	} else {
-		networkMode = "bridge" //Cannot be host since otherwise the container id pulled by the docker container from env will always be docker-desktop
+		networkMode = "bridge" // Cannot be host since otherwise the container id pulled by the docker container from env will always be docker-desktop
 	}
 	return &container.HostConfig{
 		AutoRemove:      d.autoRemove,
@@ -290,7 +284,7 @@ func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID st
 
 	network, ok := containerJSON.NetworkSettings.Networks["hyperfaas-network"]
 	if !ok {
-		return "", fmt.Errorf("container not connected to hyperfaas-network network")
+		return "", errors.New("container not connected to hyperfaas-network network")
 	}
 	/* network := containerJSON.NetworkSettings.Networks["host"]
 	if network == nil {

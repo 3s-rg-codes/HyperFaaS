@@ -1,0 +1,18 @@
+version: "2"
+run:
+  allow-parallel-runners: true
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+
+linters:
+  enable:
+    - errcheck
+    - asciicheck
+    - bidichk
+    - nilerr
+    - perfsprint
+    - unconvert
+    - whitespace

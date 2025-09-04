@@ -9,7 +9,6 @@ import (
 )
 
 func main() {
-
 	f := functionRuntimeInterface.New(120)
 
 	f.Ready(handler)
@@ -17,16 +16,8 @@ func main() {
 
 // this function crashes the container on purpose
 func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
-
-	resp := &common.CallResponse{
-		Data:  []byte(""),
-		Error: nil,
-	}
-
-	//sleep for 2 seconds
+	// sleep for 2 seconds
 	time.Sleep(2 * time.Second)
-	//crash the container
+	// crash the container
 	panic("crash")
-
-	return resp, nil
 }

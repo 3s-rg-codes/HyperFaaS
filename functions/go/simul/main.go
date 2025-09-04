@@ -10,7 +10,6 @@ import (
 )
 
 func main() {
-
 	f := functionRuntimeInterface.New(10)
 
 	f.Ready(handler)

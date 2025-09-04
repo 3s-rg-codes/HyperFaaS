@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -32,7 +33,6 @@ type lbServer struct {
 }
 
 func (l *lbServer) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-
 	l.logger.Debug("Received ScheduleCall request", "function_id", req.FunctionId)
 
 	if len(l.leafAddrs) > 0 {
@@ -64,9 +64,9 @@ func setupLogger(level, format, filePath string) *slog.Logger {
 		opts.Level = slog.LevelInfo
 	}
 
-	var writer = os.Stdout
+	writer := os.Stdout
 	if filePath != "" {
-		file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
 		if err != nil {
 			panic(fmt.Sprintf("failed to open log file: %v", err))
 		}
@@ -90,7 +90,7 @@ func setupLogger(level, format, filePath string) *slog.Logger {
 // Helper function to create gRPC client with load balancer
 func createClientConnection(addrs []string, scheme string, strategy string) (*grpc.ClientConn, error) {
 	if len(addrs) == 0 {
-		return nil, fmt.Errorf("no addresses provided")
+		return nil, errors.New("no addresses provided")
 	}
 
 	mr := manual.NewBuilderWithScheme(scheme)

@@ -105,7 +105,6 @@ func main() {
 		logger.Error("failed to serve", "error", err)
 		os.Exit(1)
 	}
-
 }
 
 func setupLogger(logLevel string, logFormat string, logFilePath string) *slog.Logger {
@@ -128,7 +127,7 @@ func setupLogger(logLevel string, logFormat string, logFilePath string) *slog.Lo
 	var output *os.File
 	var err error
 	if logFilePath != "" {
-		output, err = os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		output, err = os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			slog.Error("Failed to open log file, falling back to stdout", "error", err)
 			output = os.Stdout
@@ -166,19 +165,13 @@ func setupLogger(logLevel string, logFormat string, logFilePath string) *slog.Lo
 	return logger
 }
 
-var serviceConfig = `{
-	"loadBalancingPolicy": "round_robin",
-	"healthCheckConfig": {
-		"serviceName": ""
-	}
-}`
-
+//nolint:all
 func healthCheckWorker(workerID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// This function is deprecated but I'm not sure how to replace it
-	//https://github.com/grpc/grpc-go/blob/master/Documentation/anti-patterns.md
+	// https://github.com/grpc/grpc-go/blob/master/Documentation/anti-patterns.md
 	conn, err := grpc.DialContext(ctx, workerID,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithBlock(), // This makes the dial synchronous

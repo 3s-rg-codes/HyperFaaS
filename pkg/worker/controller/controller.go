@@ -39,8 +39,7 @@ type Controller struct {
 }
 
 func (s *Controller) Start(ctx context.Context, req *workerPB.StartRequest) (*workerPB.StartResponse, error) {
-
-	//Check if we have config and image for ID cached and if not get it from db
+	// Check if we have config and image for ID cached and if not get it from db
 	s.mu.RLock()
 	_, ok := s.functionIDCache[req.FunctionId]
 	s.mu.RUnlock()
@@ -111,9 +110,7 @@ func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common
 }
 
 func (s *Controller) Stop(ctx context.Context, req *workerPB.StopRequest) (*workerPB.StopResponse, error) {
-
 	err := s.runtime.Stop(ctx, req.InstanceId)
-
 	if err != nil {
 		s.logger.Error("Failed to stop container", "instance ID", req.InstanceId, "error", err)
 		s.StatsManager.Enqueue(stats.Event().Container(req.InstanceId).Stop().Failed())
@@ -125,7 +122,6 @@ func (s *Controller) Stop(ctx context.Context, req *workerPB.StopRequest) (*work
 	s.logger.Debug("Successfully enqueued event for container", "container", req.InstanceId)
 
 	return &workerPB.StopResponse{InstanceId: req.InstanceId}, nil
-
 }
 
 // Streams the status updates to a client.
@@ -177,7 +173,6 @@ func (s *Controller) Status(req *workerPB.StatusRequest, stream workerPB.Worker_
 }
 
 func (s *Controller) Metrics(ctx context.Context, req *workerPB.MetricsRequest) (*workerPB.MetricsUpdate, error) {
-
 	cpu_percentage_percpu, err1 := cpu.Percent(time.Millisecond*10, true)
 	virtual_mem, err2 := mem.VirtualMemory()
 
@@ -201,13 +196,12 @@ func NewController(runtime cr.ContainerRuntime, statsManager *stats.StatsManager
 }
 
 func (s *Controller) StartServer() {
-
 	grpcServer := grpc.NewServer()
 	// TODO pass context to sub servers
-	//ctx, cancel := context.WithCancel(context.Background())
-	//defer cancel()
+	// ctx, cancel := context.WithCancel(context.Background())
+	// defer cancel()
 
-	//Start the stats manager
+	// Start the stats manager
 
 	go func() {
 		s.StatsManager.StartStreamingToListeners()
@@ -228,7 +222,6 @@ func (s *Controller) StartServer() {
 	healthcheck.SetServingStatus("worker", healthpb.HealthCheckResponse_SERVING)
 
 	lis, err := net.Listen("tcp", s.address)
-
 	if err != nil {
 		s.logger.Error("failed to listen", "error", err)
 	}
@@ -240,7 +233,6 @@ func (s *Controller) StartServer() {
 	if err := grpcServer.Serve(lis); err != nil {
 		s.logger.Error("Controller Server failed to serve", "error", err)
 	}
-
 }
 
 func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container) {
@@ -250,7 +242,6 @@ func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container
 	monitorCtx := context.Background()
 
 	event, err := s.runtime.MonitorContainer(monitorCtx, c.Id, functionID)
-
 	if err != nil {
 		s.logger.Error("Failed to monitor container", "instanceID", c.Id, "error", err)
 		return

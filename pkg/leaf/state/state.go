@@ -10,9 +10,11 @@ import (
 	"time"
 )
 
-type WorkerID string
-type InstanceID string
-type FunctionID string
+type (
+	WorkerID   string
+	InstanceID string
+	FunctionID string
+)
 
 type SmallState struct {
 	mu          sync.RWMutex

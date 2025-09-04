@@ -15,8 +15,10 @@ import (
 
 const ADDRESS = "http://localhost:8080/"
 
-var sampleData map[string]PostRequest
-var idList []string
+var (
+	sampleData map[string]PostRequest
+	idList     []string
+)
 
 func TestMain(m *testing.M) {
 	setup()
@@ -31,23 +33,21 @@ func setup() {
 	}
 	go db.Start()
 
-	//Write some sample data
+	// Write some sample data
 	entries := 100
 
 	sampleData = make(map[string]PostRequest)
-	//for testing purposes image tag AND function ID are UUIDS
+	// for testing purposes image tag AND function ID are UUIDS
 	func() {
 		for i := 0; i < entries; i++ {
-
-			functionID := uuid.New().String() //create random id
+			functionID := uuid.New().String() // create random id
 			idList = append(idList, functionID)
 
-			sampleData[functionID] = generateRandomConfig() //create random data
+			sampleData[functionID] = generateRandomConfig() // create random data
 		}
 	}()
 
 	db.Data = sampleData
-
 }
 
 func TestHttpDBClient_Get(t *testing.T) {

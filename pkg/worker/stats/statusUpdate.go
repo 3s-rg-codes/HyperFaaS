@@ -2,9 +2,11 @@ package stats
 
 import "time"
 
-type UpdateType int
-type UpdateEvent int
-type UpdateStatus int
+type (
+	UpdateType   int
+	UpdateEvent  int
+	UpdateStatus int
+)
 
 const (
 	TypeContainer UpdateType = iota
