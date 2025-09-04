@@ -170,3 +170,5 @@ kill-db:
 kill: kill-worker kill-db
 
 
+lint:
+    golangci-lint run

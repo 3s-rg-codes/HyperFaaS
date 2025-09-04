@@ -32,15 +32,14 @@ type FunctionData struct {
 
 // Put is called Put because we use it as a key-value-store, but from a REST POV its POST
 func (db *HttpDBClient) Put(image *common.Image, config *common.Config) (string, error) {
-
 	postData := PostRequest{
 		ImageTag: image.Tag,
 		Config: Config{
 			CpuPeriod:      int(config.Cpu.Period),
 			CpuQuota:       int(config.Cpu.Quota),
 			MemLimit:       int(config.Memory),
-			Timeout:        int32(config.Timeout),
-			MaxConcurrency: int32(config.MaxConcurrency),
+			Timeout:        config.Timeout,
+			MaxConcurrency: config.MaxConcurrency,
 		},
 	}
 
@@ -92,7 +91,6 @@ func (db *HttpDBClient) Put(image *common.Image, config *common.Config) (string,
 }
 
 func (db *HttpDBClient) Get(functionID string) (string, *common.Config, error) {
-
 	req, err := http.NewRequest(http.MethodGet, db.address, bytes.NewBuffer([]byte(functionID)))
 	if err != nil {
 		db.logger.Error("error creating GET request", "error", err)
@@ -139,8 +137,8 @@ func (db *HttpDBClient) Get(functionID string) (string, *common.Config, error) {
 			Period: int64(r.Config.CpuPeriod),
 			Quota:  int64(r.Config.CpuQuota),
 		},
-		Timeout:        int32(r.Config.Timeout),
-		MaxConcurrency: int32(r.Config.MaxConcurrency),
+		Timeout:        r.Config.Timeout,
+		MaxConcurrency: r.Config.MaxConcurrency,
 	}
 
 	id := r.ImageTag

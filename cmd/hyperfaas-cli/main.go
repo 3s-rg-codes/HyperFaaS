@@ -190,7 +190,7 @@ func main() {
 							&cli.Int64Flag{
 								Name:  "memory",
 								Usage: "memory config for the function",
-								Value: 1024 * 1024 * 256, //256MB
+								Value: 1024 * 1024 * 256, // 256MB
 							},
 						},
 						Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -291,8 +291,8 @@ func CreateFunction(client leafpb.LeafClient,
 	cpuPeriod int64,
 	cpuQuota int64,
 	memory int64,
-	timeout time.Duration) (string, error) {
-
+	timeout time.Duration,
+) (string, error) {
 	cpuConfig := &commonpb.CPUConfig{
 		Period: cpuPeriod,
 		Quota:  cpuQuota,
@@ -326,8 +326,8 @@ func CreateFunction(client leafpb.LeafClient,
 func ScheduleCall(client HyperFaaSClient,
 	funcID string,
 	data []byte,
-	timeout time.Duration) ([]byte, error) {
-
+	timeout time.Duration,
+) ([]byte, error) {
 	scheduleCallReq := &commonpb.CallRequest{
 		FunctionId: funcID,
 		Data:       data,
@@ -351,8 +351,8 @@ func ScheduleCall(client HyperFaaSClient,
 // StartFunction starts a function by talking to the worker API. Returns the instance ID.
 func StartFunction(client workerpb.WorkerClient,
 	funcID string,
-	timeout time.Duration) (string, error) {
-
+	timeout time.Duration,
+) (string, error) {
 	startReq := &workerpb.StartRequest{
 		FunctionId: funcID,
 	}
@@ -372,8 +372,8 @@ func StartFunction(client workerpb.WorkerClient,
 func CallFunction(client workerpb.WorkerClient,
 	funcID string,
 	data []byte,
-	timeout time.Duration) ([]byte, error) {
-
+	timeout time.Duration,
+) ([]byte, error) {
 	callReq := &commonpb.CallRequest{
 		FunctionId: funcID,
 		Data:       data,
@@ -393,8 +393,8 @@ func CallFunction(client workerpb.WorkerClient,
 // StopInstance stops an instance of a function by talking to the worker API. Returns the instance ID.
 func StopInstance(client workerpb.WorkerClient,
 	id string,
-	timeout time.Duration) (string, error) {
-
+	timeout time.Duration,
+) (string, error) {
 	stopReq := &workerpb.StopRequest{
 		InstanceId: id,
 	}
@@ -414,8 +414,8 @@ func StopInstance(client workerpb.WorkerClient,
 func ReadStatusUpdateStream(client workerpb.WorkerClient,
 	nodeId string,
 	duration time.Duration,
-	timeout time.Duration) error {
-
+	timeout time.Duration,
+) error {
 	statusReq := &workerpb.StatusRequest{
 		NodeId: nodeId,
 	}
@@ -448,8 +448,8 @@ func ReadStatusUpdateStream(client workerpb.WorkerClient,
 // GetWorkerMetrics gets the metrics from the worker API and prints them.
 func GetWorkerMetrics(client workerpb.WorkerClient,
 	nodeId string,
-	timeout time.Duration) error {
-
+	timeout time.Duration,
+) error {
 	metricsReq := &workerpb.MetricsRequest{
 		NodeId: nodeId,
 	}

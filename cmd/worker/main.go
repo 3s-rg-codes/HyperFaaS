@@ -4,13 +4,13 @@ import (
 	"flag"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 
-	"net/http"
 	_ "net/http/pprof"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
@@ -74,7 +74,7 @@ func setupLogger(config WorkerConfig) *slog.Logger {
 	var output *os.File
 	var err error
 	if config.Log.FilePath != "" {
-		output, err = os.OpenFile(config.Log.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		output, err = os.OpenFile(config.Log.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			slog.Error("Failed to open log file, falling back to stdout", "error", err)
 			output = os.Stdout
@@ -121,7 +121,7 @@ func main() {
 	var dbClient kv.FunctionMetadataStore
 
 	if wc.Runtime.Containerized {
-		dbAddress = "http://database:8999/" //needs to have this format for http to work
+		dbAddress = "http://database:8999/" // needs to have this format for http to work
 	} else {
 		dbAddress = "http://localhost:8999"
 	}
@@ -136,7 +136,7 @@ func main() {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.Address, logger)
 	case "fake":
-		//runtime = mock.NewMockRuntime(logger)
+		// runtime = mock.NewMockRuntime(logger)
 	default:
 		logger.Error("No runtime specified")
 		os.Exit(1)

@@ -96,7 +96,7 @@ func (t *Store) handleGet(w http.ResponseWriter, r *http.Request) {
 	t.Lock.RLock()
 	defer t.Lock.RUnlock()
 
-	if data, ok := t.Data[string(b)]; ok { //look in db to see if we have data for id
+	if data, ok := t.Data[string(b)]; ok { // look in db to see if we have data for id
 		w.WriteHeader(http.StatusOK)
 		jsonData, err := json.Marshal(data)
 		if err != nil {
@@ -114,7 +114,7 @@ func (t *Store) handleGet(w http.ResponseWriter, r *http.Request) {
 
 func (t *Store) handlePost(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Post request received")
-	//read request body
+	// read request body
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
