@@ -128,7 +128,7 @@ func main() {
 
 	switch wc.General.DatabaseType {
 	case "http":
-		dbClient = kv.NewHttpClient(dbAddress, logger)
+		dbClient = kv.NewHttpDBClient(dbAddress, logger)
 	}
 
 	// Runtime

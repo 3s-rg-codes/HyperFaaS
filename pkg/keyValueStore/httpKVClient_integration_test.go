@@ -1,3 +1,5 @@
+//go:build integration
+
 package keyValueStore
 
 import (
@@ -13,47 +15,46 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const ADDRESS = "http://localhost:8080/"
+const INTEGRATION_DB_ADDRESS = "http://localhost:8999/"
 
 var (
 	sampleData map[string]PostRequest
 	idList     []string
 )
+var once sync.Once
 
-func TestMain(m *testing.M) {
-	setup()
-	m.Run()
-}
-
-func setup() {
-	fmt.Println("Starting http server")
-	db := Store{
-		Lock: sync.RWMutex{},
-		Data: make(map[string]PostRequest),
-	}
-	go db.Start()
-
-	// Write some sample data
-	entries := 100
-
-	sampleData = make(map[string]PostRequest)
-	// for testing purposes image tag AND function ID are UUIDS
-	func() {
-		for i := 0; i < entries; i++ {
-			functionID := uuid.New().String() // create random id
-			idList = append(idList, functionID)
-
-			sampleData[functionID] = generateRandomConfig() // create random data
+func setupIntegrationServer() {
+	once.Do(func() {
+		fmt.Println("Starting integration test server")
+		db := Store{
+			Lock: sync.RWMutex{},
+			Data: make(map[string]PostRequest),
 		}
-	}()
+		go db.Start()
 
-	db.Data = sampleData
+		// Write some sample data
+		entries := 100
+
+		sampleData = make(map[string]PostRequest)
+		// for testing purposes image tag AND function ID are UUIDS
+		func() {
+			for i := 0; i < entries; i++ {
+				functionID := uuid.New().String() // create random id
+				idList = append(idList, functionID)
+
+				sampleData[functionID] = generateRandomConfig() // create random data
+			}
+		}()
+
+		db.Data = sampleData
+	})
 }
 
-func TestHttpDBClient_Get(t *testing.T) {
+func TestHttpDBClient_Get_Integration(t *testing.T) {
+	setupIntegrationServer()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	dbClient := NewHttpClient(ADDRESS, logger)
+	dbClient := NewHttpDBClient(INTEGRATION_DB_ADDRESS, logger)
 
 	id := idList[50]
 	data := sampleData[id]
@@ -66,10 +67,11 @@ func TestHttpDBClient_Get(t *testing.T) {
 	assert.True(t, fieldsEqual(data, tag, c), "expected and actual config don't match")
 }
 
-func TestHttpDBClient_Put(t *testing.T) {
+func TestHttpDBClient_Put_Integration(t *testing.T) {
+	setupIntegrationServer()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	dbClient := NewHttpClient(ADDRESS, logger)
+	dbClient := NewHttpDBClient(INTEGRATION_DB_ADDRESS, logger)
 
 	id := idList[30]
 	postRequest := sampleData[id]

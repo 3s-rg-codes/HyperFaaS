@@ -99,6 +99,11 @@ test-all:
 test name:
     go test -run {{name}} ./...
 
+
+test-integration:
+    go test -v ./... -tags=integration
+
+
 #Containerized integration tests via docker compose
 build-integration-containerized-all:
     ENTRYPOINT_CMD="-test_cases=all" docker compose -f test-compose.yaml up --build
