@@ -41,6 +41,8 @@ const (
 	logsOutputDir   = "/functions/logs/" // Relative to project root
 	containerPrefix = "hyperfaas-"
 	imagePrefix     = "hyperfaas-"
+	// This is the default IP of the docker bridge network gateway, which should be used by containers to connect to the worker server if we are running in non-containerized mode
+	dockerBridgeGatewayIP = "172.17.0.1"
 )
 
 // Regex that matches all chars that are not valid in a container names
@@ -160,6 +162,8 @@ func (d *DockerRuntime) Stop(ctx context.Context, instanceID string) error {
 		return err
 	}
 
+	d.Cli.ContainerWait(ctx, instanceID, container.WaitConditionRemoved)
+
 	d.logger.Debug("Stopped container", "id", instanceID)
 
 	return nil
@@ -231,7 +235,7 @@ func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string
 		// this depends on the compose.yaml , the name of the service is worker
 		a = fmt.Sprintf("%s:%s", "worker", port)
 	} else {
-		a = fmt.Sprintf("%s:%s", "127.0.0.1", port)
+		a = fmt.Sprintf("%s:%s", dockerBridgeGatewayIP, port)
 	}
 	return &container.Config{
 		Image: imageTag,
@@ -251,7 +255,7 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 		networkMode = "hyperfaas-network"
 		// networkMode = "host"
 	} else {
-		networkMode = "host" // Cannot be host since otherwise the container id pulled by the docker container from env will always be docker-desktop
+		networkMode = "bridge" // Cannot be host since otherwise the container id pulled by the docker container from env will always be docker-desktop
 	}
 	return &container.HostConfig{
 		AutoRemove:      d.autoRemove,
@@ -284,7 +288,7 @@ func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID st
 
 	network, ok := containerJSON.NetworkSettings.Networks["hyperfaas-network"]
 	if !ok {
-		network, ok = containerJSON.NetworkSettings.Networks["host"]
+		network, ok = containerJSON.NetworkSettings.Networks["bridge"]
 		if !ok {
 			return "", errors.New("container not connected to hyperfaas-network network or bridge network")
 		}
