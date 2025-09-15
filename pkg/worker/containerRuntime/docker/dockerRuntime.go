@@ -251,7 +251,7 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 		networkMode = "hyperfaas-network"
 		// networkMode = "host"
 	} else {
-		networkMode = "bridge" // Cannot be host since otherwise the container id pulled by the docker container from env will always be docker-desktop
+		networkMode = "host" // Cannot be host since otherwise the container id pulled by the docker container from env will always be docker-desktop
 	}
 	return &container.HostConfig{
 		AutoRemove:      d.autoRemove,
@@ -284,12 +284,12 @@ func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID st
 
 	network, ok := containerJSON.NetworkSettings.Networks["hyperfaas-network"]
 	if !ok {
-		return "", errors.New("container not connected to hyperfaas-network network")
+		network, ok = containerJSON.NetworkSettings.Networks["host"]
+		if !ok {
+			return "", errors.New("container not connected to hyperfaas-network network or bridge network")
+		}
 	}
-	/* network := containerJSON.NetworkSettings.Networks["host"]
-	if network == nil {
-		return "", fmt.Errorf("container not connected to host network")
-	} */
+
 	return fmt.Sprintf("%s:%d", network.IPAddress, 50052), nil
 }
 
