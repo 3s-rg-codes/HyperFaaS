@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"math/rand"
@@ -209,6 +210,8 @@ func TestGetListenerByID_Multiple(t *testing.T) {
 }
 
 func TestStartStreamingToListeners(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	sm := createTestStatsManager()
 
 	chListener := make(chan StatusUpdate, 10)
@@ -222,7 +225,7 @@ func TestStartStreamingToListeners(t *testing.T) {
 	}
 
 	sm.AddListener("1", chListener)
-	go sm.StartStreamingToListeners()
+	go sm.StartStreamingToListeners(ctx)
 
 	arrOut := make([]StatusUpdate, 6)
 
@@ -290,8 +293,8 @@ func TestStartStreamingToListeners(t *testing.T) {
 } */
 
 func TestStartStreamingToListeners_Concurrent(t *testing.T) {
-	t.Logf("Dont worry this test takes about 100 seconds")
-
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	sm := createTestStatsManager()
 
 	chListener := make(chan StatusUpdate, 10000) // use same buffer we defined in main
@@ -299,7 +302,7 @@ func TestStartStreamingToListeners_Concurrent(t *testing.T) {
 
 	sm.AddListener("1", chListener)
 
-	go sm.StartStreamingToListeners()
+	go sm.StartStreamingToListeners(ctx)
 
 	wg := sync.WaitGroup{}
 

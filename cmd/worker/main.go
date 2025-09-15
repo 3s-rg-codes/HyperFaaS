@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"log/slog"
@@ -143,6 +144,8 @@ func main() {
 	}
 
 	c := controller.NewController(runtime, statsManager, logger, wc.General.Address, dbClient)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	c.StartServer()
+	c.StartServer(ctx)
 }

@@ -195,7 +195,7 @@ func NewController(runtime cr.ContainerRuntime, statsManager *stats.StatsManager
 	}
 }
 
-func (s *Controller) StartServer() {
+func (s *Controller) StartServer(ctx context.Context) {
 	grpcServer := grpc.NewServer()
 	// TODO pass context to sub servers
 	// ctx, cancel := context.WithCancel(context.Background())
@@ -204,17 +204,7 @@ func (s *Controller) StartServer() {
 	// Start the stats manager
 
 	go func() {
-		s.StatsManager.StartStreamingToListeners()
-	}()
-
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-
-		<-sigCh
-		s.logger.Info("Shutting down gracefully...")
-
-		grpcServer.GracefulStop()
+		s.StatsManager.StartStreamingToListeners(ctx)
 	}()
 
 	healthcheck := health.NewServer()
@@ -230,8 +220,21 @@ func (s *Controller) StartServer() {
 
 	s.logger.Debug("Controller Server listening on", "address", lis.Addr())
 
-	if err := grpcServer.Serve(lis); err != nil {
-		s.logger.Error("Controller Server failed to serve", "error", err)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case <-ctx.Done():
+		grpcServer.GracefulStop()
+		return
+	case <-sigCh:
+		s.logger.Info("Shutting down gracefully...")
+
+		grpcServer.GracefulStop()
+	default:
+		if err := grpcServer.Serve(lis); err != nil {
+			s.logger.Error("Controller Server failed to serve", "error", err)
+		}
 	}
 }
 
