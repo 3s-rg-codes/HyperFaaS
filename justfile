@@ -103,6 +103,9 @@ test name:
 test-integration:
     go test -v ./... -tags=integration
 
+test-color-integration:
+    GOTEST_PALETTE="red,green" gotest -v ./... -tags=integration
+
 
 #Containerized integration tests via docker compose
 build-integration-containerized-all:
@@ -177,3 +180,7 @@ kill: kill-worker kill-db
 
 lint:
     golangci-lint run
+
+# Print the last n function logs
+function-logs n:
+    sudo bash -c ' cd /var/lib/docker/volumes/function-logs/_data && ls -t | head -n {{n}} | xargs -r cat'
