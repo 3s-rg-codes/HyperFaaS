@@ -100,12 +100,9 @@ test name:
     go test -run {{name}} ./...
 
 
-test-integration:
-    go test -v ./... -tags=integration
-
-test-color-integration:
-    GOTEST_PALETTE="red,green" gotest -v ./... -tags=integration
-
+test-integration color="false":
+    if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./... -tags=integration; fi
+    if [ "{{color}}" = "false" ]; then go test -v ./... -tags=integration; fi
 
 #Containerized integration tests via docker compose
 build-integration-containerized-all:

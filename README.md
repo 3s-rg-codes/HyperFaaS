@@ -97,8 +97,13 @@ just test-all
 
 Run integration tests:
 ```
-just test-integration-containerized-all
+just test-integration
 ```
+If you want colored output, install gotest:
+```
+go install github.com/rakyll/gotest@latest
+```
+
 
 ## Cleanup
 
