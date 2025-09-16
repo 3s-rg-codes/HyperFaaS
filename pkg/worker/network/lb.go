@@ -64,14 +64,3 @@ func (f *CallRouter) HandleInstanceTimeout(id string, addr string) {
 	f.logger.Debug("Removing addr from router", "id", id, "addr", addr)
 	router.RemoveAddr(addr)
 }
-
-// Updates the router to add the instance to the list of available instances.
-func (f *CallRouter) HandleAddInstance(id string, addr string) {
-	f.mu.RLock()
-	router := f.routers[id]
-	f.mu.RUnlock()
-	if router == nil {
-		return
-	}
-	router.AddAddr(addr)
-}
