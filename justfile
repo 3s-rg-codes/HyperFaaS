@@ -50,25 +50,25 @@ build: build-functions-go build-worker
 
 # run the worker with default configurations. Make sure to run just build every time you change the code
 # Alternatively, run just dev if you want to make sure you are always running the latest code
-start-rebuild service:
-    docker compose up -d --no-deps --build {{service}}
+start-rebuild service  runtime_type="docker" log_level="info":
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose up -d --no-deps --build {{service}}
 alias sr := start-rebuild
 
-start:
+start runtime_type="docker" log_level="info":
     @echo "Starting docker service"
-    docker compose up --detach --remove-orphans
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose up --detach --remove-orphans
 
 restart:
     @echo "Restarting docker service"
-    docker compose restart
+    RUNTIME_TYPE=docker LOG_LEVEL=info docker compose restart
 
 stop:
     @echo "Stopping docker service"
     docker compose down
     
-d:
+d runtime_type="docker" log_level="info":
     @echo "Starting docker service"
-    docker compose up --build --detach
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose up --build --detach
 
 
 # generates proto, builds binary, builds docker go and runs the workser
