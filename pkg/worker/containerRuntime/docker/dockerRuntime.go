@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/docker/docker/api/types/mount"
@@ -29,12 +30,18 @@ import (
 
 type DockerRuntime struct {
 	cr.ContainerRuntime
-	Cli             *client.Client
-	autoRemove      bool
-	containerized   bool
-	workerAddress   string
+	// the docker client
+	Cli *client.Client
+	// whether the container should be automatically removed when it exits
+	autoRemove bool
+	// whether the runtime runs inside a containerized environment
+	containerized bool
+	// the address of the worker server
+	workerAddress string
+	// the absolute path to the output folder for logs
 	outputFolderAbs string
-	logger          *slog.Logger
+	// the logger
+	logger *slog.Logger
 }
 
 const (
@@ -48,6 +55,7 @@ const (
 // Regex that matches all chars that are not valid in a container names
 var forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 
+// NewDockerRuntime creates a new DockerRuntime instance. It can be containerized, meaning that it considers that this code will run inside a container, which changes how we address the docker API and how we manage networks.
 func NewDockerRuntime(containerized bool, autoRemove bool, workerAddress string, logger *slog.Logger) *DockerRuntime {
 	var clientOpt client.Opt
 	if containerized {
@@ -123,7 +131,7 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 	containerName = forbiddenChars.ReplaceAllString(containerName, "")
 
 	resp, err := d.Cli.ContainerCreate(ctx,
-		d.createContainerConfig(imageTag, functionID),
+		d.createContainerConfig(imageTag, functionID, config.Timeout),
 		d.createHostConfig(config),
 		&network.NetworkingConfig{},
 		nil,
@@ -149,6 +157,7 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 	return cr.Container{Id: shortID, Name: containerName, IP: addr}, nil
 }
 
+// Stop stops a container with the given instance ID. It returns once the container is no longer running.
 func (d *DockerRuntime) Stop(ctx context.Context, instanceID string) error {
 	// Check if the container exists
 	_, err := d.Cli.ContainerInspect(ctx, instanceID)
@@ -192,6 +201,7 @@ func (d *DockerRuntime) NotifyCrash(ctx context.Context, instanceId string) erro
 	}
 }
 
+// RemoveImage removes an image from the local Docker registry
 func (d *DockerRuntime) RemoveImage(ctx context.Context, imageTag string) error {
 	opt := image.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "reference", Value: imageTag}),
@@ -218,9 +228,18 @@ func (d *DockerRuntime) RemoveImage(ctx context.Context, imageTag string) error 
 	return nil
 }
 
+// ContainerExists checks if a container with the given ID is currently running
 func (d *DockerRuntime) ContainerExists(ctx context.Context, instanceID string) bool {
-	_, err := d.Cli.ContainerInspect(ctx, instanceID)
-	return err == nil
+	containerJSON, err := d.Cli.ContainerInspect(context.Background(), instanceID)
+	if err != nil {
+		d.logger.Error("Error inspecting container", "error", err)
+		return false
+	}
+
+	if containerJSON.State.Running {
+		return true
+	}
+	return false
 }
 
 func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) io.ReadCloser { // TODO: we need to find a return type that is compatible with all container runtimes and makes sense
@@ -228,7 +247,7 @@ func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) 
 	return st.Body
 }
 
-func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string) *container.Config {
+func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string, timeoutSeconds int32) *container.Config {
 	var a string
 	port := strings.Split(d.workerAddress, ":")[1]
 	if d.containerized {
@@ -244,7 +263,10 @@ func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string
 		},
 		Env: []string{
 			"FUNCTION_ID=" + functionID,
+			// so the container can connect to the worker server and send a ReadySignal
 			"CONTROLLER_ADDRESS=" + a,
+			// after how many seconds without requests the container should timeout
+			"TIMEOUT_SECONDS=" + strconv.Itoa(int(timeoutSeconds)),
 		},
 	}
 }
@@ -276,6 +298,7 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 	}
 }
 
+// resolveContainerAddr resolves the address of the container , considering containerized or non-containerized mode. Docker networks have DNS which allows us to use the container name to resolve the address.
 func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID string, containerName string) (string, error) {
 	if d.containerized {
 		return fmt.Sprintf("%s:%d", containerName, 50052), nil

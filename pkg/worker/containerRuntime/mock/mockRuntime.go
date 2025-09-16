@@ -1,140 +1,35 @@
 package mock
 
-/*
 import (
 	"context"
-	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
 	"time"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	"github.com/3s-rg-codes/HyperFaaS/proto/controller"
-	pb "github.com/3s-rg-codes/HyperFaaS/proto/function"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
+	commonpb "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+var _ cr.ContainerRuntime = &MockRuntime{}
+
 type MockRuntime struct {
-	cr.ContainerRuntime
-	logger  *slog.Logger
-	mapLock *sync.Mutex
-	Running map[string][]RunningInstance
-	Dict    map[string]string
+	logger       *slog.Logger
+	mapLock      *sync.RWMutex
+	Instances    map[string][]*instance
+	readySignals *controller.ReadySignals
 }
 
-type RunningInstance struct {
-	ctx context.Context
-	id  string
-}
-
-func NewMockRuntime(logger *slog.Logger) *MockRuntime {
-	return &MockRuntime{
-		logger:  logger,
-		mapLock: new(sync.Mutex),
-		Running: make(map[string][]RunningInstance),
-		Dict:    make(map[string]string),
-	}
-}
-
-func (m *MockRuntime) Start(ctx context.Context, functionID string, imageTag string, _ *common.Config) (string, error) {
-
-	longID, err := uuid.NewUUID()
-	if err != nil {
-		return "", err
-	}
-	instanceID := longID.String()[:8]      //truncating the ID to 8 for compatibility
-	controlContext := context.Background() //cant be the same context of this function since it'll be canceled when the function returns, we will use this to stop the goroutine when the function should be stopped
-	instance := RunningInstance{
-		ctx: controlContext,
-		id:  instanceID,
-	}
-	m.mapLock.Lock()
-	m.Running[imageTag] = append(m.Running[imageTag], instance)
-	m.mapLock.Unlock()
-	payload := &pb.Payload{
-		FirstExecution: true,
-		InstanceId:     &common.InstanceID{Id: instanceID},
-		FunctionId:     &common.FunctionID{Id: functionID},
-	}
-	switch imageTag {
-	case "hyperfaas-hello:latest":
-		go fakeHelloFunction(payload, controlContext, m.callerRef, m.logger)
-	case "hyperfaas-echo:latest":
-
-		go fakeEchoFunction(payload, controlContext, m.callerRef, m.logger)
-	case "luccadibe/hyperfaas-functions:hello":
-		go fakeHelloFunction(payload, controlContext, m.callerRef, m.logger)
-	default:
-		return "", status.Errorf(codes.NotFound, "image tag is not available for mock runtime, %v", imageTag)
-	}
-
-	return instanceID, nil
-
-}
-
-//We need to start a goroutine which will act as a fake function and calls the ready endpoint since this
-//control flow is client side controlled, e.g. the function connects to the server and asks for new tasks
-//We needed to pass a reference to the caller Server in order to be able to access the grpc endpoint without
-//having to deal with networking (which is kinda the whole point of the fake runtime)
-
-func (m *MockRuntime) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-
-	return nil, nil //Also not implemented in docker Runtime
-}
-
-func (m *MockRuntime) Stop(ctx context.Context, req *common.InstanceID) (*common.InstanceID, error) { //Currently the instance will still finish running
-	for image, list := range m.Running {
-		for _, instance := range list {
-			m.logger.Debug("Instance for Image", "image", image, "instance", instance.id)
-		}
-	}
-
-	m.logger.Debug("Trying to stop instance", "instanceId", req.Id)
-
-	m.mapLock.Lock()
-	defer m.mapLock.Unlock()
-	for image, list := range m.Running {
-		for _, instance := range list {
-			if instance.id == req.Id {
-				m.logger.Info("Stopping running instance", "id", instance.id)
-				instance.ctx.Done() //this should stop the goroutine
-				m.Running[image] = deleteFromList(m.Running[image], instance.id)
-				if len(m.Running[image]) == 0 {
-					delete(m.Running, image)
-				}
-				return &common.InstanceID{Id: instance.id}, nil
-			}
-		}
-	}
-	m.logger.Warn("No such instance running", "id", req.Id)
-	return nil, status.Errorf(codes.NotFound, "no such instance running %v", req.Id)
-}
-
-func (m *MockRuntime) Status(req *controller.StatusRequest, stream controller.Controller_StatusServer) error {
-
-	return nil //What to do here, also not implemented for docker runtime
-}
-
-func (m *MockRuntime) NotifyCrash(ctx context.Context, instanceId *common.InstanceID) error {
-	return nil
-}
-
-func (m *MockRuntime) ContainerStats(ctx context.Context, containerID string) io.ReadCloser {
-	return nil
-}
-
-func (m *MockRuntime) RemoveImage(ctox context.Context, imageID string) error {
-	return nil //Also dont need this
-}
-
+// ContainerExists implements containerRuntime.ContainerRuntime.
 func (m *MockRuntime) ContainerExists(ctx context.Context, instanceID string) bool {
-	m.mapLock.Lock()
-	defer m.mapLock.Unlock()
-	for _, list := range m.Running {
+	m.mapLock.RLock()
+	defer m.mapLock.RUnlock()
+	for _, list := range m.Instances {
 		for _, val := range list {
 			if val.id == instanceID {
 				return false
@@ -144,105 +39,133 @@ func (m *MockRuntime) ContainerExists(ctx context.Context, instanceID string) bo
 	return true
 }
 
-func fakeEchoFunction(payload *pb.Payload, ctx context.Context, callerRef *caller.CallerServer, logger *slog.Logger) {
-	parentCtx := ctx
-	for {
-		// Create new timeout context for each iteration
-		ctx, cancel := context.WithTimeout(parentCtx, 10*time.Second)
+// ContainerStats doesnt make sense for mock runtime
+func (m *MockRuntime) ContainerStats(ctx context.Context, containerID string) io.ReadCloser {
+	// maybe doesn't make sense for mock runtime ..?
+	// TODO
+	panic("not implemented")
+}
 
+// MonitorContainer implements containerRuntime.ContainerRuntime.
+func (m *MockRuntime) MonitorContainer(ctx context.Context, instanceId string, functionId string) (cr.ContainerEvent, error) {
+	m.mapLock.RLock()
+	instances, ok := m.Instances[functionId]
+	m.mapLock.RUnlock()
+	if !ok {
+		// unsure if this is the correct return value, but we dont have any other information to return
+		return cr.ContainerEventExit, fmt.Errorf("function %s not found", functionId)
+	}
+	for _, instance := range instances {
+		if instance.id == instanceId {
+			// just wait for the context to be done
+			<-instance.ctx.Done()
+			return cr.ContainerEventTimeout, nil
+		}
+	}
+	return cr.ContainerEventExit, fmt.Errorf("instance %s not found", instanceId)
+}
+
+// RemoveImage doesnt make sense for mock runtime
+func (m *MockRuntime) RemoveImage(ctx context.Context, imageID string) error {
+	panic("not implemented")
+}
+
+// Start implements containerRuntime.ContainerRuntime.
+func (m *MockRuntime) Start(ctx context.Context, functionID string, imageTag string, config *commonpb.Config) (cr.Container, error) {
+	longID, err := uuid.NewUUID()
+	if err != nil {
+		return cr.Container{}, err
+	}
+	instanceID := longID.String()[:8] // truncating the ID to 8 for compatibility
+
+	var handler handler
+	switch imageTag {
+	case "hyperfaas-hello:latest":
+		handler = &fakeHelloFunction{}
+	case "hyperfaas-echo:latest":
+		handler = &fakeEchoFunction{}
+	case "hyperfaas-simul:latest":
+		handler = &fakeSimulFunction{}
+	default:
+		return cr.Container{}, status.Errorf(codes.NotFound, "image tag is not available for mock runtime, %v", imageTag)
+	}
+
+	fnCtx, fnCancel := context.WithCancel(ctx)
+	m.mapLock.Lock()
+	i := &instance{
+		ctx:          fnCtx,
+		cancel:       fnCancel,
+		id:           instanceID,
+		timeout:      time.Duration(config.Timeout) * time.Second,
+		lastActivity: time.Now(),
+		handler:      handler,
+	}
+	m.Instances[functionID] = append(m.Instances[functionID], i)
+	m.mapLock.Unlock()
+
+	// Signal that the instance is ready. If we dont do this, the controller will wait forever for the instance to be ready.
+	m.readySignals.AddInstance(instanceID)
+	go m.readySignals.SignalReady(instanceID)
+
+	go i.monitorTimeout()
+
+	return cr.Container{Id: instanceID, Name: imageTag, IP: "MOCK_RUNTIME_NO_IP"}, nil
+}
+
+// Stop implements containerRuntime.ContainerRuntime.
+func (m *MockRuntime) Stop(ctx context.Context, instanceID string) error {
+	m.mapLock.Lock()
+	defer m.mapLock.Unlock()
+	for _, instance := range m.Instances[instanceID] {
+		instance.cancel()
+	}
+	delete(m.Instances, instanceID)
+	return nil
+}
+
+type instance struct {
+	ctx          context.Context
+	cancel       context.CancelFunc
+	id           string
+	timeout      time.Duration
+	lastActivity time.Time
+	activityMu   sync.RWMutex
+	// used to implement the function custom logic
+	handler handler
+}
+
+func NewMockRuntime(logger *slog.Logger, readySignals *controller.ReadySignals) *MockRuntime {
+	return &MockRuntime{
+		logger:       logger,
+		mapLock:      new(sync.RWMutex),
+		Instances:    make(map[string][]*instance),
+		readySignals: readySignals,
+	}
+}
+
+type handler interface {
+	HandleCall(ctx context.Context, req *commonpb.CallRequest) (*commonpb.CallResponse, error)
+}
+
+// monitorTimeout monitors the instance's last activity and cancels the context if the instance has timed out
+// implementation is almos identical to the functionRuntimeInterface's monitorTimeout
+func (f *instance) monitorTimeout() {
+	ticker := time.NewTicker(time.Second)
+
+	for range ticker.C {
 		select {
-		case <-parentCtx.Done():
-			cancel()
+		// could be called from Stop()
+		case <-f.ctx.Done():
 			return
 		default:
-			call, err := callerRef.Ready(ctx, payload)
-			cancel()
+			f.activityMu.RLock()
+			timeSinceLastActivity := time.Since(f.lastActivity)
+			f.activityMu.RUnlock()
 
-			if errors.Is(err, context.Canceled) {
-				logger.Debug("Context was canceled and function shut down")
-			}
-			st, _ := status.FromError(err)
-			if st.Code() == codes.NotFound || st.Code() == codes.Unavailable {
-				logger.Debug("channel was closed before context could be canceled")
+			if timeSinceLastActivity >= f.timeout {
+				f.cancel()
 				return
-			}
-			if err != nil {
-				logger.Warn("Calling ready failed", "error", err)
-				return
-			}
-			if ctx.Err() == context.DeadlineExceeded {
-				// Timeout occurred, don't try to send response
-				logger.Debug("Ready call timed out, stopping function")
-				return
-			}
-			if call.Data == nil {
-				return
-			}
-			data := call.Data
-
-			payload = &pb.Payload{
-				Data:           data,
-				InstanceId:     payload.InstanceId,
-				FunctionId:     payload.FunctionId,
-				Error:          nil,
-				FirstExecution: false,
 			}
 		}
 	}
-
 }
-
-func fakeHelloFunction(payload *pb.Payload, ctx context.Context, callerRef *caller.CallerServer, logger *slog.Logger) {
-	parentCtx := ctx
-	for {
-		// Create new timeout context for each iteration
-		ctx, cancel := context.WithTimeout(parentCtx, 10*time.Second)
-
-		select {
-		case <-parentCtx.Done():
-			cancel()
-			return
-		default:
-			_, err := callerRef.Ready(ctx, payload)
-			cancel()
-			if errors.Is(err, context.Canceled) {
-				logger.Debug("Context was canceled and function shut down")
-				return
-			}
-			st, _ := status.FromError(err)
-			if st.Code() == codes.NotFound || st.Code() == codes.Unavailable {
-				logger.Debug("channel was closed before context could be canceled")
-				return
-			}
-			if err != nil {
-				logger.Warn("Calling ready failed", "error", err)
-				return
-			}
-			if ctx.Err() == context.DeadlineExceeded {
-				// Timeout occurred, don't try to send response
-				logger.Debug("Ready call timed out, stopping function")
-				return
-			}
-
-			payload = &pb.Payload{
-				Data:           []byte("HELLO WORLD!"),
-				InstanceId:     payload.InstanceId,
-				FunctionId:     payload.FunctionId,
-				Error:          nil,
-				FirstExecution: false,
-			}
-
-		}
-	}
-}
-
-func deleteFromList(list []RunningInstance, item string) []RunningInstance {
-	result := make([]RunningInstance, 0)
-	for _, v := range list {
-		if v.id != item {
-			result = append(result, v)
-		}
-	}
-	return result
-}
-*/

@@ -12,7 +12,6 @@ import (
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/network"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/worker"
@@ -29,13 +28,19 @@ type Controller struct {
 	workerPB.UnimplementedWorkerServer
 	runtime         cr.ContainerRuntime
 	StatsManager    *stats.StatsManager
-	callRouter      *network.CallRouter
+	callRouter      CallRouter
 	logger          *slog.Logger
 	address         string
 	dbClient        kv.FunctionMetadataStore
 	functionIDCache map[string]kv.FunctionData
 	readySignals    *ReadySignals
 	mu              sync.RWMutex
+}
+
+type CallRouter interface {
+	AddInstance(functionID string, ip string)
+	CallFunction(functionID string, req *common.CallRequest) (*common.CallResponse, error)
+	HandleInstanceTimeout(functionID string, ip string)
 }
 
 func (s *Controller) Start(ctx context.Context, req *workerPB.StartRequest) (*workerPB.StartResponse, error) {
@@ -182,16 +187,23 @@ func (s *Controller) Metrics(ctx context.Context, req *workerPB.MetricsRequest) 
 	return &workerPB.MetricsUpdate{CpuPercentPercpus: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
 }
 
-func NewController(runtime cr.ContainerRuntime, statsManager *stats.StatsManager, logger *slog.Logger, address string, client kv.FunctionMetadataStore) *Controller {
+func NewController(runtime cr.ContainerRuntime,
+	statsManager *stats.StatsManager,
+	logger *slog.Logger,
+	address string,
+	client kv.FunctionMetadataStore,
+	callRouter CallRouter,
+	readySignals *ReadySignals,
+) *Controller {
 	return &Controller{
 		runtime:         runtime,
 		StatsManager:    statsManager,
 		logger:          logger,
 		address:         address,
-		callRouter:      network.NewCallRouter(logger),
+		callRouter:      callRouter,
 		dbClient:        client,
 		functionIDCache: make(map[string]kv.FunctionData),
-		readySignals:    NewReadySignals(),
+		readySignals:    readySignals,
 	}
 }
 

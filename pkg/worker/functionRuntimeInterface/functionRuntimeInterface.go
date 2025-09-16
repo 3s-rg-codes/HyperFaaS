@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -28,7 +29,7 @@ type Response struct {
 }
 
 type Function struct {
-	timeout           int
+	timeoutSeconds    int32
 	controllerAddress string
 	request           *Request
 	response          *Response
@@ -53,8 +54,18 @@ func New(timeout int) *Function {
 		fmt.Printf("Environment variable FUNCTION_ID not found")
 	}
 
+	timeoutSeconds, ok := os.LookupEnv("TIMEOUT_SECONDS")
+	if !ok {
+		fmt.Printf("Environment variable TIMEOUT_SECONDS not found")
+	}
+	timeoutSecondsInt, err := strconv.Atoi(timeoutSeconds)
+	if err != nil {
+		// fallback 10 seconds
+		timeoutSecondsInt = 10
+	}
+
 	return &Function{
-		timeout:           timeout,
+		timeoutSeconds:    int32(timeoutSecondsInt),
 		controllerAddress: controllerAddress,
 		request:           &Request{},
 		response:          &Response{},
@@ -89,7 +100,7 @@ func (f *Function) Ready(handler func(context.Context, *common.CallRequest) (*co
 
 	go f.monitorTimeout(logger)
 
-	logger.Info("Server starting", "timeout", f.timeout)
+	logger.Info("Server starting", "timeout", f.timeoutSeconds)
 
 	// Notify controller that the function is ready to serve requests
 	go f.sendReadySignal()
@@ -108,9 +119,9 @@ func (f *Function) monitorTimeout(logger *slog.Logger) {
 		timeSinceLastActivity := time.Since(f.lastActivity)
 		f.activityMu.RUnlock()
 
-		if timeSinceLastActivity >= time.Duration(f.timeout)*time.Second {
+		if timeSinceLastActivity >= time.Duration(f.timeoutSeconds)*time.Second {
 			logger.Info("Server timeout reached, shutting down",
-				"timeout", f.timeout,
+				"timeout", f.timeoutSeconds,
 				"last_activity", timeSinceLastActivity)
 
 			f.server.GracefulStop()

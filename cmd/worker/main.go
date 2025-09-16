@@ -10,12 +10,14 @@ import (
 	"time"
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/network"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 
 	_ "net/http/pprof"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	dockerRuntime "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/docker"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime/mock"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 )
 
@@ -114,12 +116,13 @@ func main() {
 
 	logger.Info("Current configuration", "config", wc)
 
-	var runtime cr.ContainerRuntime
-
 	statsManager := stats.NewStatsManager(logger, time.Duration(wc.General.ListenerTimeout)*time.Second, 1.0, wc.Stats.UpdateBufferSize)
 
 	var dbAddress string
 	var dbClient kv.FunctionMetadataStore
+	var runtime cr.ContainerRuntime
+	var router controller.CallRouter
+	readySignals := controller.NewReadySignals()
 
 	if wc.Runtime.Containerized {
 		dbAddress = "http://database:8999/" // needs to have this format for http to work
@@ -136,14 +139,16 @@ func main() {
 	switch wc.Runtime.Type {
 	case "docker":
 		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.Address, logger)
-	case "fake":
-		// runtime = mock.NewMockRuntime(logger)
+		router = network.NewCallRouter(logger)
+	case "mock":
+		runtime = mock.NewMockRuntime(logger, readySignals)
+		router = mock.NewMockCallRouter(logger, runtime.(*mock.MockRuntime))
 	default:
 		logger.Error("No runtime specified")
 		os.Exit(1)
 	}
 
-	c := controller.NewController(runtime, statsManager, logger, wc.General.Address, dbClient)
+	c := controller.NewController(runtime, statsManager, logger, wc.General.Address, dbClient, router, readySignals)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
