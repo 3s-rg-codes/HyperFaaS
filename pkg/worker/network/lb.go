@@ -20,7 +20,7 @@ func NewCallRouter(logger *slog.Logger) *CallRouter {
 	return &CallRouter{routers: make(map[string]*Router), logger: logger}
 }
 
-func (f *CallRouter) CallFunction(id string, req *common.CallRequest) (*common.CallResponse, error) {
+func (f *CallRouter) CallFunction(ctx context.Context, id string, req *common.CallRequest) (*common.CallResponse, error) {
 	f.mu.RLock()
 	router := f.routers[id]
 	f.mu.RUnlock()
@@ -28,7 +28,7 @@ func (f *CallRouter) CallFunction(id string, req *common.CallRequest) (*common.C
 		return nil, fmt.Errorf("no router found for function ID: %s", id)
 	}
 	f.logger.Debug("Router state", "router", router.DebugState())
-	resp, err := router.Client.Call(context.Background(), req)
+	resp, err := router.Client.Call(ctx, req)
 	if err != nil {
 		f.logger.Error("Error calling function", "id", id, "error", err)
 		return nil, err
@@ -63,15 +63,4 @@ func (f *CallRouter) HandleInstanceTimeout(id string, addr string) {
 	}
 	f.logger.Debug("Removing addr from router", "id", id, "addr", addr)
 	router.RemoveAddr(addr)
-}
-
-// Updates the router to add the instance to the list of available instances.
-func (f *CallRouter) HandleAddInstance(id string, addr string) {
-	f.mu.RLock()
-	router := f.routers[id]
-	f.mu.RUnlock()
-	if router == nil {
-		return
-	}
-	router.AddAddr(addr)
 }

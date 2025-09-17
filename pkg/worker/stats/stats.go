@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"context"
 	"log/slog"
 	"math/rand/v2"
 	"sync"
@@ -138,23 +139,28 @@ func (s *StatsManager) RemoveListenerAfterTimeout(nodeID string) {
 }
 
 // Streams the status updates to all channels in the listeners map.
-func (s *StatsManager) StartStreamingToListeners() {
-	for update := range s.Updates {
-		// Make a copy of the listeners map to avoid holding the lock during sends
-		s.mu.RLock()
-		activeListeners := make(map[string]chan StatusUpdate, len(s.listeners))
-		for nodeID, listener := range s.listeners {
-			activeListeners[nodeID] = listener
-		}
-		s.mu.RUnlock()
+func (s *StatsManager) StartStreamingToListeners(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		return
+	default:
+		for update := range s.Updates {
+			// Make a copy of the listeners map to avoid holding the lock during sends
+			s.mu.RLock()
+			activeListeners := make(map[string]chan StatusUpdate, len(s.listeners))
+			for nodeID, listener := range s.listeners {
+				activeListeners[nodeID] = listener
+			}
+			s.mu.RUnlock()
 
-		// Send updates to all active listeners
-		for nodeID, listener := range activeListeners {
-			select {
-			case listener <- update:
-				// Successfully sent
-			default:
-				s.logger.Debug("Listener is full, dropping update", "node_id", nodeID)
+			// Send updates to all active listeners
+			for nodeID, listener := range activeListeners {
+				select {
+				case listener <- update:
+					// Successfully sent
+				default:
+					s.logger.Debug("Listener is full, dropping update", "node_id", nodeID)
+				}
 			}
 		}
 	}

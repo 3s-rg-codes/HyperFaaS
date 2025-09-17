@@ -14,7 +14,7 @@ services:
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "-address=0.0.0.0:50051", "-runtime=docker", "-log-level=info", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000"]
+    command: ["./app", "-address=0.0.0.0:50051", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000"]
     develop:
       watch:
         - action: rebuild
@@ -42,21 +42,12 @@ services:
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "--address=0.0.0.0:50050",
-     "--log-level=info", "--log-format=text", "--log-file=/root/log/leaf.log",
-     "--worker-ids=worker:50051",
-     "--database-address=http://database:8999",
-     "--max-starting-instances-per-function=2",
-     "--starting-instance-wait-timeout=10s",
-     "--max-running-instances-per-function=10",
-     "--panic-backoff=1s",
-     "--panic-backoff-increase=1s",
-     "--panic-max-backoff=10s"]
+    command: ["./app", "--address=0.0.0.0:50050", "--log-level=${LOG_LEVEL}", "--log-format=text", "--log-file=/root/log/leaf.log", "--worker-ids=worker:50051", "--database-address=http://database:8999", "--max-starting-instances-per-function=2", "--starting-instance-wait-timeout=10s", "--max-running-instances-per-function=10", "--panic-backoff=1s", "--panic-backoff-increase=1s", "--panic-max-backoff=10s"]
     develop:
-        watch:
-            - action: rebuild
-              path: .
-              target: .
+      watch:
+        - action: rebuild
+          path: .
+          target: .
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50050"]
       interval: 3s
@@ -80,12 +71,7 @@ services:
       - ./log/:/root/log/
     networks:
       - hyperfaas-network
-    command: ["./app",
-     "--log-level=debug",
-     "--log-format=text",
-     "--log-file=/root/log/lb.log",
-     "--leaf-addr=leaf:50050",
-     "--strategy=hyperfaas_round_robin"]
+    command: ["./app", "--log-level=${LOG_LEVEL}", "--log-format=text", "--log-file=/root/log/lb.log", "--leaf-addr=leaf:50050", "--strategy=hyperfaas_round_robin"]
     depends_on:
       worker:
         condition: service_healthy
@@ -114,11 +100,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
-
 volumes:
   function-logs:
     name: function-logs
-
 networks:
   hyperfaas-network:
     name: hyperfaas-network

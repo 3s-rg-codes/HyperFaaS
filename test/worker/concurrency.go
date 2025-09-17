@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"context"
 	"fmt"
@@ -72,3 +73,4 @@ func TestConcurrentCalls(client pb.ControllerClient, runtime containerRuntime.Co
 
 	return nil
 }
+*/

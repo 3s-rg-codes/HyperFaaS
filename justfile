@@ -50,25 +50,25 @@ build: build-functions-go build-worker
 
 # run the worker with default configurations. Make sure to run just build every time you change the code
 # Alternatively, run just dev if you want to make sure you are always running the latest code
-start-rebuild service:
-    docker compose up -d --no-deps --build {{service}}
+start-rebuild service  runtime_type="docker" log_level="info":
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose up -d --no-deps --build {{service}}
 alias sr := start-rebuild
 
-start:
+start runtime_type="docker" log_level="info":
     @echo "Starting docker service"
-    docker compose up --detach --remove-orphans
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose up --detach --remove-orphans
 
 restart:
     @echo "Restarting docker service"
-    docker compose restart
+    RUNTIME_TYPE=docker LOG_LEVEL=info docker compose restart
 
 stop:
     @echo "Stopping docker service"
     docker compose down
     
-d:
+d runtime_type="docker" log_level="info":
     @echo "Starting docker service"
-    docker compose up --build --detach
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose up --build --detach
 
 
 # generates proto, builds binary, builds docker go and runs the workser
@@ -99,6 +99,18 @@ test-all:
 test name:
     go test -run {{name}} ./...
 
+test-unit color="false":
+    if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./... -tags=unit; fi
+    if [ "{{color}}" = "false" ]; then go test -v ./... -tags=unit; fi
+
+test-integration color="false":
+    if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./... -tags=integration; fi
+    if [ "{{color}}" = "false" ]; then go test -v ./... -tags=integration; fi
+
+test-e2e color="false":
+    if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./... -tags=e2e; fi
+    if [ "{{color}}" = "false" ]; then go test -v ./... -tags=e2e; fi
+
 #Containerized integration tests via docker compose
 build-integration-containerized-all:
     ENTRYPOINT_CMD="-test_cases=all" docker compose -f test-compose.yaml up --build
@@ -122,7 +134,7 @@ metrics-client:
     go run ./cmd/metrics-client
 
 load-test:
-    go run ./tests/leaf/main.go
+    go run ./test/leaf/main.go
 
 metrics-analyse:
     cd benchmarks && uv run analyse.py
@@ -147,8 +159,11 @@ pprof-worker:
 pprof-leaf:
     docker exec -it $(docker ps | grep leaf | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
 
-docker-logs component:
+docker-logs-tail component:
     docker logs $(docker ps -a | grep {{component}} | awk '{print $1}') --tail 100
+docker-logs component:
+    docker logs $(docker ps -a | grep {{component}} | awk '{print $1}')
+
 memory-worker:
     docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/heap
 trace-worker:
@@ -172,3 +187,7 @@ kill: kill-worker kill-db
 
 lint:
     golangci-lint run
+
+# Print the last n function logs
+function-logs n:
+    sudo bash -c ' cd /var/lib/docker/volumes/function-logs/_data && ls -t | head -n {{n}} | xargs -r cat'

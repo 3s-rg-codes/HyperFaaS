@@ -12,7 +12,6 @@ import (
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/network"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/worker"
@@ -29,13 +28,19 @@ type Controller struct {
 	workerPB.UnimplementedWorkerServer
 	runtime         cr.ContainerRuntime
 	StatsManager    *stats.StatsManager
-	callRouter      *network.CallRouter
+	callRouter      CallRouter
 	logger          *slog.Logger
 	address         string
 	dbClient        kv.FunctionMetadataStore
 	functionIDCache map[string]kv.FunctionData
 	readySignals    *ReadySignals
 	mu              sync.RWMutex
+}
+
+type CallRouter interface {
+	AddInstance(functionID string, ip string)
+	CallFunction(ctx context.Context, functionID string, req *common.CallRequest) (*common.CallResponse, error)
+	HandleInstanceTimeout(functionID string, ip string)
 }
 
 func (s *Controller) Start(ctx context.Context, req *workerPB.StartRequest) (*workerPB.StartResponse, error) {
@@ -106,7 +111,7 @@ func (s *Controller) SignalReady(ctx context.Context, req *workerPB.SignalReadyR
 
 func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 	s.logger.Debug("Calling function", "functionID", req.FunctionId)
-	return s.callRouter.CallFunction(req.FunctionId, req)
+	return s.callRouter.CallFunction(ctx, req.FunctionId, req)
 }
 
 func (s *Controller) Stop(ctx context.Context, req *workerPB.StopRequest) (*workerPB.StopResponse, error) {
@@ -182,20 +187,27 @@ func (s *Controller) Metrics(ctx context.Context, req *workerPB.MetricsRequest) 
 	return &workerPB.MetricsUpdate{CpuPercentPercpus: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
 }
 
-func NewController(runtime cr.ContainerRuntime, statsManager *stats.StatsManager, logger *slog.Logger, address string, client kv.FunctionMetadataStore) *Controller {
+func NewController(runtime cr.ContainerRuntime,
+	statsManager *stats.StatsManager,
+	logger *slog.Logger,
+	address string,
+	client kv.FunctionMetadataStore,
+	callRouter CallRouter,
+	readySignals *ReadySignals,
+) *Controller {
 	return &Controller{
 		runtime:         runtime,
 		StatsManager:    statsManager,
 		logger:          logger,
 		address:         address,
-		callRouter:      network.NewCallRouter(logger),
+		callRouter:      callRouter,
 		dbClient:        client,
 		functionIDCache: make(map[string]kv.FunctionData),
-		readySignals:    NewReadySignals(),
+		readySignals:    readySignals,
 	}
 }
 
-func (s *Controller) StartServer() {
+func (s *Controller) StartServer(ctx context.Context) {
 	grpcServer := grpc.NewServer()
 	// TODO pass context to sub servers
 	// ctx, cancel := context.WithCancel(context.Background())
@@ -204,17 +216,7 @@ func (s *Controller) StartServer() {
 	// Start the stats manager
 
 	go func() {
-		s.StatsManager.StartStreamingToListeners()
-	}()
-
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-
-		<-sigCh
-		s.logger.Info("Shutting down gracefully...")
-
-		grpcServer.GracefulStop()
+		s.StatsManager.StartStreamingToListeners(ctx)
 	}()
 
 	healthcheck := health.NewServer()
@@ -230,11 +232,25 @@ func (s *Controller) StartServer() {
 
 	s.logger.Debug("Controller Server listening on", "address", lis.Addr())
 
-	if err := grpcServer.Serve(lis); err != nil {
-		s.logger.Error("Controller Server failed to serve", "error", err)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case <-ctx.Done():
+		grpcServer.GracefulStop()
+		return
+	case <-sigCh:
+		s.logger.Info("Shutting down gracefully...")
+
+		grpcServer.GracefulStop()
+	default:
+		if err := grpcServer.Serve(lis); err != nil {
+			s.logger.Error("Controller Server failed to serve", "error", err)
+		}
 	}
 }
 
+// Monitors the container lifecycle and handles the possible scenarios (timeout, crash, oom)
 func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container) {
 	s.logger.Debug("Starting container monitoring", "instanceID", c.Id, "functionID", functionID)
 

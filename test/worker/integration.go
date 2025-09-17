@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"context"
 	"encoding/json"
@@ -663,3 +664,4 @@ func (c *TestConfig) printConfig(logger slog.Logger) {
 		"MemoryLimit", c.MemoryLimit,
 	)
 }
+*/

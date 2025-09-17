@@ -3,6 +3,7 @@ package keyValueStore
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,17 +11,41 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 )
 
+// HTTPClient can perform any http request
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+// FunctionMetadataStore must provide a thread safe way to store and retrieve function metadata
+type FunctionMetadataStore interface {
+	// Put stores the function metadata in the store
+	Put(image *common.Image, config *common.Config) (id string, err error)
+	// Get retrieves the function metadata from the store
+	Get(functionID string) (imageTag string, config *common.Config, err error)
+}
+
+// HttpDBClient provides a simple API wrapping http calls to the key value store server
 type HttpDBClient struct {
 	FunctionMetadataStore
-	client  http.Client
+	client  HTTPClient
 	address string
 	logger  *slog.Logger
 }
 
-func NewHttpClient(address string, logger *slog.Logger) *HttpDBClient {
+// NewHttpDBClient creates a new HttpDBClient with a default http client
+func NewHttpDBClient(address string, logger *slog.Logger) *HttpDBClient {
 	return &HttpDBClient{
 		address: address,
-		client:  http.Client{},
+		client:  &http.Client{},
+		logger:  logger,
+	}
+}
+
+// NewHttpClientWithHTTPClient creates a new HttpDBClient. The httpClient must implement the HTTPClient interface
+func NewHttpClientWithHTTPClient(address string, logger *slog.Logger, httpClient HTTPClient) *HttpDBClient {
+	return &HttpDBClient{
+		address: address,
+		client:  httpClient,
 		logger:  logger,
 	}
 }
@@ -30,7 +55,7 @@ type FunctionData struct {
 	Image  *common.Image
 }
 
-// Put is called Put because we use it as a key-value-store, but from a REST POV its POST
+// Put creates a new function metadata entry in the key value store
 func (db *HttpDBClient) Put(image *common.Image, config *common.Config) (string, error) {
 	postData := PostRequest{
 		ImageTag: image.Tag,
@@ -72,7 +97,7 @@ func (db *HttpDBClient) Put(image *common.Image, config *common.Config) (string,
 
 	if resp.StatusCode != http.StatusCreated {
 		db.logger.Error("POST request failed with status code", "error", resp.StatusCode)
-		return "", err
+		return "", fmt.Errorf("POST request failed with status code: %d", resp.StatusCode)
 	}
 
 	b, err := io.ReadAll(resp.Body)
@@ -90,6 +115,7 @@ func (db *HttpDBClient) Put(image *common.Image, config *common.Config) (string,
 	return r.FunctionID, nil
 }
 
+// Get gets the function metadata entry from the key value store by function ID
 func (db *HttpDBClient) Get(functionID string) (string, *common.Config, error) {
 	req, err := http.NewRequest(http.MethodGet, db.address, bytes.NewBuffer([]byte(functionID)))
 	if err != nil {
@@ -128,7 +154,7 @@ func (db *HttpDBClient) Get(functionID string) (string, *common.Config, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		db.logger.Error("GET request failed with status code", "error", resp.StatusCode)
-		return "", &common.Config{}, err
+		return "", &common.Config{}, fmt.Errorf("GET request failed with status code: %d", resp.StatusCode)
 	}
 
 	c := &common.Config{

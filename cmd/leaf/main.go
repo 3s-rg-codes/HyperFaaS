@@ -78,7 +78,7 @@ func main() {
 
 	switch *databaseType {
 	case "http":
-		dbClient = keyValueStore.NewHttpClient(*databaseAddress, logger)
+		dbClient = keyValueStore.NewHttpDBClient(*databaseAddress, logger)
 	}
 
 	leafConfig := config.LeafConfig{

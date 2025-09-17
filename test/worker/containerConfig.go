@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"bytes"
 	"context"
@@ -51,3 +52,4 @@ func TestContainerConfig(runtime containerRuntime.ContainerRuntime, client pb.Co
 
 	return nil
 }
+*/

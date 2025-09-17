@@ -1,3 +1,4 @@
+// nolint
 package helpers
 
 import (
@@ -9,8 +10,8 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
-	pbc "github.com/3s-rg-codes/HyperFaaS/proto/common"
-	pb "github.com/3s-rg-codes/HyperFaaS/proto/controller"
+	commonpb "github.com/3s-rg-codes/HyperFaaS/proto/common"
+	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -37,21 +38,21 @@ type ControllerWorkload struct {
 	InstanceID        string     `json:"instance_id"`
 }
 
-func BuildMockClientHelper(controllerServerAddress string) (pb.ControllerClient, *grpc.ClientConn, error) {
+func BuildMockClientHelper(controllerServerAddress string) (workerpb.WorkerClient, *grpc.ClientConn, error) {
 	var err error
 	connection, err := grpc.NewClient(controllerServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, nil, err
 	}
 	//t.Logf("Client for testing purposes (%v) started with target %v", connection, *controllerServerAddress)
-	testClient := pb.NewControllerClient(connection)
+	testClient := workerpb.NewWorkerClient(connection)
 
 	return testClient, connection, nil
 }
 
-func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec ResourceSpec, testCase ControllerWorkload) (*[]*stats.StatusUpdate, error) {
+func DoWorkloadHelper(client workerpb.WorkerClient, logger slog.Logger, spec ResourceSpec, testCase ControllerWorkload) (*[]*stats.StatusUpdate, error) {
 
-	cID, err := client.Start(context.Background(), &pbc.FunctionID{Id: testCase.FunctionID})
+	cID, err := client.Start(context.Background(), &workerpb.StartRequest{FunctionId: testCase.FunctionID})
 	if err != nil {
 		return nil, err
 	}
@@ -62,15 +63,15 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 
 	if testCase.ExpectsError {
 		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusFailed})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusFailed})
 	} else {
 		// add a success start event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusSuccess})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId, Type: stats.TypeContainer, Event: stats.EventStart, Status: stats.StatusSuccess})
 		// add a success running event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventRunning, Status: stats.StatusSuccess})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId, Type: stats.TypeContainer, Event: stats.EventRunning, Status: stats.StatusSuccess})
 	}
 
-	response, err := client.Call(context.Background(), &pbc.CallRequest{InstanceId: &pbc.InstanceID{Id: cID.InstanceId.Id}, Data: testCase.CallPayload, FunctionId: &pbc.FunctionID{Id: testCase.ImageTag}})
+	response, err := client.Call(context.Background(), &commonpb.CallRequest{Data: testCase.CallPayload, FunctionId: testCase.ImageTag})
 	if err != nil {
 		return nil, err
 	}
@@ -78,17 +79,17 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 
 	if testCase.ExpectsError {
 		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventCall, Status: stats.StatusFailed})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId, Type: stats.TypeContainer, Event: stats.EventCall, Status: stats.StatusFailed})
 	} else {
 		// add a success event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventCall, Status: stats.StatusSuccess})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId, Type: stats.TypeContainer, Event: stats.EventCall, Status: stats.StatusSuccess})
 	}
 	//If there was a response, there is a container response event
 	if testCase.ExpectsResponse && response != nil {
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId.Id, Type: stats.TypeContainer, Event: stats.EventResponse, Status: stats.StatusSuccess})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: cID.InstanceId, Type: stats.TypeContainer, Event: stats.EventResponse, Status: stats.StatusSuccess})
 	}
 
-	responseContainerID, err := client.Stop(context.Background(), &pbc.InstanceID{Id: cID.InstanceId.Id})
+	responseContainerID, err := client.Stop(context.Background(), &workerpb.StopRequest{InstanceId: cID.InstanceId})
 	if err != nil {
 		return nil, err
 	}
@@ -96,10 +97,10 @@ func DoWorkloadHelper(client pb.ControllerClient, logger slog.Logger, spec Resou
 
 	if testCase.ExpectsError {
 		// add an error event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: stats.TypeContainer, Event: stats.EventStop, Status: stats.StatusFailed})
-	} else if responseContainerID != nil && responseContainerID.Id == cID.InstanceId.Id {
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.InstanceId, Type: stats.TypeContainer, Event: stats.EventStop, Status: stats.StatusFailed})
+	} else if responseContainerID != nil && responseContainerID.InstanceId == cID.InstanceId {
 		// add a success event to the stats
-		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.Id, Type: stats.TypeContainer, Event: stats.EventStop, Status: stats.StatusSuccess})
+		statusUpdates = append(statusUpdates, &stats.StatusUpdate{InstanceID: responseContainerID.InstanceId, Type: stats.TypeContainer, Event: stats.EventStop, Status: stats.StatusSuccess})
 	}
 
 	//UNCOMMENT THIS TO INTENTIONALLY FAIL THE TEST
@@ -127,7 +128,7 @@ func ConnectNodeHelper(controllerServerAddress string, nodeID string, logger slo
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	s, err := client.Status(ctx, &pb.StatusRequest{NodeID: nodeID})
+	s, err := client.Status(ctx, &workerpb.StatusRequest{NodeId: nodeID})
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +154,7 @@ func ConnectNodeHelper(controllerServerAddress string, nodeID string, logger slo
 			logger.Debug("Received stat", "stat", stat, "nodeID", nodeID)
 			// Copy the stats to a new struct to avoid copying mutex
 			statCopy := &stats.StatusUpdate{
-				InstanceID: stat.InstanceId.Id,
+				InstanceID: stat.InstanceId,
 				Type:       stats.UpdateType(stat.Type),
 				Event:      stats.UpdateEvent(stat.Event),
 				Status:     stats.UpdateStatus(stat.Status),
