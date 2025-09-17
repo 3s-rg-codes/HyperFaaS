@@ -31,6 +31,7 @@ type WorkerConfig struct {
 		Type          string `env:"RUNTIME_TYPE"`
 		AutoRemove    bool   `env:"RUNTIME_AUTOREMOVE"`
 		Containerized bool   `env:"RUNTIME_CONTAINERIZED"`
+		ServiceName   string `env:"RUNTIME_SERVICE_NAME"`
 	}
 	Log struct {
 		Level    string `env:"LOG_LEVEL"`
@@ -53,6 +54,7 @@ func parseArgs() (wc WorkerConfig) {
 	flag.StringVar(&(wc.Log.FilePath), "log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
 	flag.BoolVar(&(wc.Runtime.Containerized), "containerized", false, "Use socket to connect to Docker. (Env: RUNTIME_CONTAINERIZED)")
 	flag.Int64Var(&(wc.Stats.UpdateBufferSize), "update-buffer-size", 10000, "Update buffer size. (Env: UPDATE_BUFFER_SIZE)")
+	flag.StringVar(&(wc.Runtime.ServiceName), "service-name", "worker", "Docker compose service name. (Env: RUNTIME_SERVICE_NAME)")
 	flag.Parse()
 	return
 }
@@ -138,7 +140,7 @@ func main() {
 	switch wc.Runtime.Type {
 	case "docker":
 		readySignals = controller.NewReadySignals(false)
-		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.Address, logger)
+		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.Address, logger, wc.Runtime.ServiceName)
 		router = network.NewCallRouter(logger)
 	case "mock":
 		readySignals = controller.NewReadySignals(true)

@@ -89,15 +89,15 @@ just build-functions-go
 ```
 
 ## Testing
+We have unit, integration and end to end tests.
+For the end to end tests, you need to have a running docker compose version of HyperFaaS.
+For more information, see [test/README.md](test/README.md).
+```
+just test-unit
 
-Run all tests:
-```
-just test-all
-```
-
-Run integration tests:
-```
 just test-integration
+
+just test-e2e
 ```
 If you want colored output, install gotest:
 ```

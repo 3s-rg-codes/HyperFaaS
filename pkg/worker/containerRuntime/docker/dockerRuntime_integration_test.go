@@ -102,6 +102,7 @@ func getDockerRuntime() *DockerRuntime {
 		true,
 		WORKER_ADDRESS,
 		slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		"worker",
 	)
 }
 

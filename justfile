@@ -58,6 +58,20 @@ start runtime_type="docker" log_level="info":
     @echo "Starting docker service"
     RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose up --detach --remove-orphans
 
+# Starts 4 workers , 2 leafs and a lb
+start-full runtime_type="docker" log_level="info":
+    @echo "Starting docker service"
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose --file ./full-compose.yaml up  --detach --remove-orphans 
+alias sfull := start-full
+
+# Starts 4 workers , 2 leafs and a lb and rebuilds all images
+start-full-rebuild runtime_type="docker" log_level="info":
+    @echo "Starting docker service"
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose --file ./full-compose.yaml up  --detach --remove-orphans --build
+
+stop-full runtime_type="docker" log_level="info":
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose --file ./full-compose.yaml down
+
 restart:
     @echo "Restarting docker service"
     RUNTIME_TYPE=docker LOG_LEVEL=info docker compose restart

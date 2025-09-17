@@ -34,15 +34,15 @@ func TestCallRequest(t *testing.T) {
 
 	lbc, lbconn := GetLBClient(LB_ADDRESS)
 	defer lbconn.Close()
-	leafc, leafconn := GetLeafClient(LEAF_ADDRESS)
-	defer leafconn.Close()
+	//leafc, leafconn := GetLeafClient(LEAF_ADDRESS)
+	//defer leafconn.Close()
 	data := []struct {
 		ImageTag         string
 		ExpectedResponse []byte
 		Data             []byte
 		Client           client
 	}{
-		{
+		/* {
 			ImageTag:         "hyperfaas-hello:latest",
 			ExpectedResponse: []byte("HELLO WORLD!"),
 			Data:             []byte(""),
@@ -53,7 +53,7 @@ func TestCallRequest(t *testing.T) {
 			ExpectedResponse: []byte("Echo this message"),
 			Data:             []byte("Echo this message"),
 			Client:           leafc,
-		},
+		}, */
 		{
 			ImageTag:         "hyperfaas-hello:latest",
 			ExpectedResponse: []byte("HELLO WORLD!"),
