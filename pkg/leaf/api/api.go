@@ -115,8 +115,8 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *common.CallRequest) 
 	metricChan := s.functionMetricChans[state.FunctionID(req.FunctionId)]
 	s.functionMetricChansMutex.RUnlock()
 	metricChan <- true
-	// Note: we send function id as instance id because I havent updated the proto yet. But the call instance endpoint is now call function. worker handles the instance id.
-	resp, err := s.callWorker(ctx, randWorker, state.FunctionID(req.FunctionId), state.InstanceID(req.FunctionId), req)
+
+	resp, err := s.callWorker(ctx, randWorker, state.FunctionID(req.FunctionId), req)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func NewLeafServer(
 	return &ls
 }
 
-func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, instanceID state.InstanceID, req *common.CallRequest) (*common.CallResponse, error) {
+func (s *LeafServer) callWorker(ctx context.Context, workerID state.WorkerID, functionID state.FunctionID, req *common.CallRequest) (*common.CallResponse, error) {
 	client, err := s.getOrCreateWorkerClient(workerID)
 	if err != nil {
 		return nil, err
