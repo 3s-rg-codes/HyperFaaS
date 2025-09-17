@@ -122,8 +122,7 @@ func main() {
 	var dbClient kv.FunctionMetadataStore
 	var runtime cr.ContainerRuntime
 	var router controller.CallRouter
-	readySignals := controller.NewReadySignals()
-
+	var readySignals *controller.ReadySignals
 	if wc.Runtime.Containerized {
 		dbAddress = "http://database:8999/" // needs to have this format for http to work
 	} else {
@@ -138,9 +137,11 @@ func main() {
 	// Runtime
 	switch wc.Runtime.Type {
 	case "docker":
+		readySignals = controller.NewReadySignals(false)
 		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.Address, logger)
 		router = network.NewCallRouter(logger)
 	case "mock":
+		readySignals = controller.NewReadySignals(true)
 		runtime = mock.NewMockRuntime(logger, readySignals)
 		router = mock.NewMockCallRouter(logger, runtime.(*mock.MockRuntime))
 	default:

@@ -32,11 +32,11 @@ func (m *MockRuntime) ContainerExists(ctx context.Context, instanceID string) bo
 	for _, list := range m.Instances {
 		for _, val := range list {
 			if val.id == instanceID {
-				return false
+				return true
 			}
 		}
 	}
-	return true
+	return false
 }
 
 // ContainerStats doesnt make sense for mock runtime
@@ -103,10 +103,6 @@ func (m *MockRuntime) Start(ctx context.Context, functionID string, imageTag str
 	m.Instances[functionID] = append(m.Instances[functionID], i)
 	m.mapLock.Unlock()
 
-	// Signal that the instance is ready. If we dont do this, the controller will wait forever for the instance to be ready.
-	m.readySignals.AddInstance(instanceID)
-	go m.readySignals.SignalReady(instanceID)
-
 	go i.monitorTimeout()
 
 	return cr.Container{Id: instanceID, Name: imageTag, IP: "MOCK_RUNTIME_NO_IP"}, nil
@@ -116,11 +112,19 @@ func (m *MockRuntime) Start(ctx context.Context, functionID string, imageTag str
 func (m *MockRuntime) Stop(ctx context.Context, instanceID string) error {
 	m.mapLock.Lock()
 	defer m.mapLock.Unlock()
-	for _, instance := range m.Instances[instanceID] {
-		instance.cancel()
+	for fnID, instances := range m.Instances {
+		for i, instance := range instances {
+			if instance.id == instanceID {
+				instance.cancel()
+				m.Instances[fnID] = append(instances[:i], instances[i+1:]...)
+				if len(m.Instances[fnID]) == 0 {
+					delete(m.Instances, fnID)
+				}
+				return nil
+			}
+		}
 	}
-	delete(m.Instances, instanceID)
-	return nil
+	return fmt.Errorf("instance %s not found", instanceID)
 }
 
 type instance struct {

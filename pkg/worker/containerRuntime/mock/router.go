@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
@@ -26,34 +28,31 @@ func (m *MockCallRouter) AddInstance(functionID string, ip string) {
 }
 
 // CallFunction implements controller.CallRouter.
-func (m *MockCallRouter) CallFunction(functionID string, req *common.CallRequest) (*common.CallResponse, error) {
+func (m *MockCallRouter) CallFunction(ctx context.Context, functionID string, req *common.CallRequest) (*common.CallResponse, error) {
 	if m.mockRuntime == nil {
 		return nil, errors.New("mock runtime not set")
 	}
 
-	m.mu.RLock()
+	m.mockRuntime.mapLock.RLock()
 	instances, ok := m.mockRuntime.Instances[functionID]
 	if !ok || len(instances) == 0 {
-		m.mu.RUnlock()
+		m.mockRuntime.mapLock.RUnlock()
 		return nil, fmt.Errorf("no instances found for function %s", functionID)
 	}
-	m.mu.RUnlock()
+	m.mockRuntime.mapLock.RUnlock()
 
-	// round-robin index per function
-	m.mu.Lock()
-	if m.rrIndex == nil {
-		m.rrIndex = make(map[string]int)
-	}
-	idx := m.rrIndex[functionID] % len(instances)
-	m.rrIndex[functionID] = (idx + 1) % len(instances)
-	m.mu.Unlock()
+	// pick random instance
+	instance := instances[rand.Intn(len(instances))]
 
-	instance := instances[idx]
-
-	resp, err := instance.handler.HandleCall(context.Background(), req)
+	resp, err := instance.handler.HandleCall(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+	go func() {
+		instance.activityMu.Lock()
+		instance.lastActivity = time.Now()
+		instance.activityMu.Unlock()
+	}()
 	return resp, nil
 }
 

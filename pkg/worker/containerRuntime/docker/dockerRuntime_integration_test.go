@@ -71,7 +71,7 @@ func startWorkerServer() (chan bool, context.CancelFunc) {
 				WORKER_LISTENER_ADDRESS,
 				dbClient,
 				network.NewCallRouter(logger),
-				controller.NewReadySignals())
+				controller.NewReadySignals(false))
 			c.StartServer(ctx)
 		})
 	}()

@@ -39,7 +39,7 @@ type Controller struct {
 
 type CallRouter interface {
 	AddInstance(functionID string, ip string)
-	CallFunction(functionID string, req *common.CallRequest) (*common.CallResponse, error)
+	CallFunction(ctx context.Context, functionID string, req *common.CallRequest) (*common.CallResponse, error)
 	HandleInstanceTimeout(functionID string, ip string)
 }
 
@@ -111,7 +111,7 @@ func (s *Controller) SignalReady(ctx context.Context, req *workerPB.SignalReadyR
 
 func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 	s.logger.Debug("Calling function", "functionID", req.FunctionId)
-	return s.callRouter.CallFunction(req.FunctionId, req)
+	return s.callRouter.CallFunction(ctx, req.FunctionId, req)
 }
 
 func (s *Controller) Stop(ctx context.Context, req *workerPB.StopRequest) (*workerPB.StopResponse, error) {
@@ -250,6 +250,7 @@ func (s *Controller) StartServer(ctx context.Context) {
 	}
 }
 
+// Monitors the container lifecycle and handles the possible scenarios (timeout, crash, oom)
 func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container) {
 	s.logger.Debug("Starting container monitoring", "instanceID", c.Id, "functionID", functionID)
 

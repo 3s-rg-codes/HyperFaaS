@@ -8,14 +8,20 @@ import "sync"
 type ReadySignals struct {
 	readySignals map[string]chan struct{}
 	mu           sync.RWMutex
+	// wether the readySignals are mocked. Used for testing.
+	mocked bool
 }
 
-func NewReadySignals() *ReadySignals {
-	return &ReadySignals{readySignals: make(map[string]chan struct{})}
+// NewReadySignals creates a new ReadySignals instance. Use mocked: true to use the mocked runtime.
+func NewReadySignals(mocked bool) *ReadySignals {
+	return &ReadySignals{readySignals: make(map[string]chan struct{}), mocked: mocked}
 }
 
 // AddInstance adds a new instance to the readySignals map.
 func (s *ReadySignals) AddInstance(instanceID string) {
+	if s.mocked {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.readySignals[instanceID] = make(chan struct{})
@@ -37,6 +43,9 @@ func (s *ReadySignals) SignalReady(instanceID string) {
 
 // WaitReady blocks until the instance is ready to serve requests.
 func (s *ReadySignals) WaitReady(instanceID string) {
+	if s.mocked {
+		return
+	}
 	s.mu.RLock()
 	c := s.readySignals[instanceID]
 	s.mu.RUnlock()

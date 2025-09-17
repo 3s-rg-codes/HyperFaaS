@@ -99,10 +99,17 @@ test-all:
 test name:
     go test -run {{name}} ./...
 
+test-unit color="false":
+    if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./... -tags=unit; fi
+    if [ "{{color}}" = "false" ]; then go test -v ./... -tags=unit; fi
 
 test-integration color="false":
     if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./... -tags=integration; fi
     if [ "{{color}}" = "false" ]; then go test -v ./... -tags=integration; fi
+
+test-e2e color="false":
+    if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./... -tags=e2e; fi
+    if [ "{{color}}" = "false" ]; then go test -v ./... -tags=e2e; fi
 
 #Containerized integration tests via docker compose
 build-integration-containerized-all:
@@ -127,7 +134,7 @@ metrics-client:
     go run ./cmd/metrics-client
 
 load-test:
-    go run ./tests/leaf/main.go
+    go run ./test/leaf/main.go
 
 metrics-analyse:
     cd benchmarks && uv run analyse.py
@@ -152,8 +159,11 @@ pprof-worker:
 pprof-leaf:
     docker exec -it $(docker ps | grep leaf | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
 
-docker-logs component:
+docker-logs-tail component:
     docker logs $(docker ps -a | grep {{component}} | awk '{print $1}') --tail 100
+docker-logs component:
+    docker logs $(docker ps -a | grep {{component}} | awk '{print $1}')
+
 memory-worker:
     docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/heap
 trace-worker:
