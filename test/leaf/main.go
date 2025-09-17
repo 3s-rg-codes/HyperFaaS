@@ -1,3 +1,4 @@
+// nolint
 package main
 
 import (
@@ -67,7 +68,7 @@ func main() {
 	testSequentialCalls(client, functionIDs[0])
 
 	// Concurrent calls for duration
-	//testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
+	// testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
 	go testRampingCallsForDuration(client, functionIDs[0], RPS, DURATION, 60*time.Second)
 	go testRampingCallsForDuration(client, functionIDs[1], RPS, DURATION, 60*time.Second)
 	//go testRampingCallsForDuration(client, functionIDs[2], RPS, DURATION, 60*time.Second)

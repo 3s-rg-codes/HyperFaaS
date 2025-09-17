@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
@@ -19,8 +18,6 @@ var _ controller.CallRouter = &MockCallRouter{}
 type MockCallRouter struct {
 	mockRuntime *MockRuntime
 	logger      *slog.Logger
-	mu          sync.RWMutex
-	rrIndex     map[string]int
 }
 
 // AddInstance implements controller.CallRouter.
@@ -61,5 +58,5 @@ func (m *MockCallRouter) HandleInstanceTimeout(functionID string, ip string) {
 }
 
 func NewMockCallRouter(logger *slog.Logger, runtime *MockRuntime) *MockCallRouter {
-	return &MockCallRouter{logger: logger, mockRuntime: runtime, rrIndex: make(map[string]int)}
+	return &MockCallRouter{logger: logger, mockRuntime: runtime}
 }
