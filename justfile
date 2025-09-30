@@ -69,6 +69,10 @@ start-full-rebuild runtime_type="docker" log_level="info":
     @echo "Starting docker service"
     RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose --file ./full-compose.yaml up  --detach --remove-orphans --build
 
+restart-full runtime_type="docker" log_level="info":
+    @echo "Restarting docker service"
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose --file ./full-compose.yaml restart
+
 stop-full runtime_type="docker" log_level="info":
     RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose --file ./full-compose.yaml down
 
@@ -121,9 +125,9 @@ test-integration color="false":
     if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./... -tags=integration; fi
     if [ "{{color}}" = "false" ]; then go test -v ./... -tags=integration; fi
 
-test-e2e color="false":
-    if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./... -tags=e2e; fi
-    if [ "{{color}}" = "false" ]; then go test -v ./... -tags=e2e; fi
+test-e2e color="false" *FLAGS:
+    if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./test -tags=e2e {{FLAGS}}; fi
+    if [ "{{color}}" = "false" ]; then go test -v ./test -tags=e2e {{FLAGS}}; fi
 
 #Containerized integration tests via docker compose
 build-integration-containerized-all:
@@ -205,3 +209,7 @@ lint:
 # Print the last n function logs
 function-logs n:
     sudo bash -c ' cd /var/lib/docker/volumes/function-logs/_data && ls -t | head -n {{n}} | xargs -r cat'
+
+# Start tmux log viewer
+tmux-logs:
+    ./test/scripts/monitor-logs.sh
