@@ -9,13 +9,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - function-logs:/root/functions/logs
-      - ./log/:/root/log/
     ports:
       - "50051:50051"
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "-address=0.0.0.0:50051", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-a-1"]
+    command: ["./app", "-address=0.0.0.0:50051", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-a-1"]
     develop:
       watch:
         - action: rebuild
@@ -40,13 +39,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - function-logs:/root/functions/logs
-      - ./log/:/root/log/
     ports:
       - "50041:50041"
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "-address=0.0.0.0:50041", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-a-2"]
+    command: ["./app", "-address=0.0.0.0:50041", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-a-2"]
     develop:
       watch:
         - action: rebuild
@@ -71,13 +69,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - function-logs:/root/functions/logs
-      - ./log/:/root/log/
     ports:
       - "50031:50031"
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "-address=0.0.0.0:50031", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-b-1"]
+    command: ["./app", "-address=0.0.0.0:50031", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-b-1"]
     develop:
       watch:
         - action: rebuild
@@ -102,13 +99,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - function-logs:/root/functions/logs
-      - ./log/:/root/log/
     ports:
       - "50021:50021"
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "-address=0.0.0.0:50021", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-b-2"]
+    command: ["./app", "-address=0.0.0.0:50021", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-b-2"]
     develop:
       watch:
         - action: rebuild
@@ -130,14 +126,12 @@ services:
       dockerfile: Dockerfile
       args:
         COMPONENT: leaf
-    volumes:
-      - ./log/:/root/log/
     ports:
       - "50050:50050"
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "--address=0.0.0.0:50050", "--log-level=${LOG_LEVEL}", "--log-format=text", "--log-file=/root/log/leaf.log", "--worker-ids=worker-A-1:50051",  "--worker-ids=worker-A-2:50041","--database-address=http://database:8999", "--max-starting-instances-per-function=2", "--starting-instance-wait-timeout=10s", "--max-running-instances-per-function=10", "--panic-backoff=1s", "--panic-backoff-increase=1s", "--panic-max-backoff=10s"]
+    command: ["./app", "--address=0.0.0.0:50050", "--log-level=${LOG_LEVEL}", "--log-format=text", "--worker-ids=worker-A-1:50051",  "--worker-ids=worker-A-2:50041","--database-address=http://database:8999", "--max-starting-instances-per-function=2", "--starting-instance-wait-timeout=10s", "--max-running-instances-per-function=10", "--panic-backoff=1s", "--panic-backoff-increase=1s", "--panic-max-backoff=10s"]
     develop:
       watch:
         - action: rebuild
@@ -164,14 +158,12 @@ services:
       dockerfile: Dockerfile
       args:
         COMPONENT: leaf
-    volumes:
-      - ./log/:/root/log/
     ports:
       - "50040:50040"
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "--address=0.0.0.0:50040", "--log-level=${LOG_LEVEL}", "--log-format=text", "--log-file=/root/log/leaf.log", "--worker-ids=worker-B-1:50031","--worker-ids=worker-B-2:50021", "--database-address=http://database:8999", "--max-starting-instances-per-function=2", "--starting-instance-wait-timeout=10s", "--max-running-instances-per-function=10", "--panic-backoff=1s", "--panic-backoff-increase=1s", "--panic-max-backoff=10s"]
+    command: ["./app", "--address=0.0.0.0:50040", "--log-level=${LOG_LEVEL}", "--log-format=text", "--worker-ids=worker-B-1:50031","--worker-ids=worker-B-2:50021", "--database-address=http://database:8999", "--max-starting-instances-per-function=2", "--starting-instance-wait-timeout=10s", "--max-running-instances-per-function=10", "--panic-backoff=1s", "--panic-backoff-increase=1s", "--panic-max-backoff=10s"]
     develop:
       watch:
         - action: rebuild
@@ -199,11 +191,9 @@ services:
         COMPONENT: lb
     ports:
       - "50052:50052"
-    volumes:
-      - ./log/:/root/log/
     networks:
       - hyperfaas-network
-    command: ["./app", "--log-level=${LOG_LEVEL}", "--log-format=text", "--log-file=/root/log/lb.log", "--leaf-addr=leaf-A:50050","--leaf-addr=leaf-B:50040", "--strategy=hyperfaas_round_robin"]
+    command: ["./app", "--log-level=${LOG_LEVEL}", "--log-format=text", "--leaf-addr=leaf-A:50050","--leaf-addr=leaf-B:50040", "--strategy=hyperfaas_round_robin", "--database-address=http://database:8999"]
     depends_on:
       leaf-A:
         condition: service_healthy
