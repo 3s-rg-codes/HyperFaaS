@@ -41,3 +41,12 @@ message CPUConfig {
   // CPU CFS (Completely Fair Scheduler) quota
   int64 quota = 2;
 }
+
+message CreateFunctionRequest {
+  Image image = 1;
+  Config config = 2;
+}
+
+message CreateFunctionResponse {
+  string function_id = 1;
+}
