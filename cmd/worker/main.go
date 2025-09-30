@@ -4,12 +4,12 @@ import (
 	"context"
 	"flag"
 	"log"
-	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/network"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 
@@ -59,62 +59,12 @@ func parseArgs() (wc WorkerConfig) {
 	return
 }
 
-func setupLogger(config WorkerConfig) *slog.Logger {
-	// Set up log level
-	var level slog.Level
-	switch config.Log.Level {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
-
-	// Set up log output
-	var output *os.File
-	var err error
-	if config.Log.FilePath != "" {
-		output, err = os.OpenFile(config.Log.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			slog.Error("Failed to open log file, falling back to stdout", "error", err)
-			output = os.Stdout
-		}
-	} else {
-		output = os.Stdout
-	}
-
-	// Set up handler options
-	opts := &slog.HandlerOptions{
-		Level:     level,
-		AddSource: true,
-	}
-
-	// Create handler based on format
-	var handler slog.Handler
-	if config.Log.Format == "json" {
-		handler = slog.NewJSONHandler(output, opts)
-	} else {
-		handler = slog.NewTextHandler(output, opts)
-	}
-
-	// Create and set logger
-	logger := slog.New(handler)
-	slog.SetDefault(logger)
-
-	return logger
-}
-
 func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
 	wc := parseArgs()
-	logger := setupLogger(wc)
+	logger := utils.SetupLogger(wc.Log.Level, wc.Log.Format, wc.Log.FilePath)
 
 	logger.Info("Current configuration", "config", wc)
 

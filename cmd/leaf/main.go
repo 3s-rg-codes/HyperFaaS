@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"log/slog"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -13,12 +12,12 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/api"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
 	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
-	"github.com/golang-cz/devslog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -58,7 +57,7 @@ func main() {
 		panic("no worker IDs provided")
 	}
 
-	logger := setupLogger(*logLevel, *logFormat, *logFilePath)
+	logger := utils.SetupLogger(*logLevel, *logFormat, *logFilePath)
 
 	// Print configuration
 	logger.Info("Configuration", "address", *address, "logLevel", *logLevel, "logFormat", *logFormat, "logFilePath", *logFilePath, "databaseType", *databaseType, "databaseAddress", *databaseAddress, "workerIDs", workerIDs)
@@ -98,71 +97,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(utils.InterceptorLogger(logger)),
+	)
 	pb.RegisterLeafServer(grpcServer, server)
 	logger.Info("Leaf server started", "address", listener.Addr())
 	if err := grpcServer.Serve(listener); err != nil {
 		logger.Error("failed to serve", "error", err)
 		os.Exit(1)
 	}
-}
-
-func setupLogger(logLevel string, logFormat string, logFilePath string) *slog.Logger {
-	// Set up log level
-	var level slog.Level
-	switch logLevel {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
-
-	// Set up log output
-	var output *os.File
-	var err error
-	if logFilePath != "" {
-		output, err = os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			slog.Error("Failed to open log file, falling back to stdout", "error", err)
-			output = os.Stdout
-		}
-	} else {
-		output = os.Stdout
-	}
-
-	// Set up handler options
-	opts := &slog.HandlerOptions{
-		Level:     level,
-		AddSource: true,
-	}
-
-	// Create handler based on format
-	var handler slog.Handler
-	switch logFormat {
-	case "json":
-		handler = slog.NewJSONHandler(output, opts)
-	case "text":
-		handler = slog.NewTextHandler(output, opts)
-	case "dev":
-		devOpts := &devslog.Options{
-			HandlerOptions:    opts,
-			MaxSlicePrintSize: 5,
-			SortKeys:          true,
-			NewLineAfterLog:   true,
-			StringerFormatter: true,
-		}
-		handler = devslog.NewHandler(output, devOpts)
-	}
-	logger := slog.New(handler)
-	slog.SetDefault(logger)
-
-	return logger
 }
 
 //nolint:all
