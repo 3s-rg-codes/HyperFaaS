@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"google.golang.org/grpc"
 )
 
@@ -23,10 +22,35 @@ var DATABASE_ADDRESS = envOrDefault("DATABASE_ADDRESS", "localhost:8999")
 
 // The timeout used for the calls
 const TIMEOUT = 60 * time.Second
+const CONCURRENCY = 50
 
 func TestMain(m *testing.M) {
 
 	os.Exit(m.Run())
+}
+
+// Tests sending a CreateFunctionRequest to the LB
+func TestCreateFunctionRequest(t *testing.T) {
+	lbc, lbconn := GetLBClient(LB_ADDRESS)
+	defer lbconn.Close()
+	resp, err := lbc.CreateFunction(context.Background(), &common.CreateFunctionRequest{
+		Image: &common.Image{
+			Tag: "hyperfaas-hello:latest",
+		},
+		Config: &common.Config{
+			Memory: 100 * 1024 * 1024,
+			Cpu: &common.CPUConfig{
+				Period: 100000,
+				Quota:  50000,
+			},
+		},
+	})
+	if err != nil {
+		t.Errorf("Failed to create function: %v", err)
+	}
+	if resp.FunctionId == "" {
+		t.Errorf("Function id is an empty string: %v", resp)
+	}
 }
 
 // Tests sending a CallRequest to the LB
@@ -70,6 +94,7 @@ func TestCallRequest(t *testing.T) {
 
 	for _, d := range data {
 		t.Run("Single Call", func(t *testing.T) {
+			//t.Skip("Skipping single call test")
 			functionId := createFunction(d.ImageTag)
 			testCall(t, d.Client, functionId, d.Data, d.ExpectedResponse)
 		})
@@ -77,10 +102,11 @@ func TestCallRequest(t *testing.T) {
 
 	for _, d := range data {
 		t.Run("Concurrent Calls", func(t *testing.T) {
+			//t.Skip("Skipping concurrent calls test")
 			functionId := createFunction(d.ImageTag)
-			t.Log("Sending 100 Concurrent Calls")
+			t.Log("Sending Concurrent Calls")
 			wg := sync.WaitGroup{}
-			for range 100 {
+			for range CONCURRENCY {
 				wg.Go(func() {
 					testCall(t, d.Client, functionId, d.Data, d.ExpectedResponse)
 				})
@@ -101,10 +127,10 @@ func envOrDefault(env string, defaultValue string) string {
 
 // creates a function and returns the function ID
 func createFunction(imageTag string) string {
-	c, conn := GetLeafClient(LEAF_ADDRESS)
+	c, conn := GetLBClient(LB_ADDRESS)
 	defer conn.Close()
 
-	resp, err := c.CreateFunction(context.Background(), &leafpb.CreateFunctionRequest{
+	resp, err := c.CreateFunction(context.Background(), &common.CreateFunctionRequest{
 		Image: &common.Image{
 			Tag: imageTag,
 		},

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -32,6 +31,7 @@ type LeafServer struct {
 	functionMetricChansMutex sync.RWMutex
 	database                 kv.FunctionMetadataStore
 	functionIdCache          map[string]kv.FunctionData
+	functionIdCacheMutex     sync.RWMutex
 	workerClients            workerClients
 	logger                   *slog.Logger
 }
@@ -46,24 +46,26 @@ type workerClient struct {
 	client workerPB.WorkerClient
 }
 
-// CreateFunction should only create the function, e.g. save its Config and image tag in local cache
-func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctionRequest) (*leaf.CreateFunctionResponse, error) {
-	functionID, err := s.database.Put(req.Image, req.Config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store function in database: %w", err)
-	}
+// RegisterFunction creates local state for the function.
+func (s *LeafServer) RegisterFunction(ctx context.Context, req *leaf.RegisterFunctionRequest) (*common.CreateFunctionResponse, error) {
 
-	s.functionIdCache[functionID] = kv.FunctionData{
-		Config: req.Config, // Also needed here for scheduling decisions
-		Image:  req.Image,
+	s.functionIdCacheMutex.Lock()
+	s.functionIdCache[req.FunctionId] = kv.FunctionData{
+		Config: req.Config.Config,
+		Image:  req.Config.Image,
 	}
+	s.functionIdCacheMutex.Unlock()
+
+	functionID := state.FunctionID(req.FunctionId)
 
 	s.functionMetricChansMutex.Lock()
-	s.functionMetricChans[state.FunctionID(functionID)] = make(chan bool, 10000)
+	if _, exists := s.functionMetricChans[functionID]; !exists {
+		s.functionMetricChans[functionID] = make(chan bool, 10000)
+	}
 	s.functionMetricChansMutex.Unlock()
 
-	s.state.AddFunction(state.FunctionID(functionID),
-		s.functionMetricChans[state.FunctionID(functionID)],
+	s.state.AddAutoscaler(functionID,
+		s.functionMetricChans[functionID],
 		func(ctx context.Context, functionID state.FunctionID, workerID state.WorkerID) error {
 			_, err := s.startInstance(ctx, workerID, functionID)
 			if err != nil {
@@ -72,18 +74,16 @@ func (s *LeafServer) CreateFunction(ctx context.Context, req *leaf.CreateFunctio
 			return nil
 		})
 
-	return &leaf.CreateFunctionResponse{
-		FunctionId: functionID,
-	}, nil
+	return &common.CreateFunctionResponse{FunctionId: string(functionID)}, nil
 }
 
 func (s *LeafServer) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 	autoscaler, ok := s.state.GetAutoscaler(state.FunctionID(req.FunctionId))
 	if !ok {
-		return nil, status.Errorf(codes.NotFound, "function id not found")
+		return nil, status.Errorf(codes.NotFound, "leaf could not schedule: function id %s not found", req.FunctionId)
 	}
 	if autoscaler.IsScaledDown() {
-		err := autoscaler.ForceScaleUp(ctx)
+		_, err := autoscaler.ForceScaleUp(ctx)
 		if err != nil {
 			if errors.As(err, &state.TooManyStartingInstancesError{}) {
 				time.Sleep(s.leafConfig.PanicBackoff)
@@ -94,8 +94,7 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *common.CallRequest) 
 				return s.ScheduleCall(ctx, req)
 			}
 			if errors.As(err, &state.ScaleUpFailedError{}) {
-				// TODO improve error message with better info.
-				return nil, status.Errorf(codes.ResourceExhausted, "failed to scale up function")
+				return nil, status.Errorf(codes.ResourceExhausted, "leaf could not schedule: failed to scale up function")
 			}
 		}
 	}
@@ -108,19 +107,22 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *common.CallRequest) 
 		return s.ScheduleCall(ctx, req)
 	}
 
-	// TODO: pick a better way to pick a worker.
-	randWorker := s.workerIds[rand.Intn(len(s.workerIds))]
+	// Pick a worker which currently hosts an instance if possible
+	targetWorker := autoscaler.Pick()
+	if targetWorker == "" {
+		return nil, status.Errorf(codes.NotFound, "leaf could not schedule: no worker currently hosting an instance for function %s", req.FunctionId)
+	}
 
 	s.functionMetricChansMutex.RLock()
 	metricChan := s.functionMetricChans[state.FunctionID(req.FunctionId)]
 	s.functionMetricChansMutex.RUnlock()
 	metricChan <- true
+	defer func() { metricChan <- false }()
 
-	resp, err := s.callWorker(ctx, randWorker, state.FunctionID(req.FunctionId), req)
+	resp, err := s.callWorker(ctx, targetWorker, state.FunctionID(req.FunctionId), req)
 	if err != nil {
 		return nil, err
 	}
-	metricChan <- false
 
 	return resp, nil
 }

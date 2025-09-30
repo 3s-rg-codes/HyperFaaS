@@ -30,6 +30,7 @@ const (
 	TIMEOUT            = 30 * time.Second
 	DURATION           = 10 * time.Second
 	RPS                = 2500
+	LB_ADDRESS         = "localhost:50052"
 )
 
 func main() {
@@ -49,14 +50,14 @@ func main() {
 
 	// Create functions and save their id:imagetag mapping
 	for i, imageTag := range imageTags {
-		functionID, err := createFunction(imageTag, &client)
+		functionID, err := createFunction(imageTag)
 		if err != nil {
 			log.Fatalf("Failed to create function: %v", err)
 		}
 		functionIDs[i] = functionID
 	}
 
-	lbConn, err := grpc.NewClient("localhost:50052", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	lbConn, err := grpc.NewClient(LB_ADDRESS, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Failed to create LB client: %v", err)
 	}
@@ -246,8 +247,15 @@ func BuildMockClientHelper(controllerServerAddress string) (workerpb.WorkerClien
 	return testClient, connection, nil
 }
 
-func createFunction(imageTag string, client *leafpb.LeafClient) (string, error) {
-	createReq := &leafpb.CreateFunctionRequest{
+func createFunction(imageTag string) (string, error) {
+	conn, err := grpc.NewClient(LB_ADDRESS, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return "", fmt.Errorf("failed to create LB client: %v", err)
+	}
+	defer conn.Close()
+	client := lbpb.NewLBClient(conn)
+
+	createReq := &common.CreateFunctionRequest{
 		Image: &common.Image{Tag: imageTag},
 		Config: &common.Config{
 			Memory: RequestedMemory,
@@ -260,7 +268,7 @@ func createFunction(imageTag string, client *leafpb.LeafClient) (string, error) 
 		},
 	}
 
-	createFunctionResp, err := (*client).CreateFunction(context.Background(), createReq)
+	createFunctionResp, err := client.CreateFunction(context.Background(), createReq)
 	if err != nil {
 		return "", fmt.Errorf("failed to create function: %v", err)
 	}

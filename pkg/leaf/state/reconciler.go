@@ -118,7 +118,11 @@ func (s *SmallState) handleContainerTimeout(workerID WorkerID, functionID Functi
 		s.logger.Error("Reconciliation failed to find autoscaler", "functionID", functionID)
 		return
 	}
+
+	//global counter
 	autoscaler.UpdateRunningInstances(-1)
+	// reduce the counter for this specific worker
+	autoscaler.MarkInstanceStopped(workerID)
 }
 
 func (s *SmallState) handleContainerDown(workerID WorkerID, functionID FunctionID, instanceID InstanceID) {
@@ -130,4 +134,5 @@ func (s *SmallState) handleContainerDown(workerID WorkerID, functionID FunctionI
 		return
 	}
 	autoscaler.UpdateRunningInstances(-1)
+	autoscaler.MarkInstanceStopped(workerID)
 }
