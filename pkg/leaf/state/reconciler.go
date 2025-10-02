@@ -15,28 +15,6 @@ const (
 	leafNodeID = "todo"
 )
 
-// The reconciler is responsible for reconciling the state of the workers and instances.
-// It reads the StatusUpdate stream from the workers and updates the state of the scheduler if necessary.
-// The most common case is that instances time out when waiting for more calls.
-/* type Reconciler struct {
-	workerIDs []WorkerID
-	workers   WorkerData
-	logger    *slog.Logger
-}
-
-// We accept any type that implements RemoveInstance
-type WorkerData interface {
-	RemoveInstance(workerID WorkerID, functionID FunctionID, instanceID InstanceID) error
-}
-
-func NewReconciler(workerIDs []WorkerID, workers WorkerData, logger *slog.Logger) *Reconciler {
-	return &Reconciler{
-		workerIDs: workerIDs,
-		workers:   workers,
-		logger:    logger,
-	}
-} */
-
 // RunReconciler runs the reconciler asynchronously in a loop, listening to the status updates from the workers.
 // It is responsible for updating the state if necessary, for example if a container times out or is down.
 func (s *SmallState) RunReconciler(ctx context.Context) {
