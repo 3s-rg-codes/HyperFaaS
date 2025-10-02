@@ -87,8 +87,30 @@ To build all Go functions:
 ```
 just build-functions-go
 ```
+## Development
+There are three Go build tags used for testing:
+- unit
+- integration
+- e2e
 
-## Testing
+Please make sure your editor and tools (such as gopls) are configured to recognize these build tags, or your code may not compile or show errors. For example, in VSCode you can set this in `.vscode/settings.json`:
+
+```
+{
+    "go.buildTags": ["unit", "integration", "e2e"]
+}
+```
+
+### Linting
+
+We use [golangci-lint](https://golangci-lint.run/) for linting.
+You can run it with:
+```
+just lint
+```
+
+
+### Testing
 We have unit, integration and end to end tests.
 For the end to end tests, you need to have a running docker compose version of HyperFaaS.
 For more information, see [test/README.md](test/README.md).
