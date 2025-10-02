@@ -104,6 +104,12 @@ If you want colored output, install gotest:
 go install github.com/rakyll/gotest@latest
 ```
 
+Then you can run the tests with a "true" parameter.
+```
+# prints with color
+just test-e2e true
+```
+
 
 ## Cleanup
 
