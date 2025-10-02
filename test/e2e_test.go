@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,7 +59,8 @@ func TestCallRequest(t *testing.T) {
 
 	lbc, lbconn := GetLBClient(LB_ADDRESS)
 	defer lbconn.Close()
-	//leafc, leafconn := GetLeafClient(LEAF_ADDRESS)
+	leafc, leafconn := GetLeafClient(LEAF_ADDRESS)
+	defer leafconn.Close()
 	//defer leafconn.Close()
 	data := []struct {
 		ImageTag         string
@@ -66,7 +68,7 @@ func TestCallRequest(t *testing.T) {
 		Data             []byte
 		Client           client
 	}{
-		/* {
+		{
 			ImageTag:         "hyperfaas-hello:latest",
 			ExpectedResponse: []byte("HELLO WORLD!"),
 			Data:             []byte(""),
@@ -77,7 +79,7 @@ func TestCallRequest(t *testing.T) {
 			ExpectedResponse: []byte("Echo this message"),
 			Data:             []byte("Echo this message"),
 			Client:           leafc,
-		}, */
+		},
 		{
 			ImageTag:         "hyperfaas-hello:latest",
 			ExpectedResponse: []byte("HELLO WORLD!"),
@@ -106,12 +108,35 @@ func TestCallRequest(t *testing.T) {
 			functionId := createFunction(d.ImageTag)
 			t.Log("Sending Concurrent Calls")
 			wg := sync.WaitGroup{}
+			success := atomic.Int32{}
+			fail := atomic.Int32{}
+			errors := []error{}
+			errorsMutex := sync.Mutex{}
 			for range CONCURRENCY {
 				wg.Go(func() {
-					testCall(t, d.Client, functionId, d.Data, d.ExpectedResponse)
+					err := testCall(t, d.Client, functionId, d.Data, d.ExpectedResponse)
+					if err != nil {
+						fail.Add(1)
+						errorsMutex.Lock()
+						errors = append(errors, err)
+						errorsMutex.Unlock()
+					} else {
+						success.Add(1)
+					}
 				})
 			}
 			wg.Wait()
+			if success.Load() != CONCURRENCY {
+				t.Errorf("Expected %d successes, got %d", CONCURRENCY, success.Load())
+				if len(errors) > 0 {
+					// it can get very cluttered if verbose
+					if testing.Verbose() {
+						t.Logf("Error messages: %v", errors)
+					} else {
+						t.Logf("First error: %v", errors[0])
+					}
+				}
+			}
 
 		})
 	}
@@ -156,7 +181,7 @@ type client interface {
 }
 
 // tests a call to a function using data. Verifies the response is as expected. Receives a leaf or lb client.
-func testCall(t *testing.T, c client, functionId string, data []byte, expectedResponse []byte) {
+func testCall(t *testing.T, c client, functionId string, data []byte, expectedResponse []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), TIMEOUT)
 	defer cancel()
 	resp, err := c.ScheduleCall(ctx, &common.CallRequest{
@@ -164,10 +189,13 @@ func testCall(t *testing.T, c client, functionId string, data []byte, expectedRe
 		Data:       data,
 	})
 	if err != nil {
-		t.Errorf("Failed to send call: %v", err)
-		return
+		// not Errorf because the stdout gets cluttered
+		t.Fail()
+		return err
 	}
 	if !bytes.Equal(resp.Data, expectedResponse) {
 		t.Errorf("Expected response %s, got %s", expectedResponse, resp.Data)
+		return nil
 	}
+	return nil
 }

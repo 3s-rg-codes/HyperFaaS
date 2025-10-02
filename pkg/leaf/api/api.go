@@ -68,10 +68,7 @@ func (s *LeafServer) RegisterFunction(ctx context.Context, req *leaf.RegisterFun
 		s.functionMetricChans[functionID],
 		func(ctx context.Context, functionID state.FunctionID, workerID state.WorkerID) error {
 			_, err := s.startInstance(ctx, workerID, functionID)
-			if err != nil {
-				return err
-			}
-			return nil
+			return err
 		})
 
 	return &common.CreateFunctionResponse{FunctionId: string(functionID)}, nil
@@ -82,35 +79,50 @@ func (s *LeafServer) ScheduleCall(ctx context.Context, req *common.CallRequest) 
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "leaf could not schedule: function id %s not found", req.FunctionId)
 	}
-	if autoscaler.IsScaledDown() {
-		_, err := autoscaler.ForceScaleUp(ctx)
-		if err != nil {
-			if errors.As(err, &state.TooManyStartingInstancesError{}) {
-				time.Sleep(s.leafConfig.PanicBackoff)
-				s.leafConfig.PanicBackoff = s.leafConfig.PanicBackoff + s.leafConfig.PanicBackoffIncrease
-				if s.leafConfig.PanicBackoff > s.leafConfig.PanicMaxBackoff {
-					s.leafConfig.PanicBackoff = s.leafConfig.PanicMaxBackoff
+
+	var targetWorker state.WorkerID
+	var err error
+	currentBackoff := s.leafConfig.PanicBackoff
+	// check if we are scaled down or in panic mode.
+	// this loop helps in case of many concurrent calls
+	for {
+		if autoscaler.IsScaledDown() {
+			targetWorker, err = autoscaler.ForceScaleUp(ctx)
+			if err != nil {
+				var tooManyStartingInstancesError *state.TooManyStartingInstancesError
+				var scaleUpFailedError *state.ScaleUpFailedError
+				if errors.As(err, &tooManyStartingInstancesError) {
+					time.Sleep(currentBackoff)
+					currentBackoff = currentBackoff + s.leafConfig.PanicBackoffIncrease
+					if currentBackoff > s.leafConfig.PanicMaxBackoff {
+						currentBackoff = s.leafConfig.PanicMaxBackoff
+					}
+					continue
 				}
-				return s.ScheduleCall(ctx, req)
+				if errors.As(err, &scaleUpFailedError) {
+					return nil, status.Errorf(codes.ResourceExhausted, "leaf could not schedule: failed to scale up function")
+				}
 			}
-			if errors.As(err, &state.ScaleUpFailedError{}) {
-				return nil, status.Errorf(codes.ResourceExhausted, "leaf could not schedule: failed to scale up function")
+			// We have successfully scaled up
+			break
+		} else if autoscaler.IsPanicMode() {
+			time.Sleep(currentBackoff)
+			currentBackoff = currentBackoff + s.leafConfig.PanicBackoffIncrease
+			if currentBackoff > s.leafConfig.PanicMaxBackoff {
+				currentBackoff = s.leafConfig.PanicMaxBackoff
 			}
+			continue
+		} else {
+			break
 		}
-	}
-	if autoscaler.IsPanicMode() {
-		time.Sleep(s.leafConfig.PanicBackoff)
-		s.leafConfig.PanicBackoff = s.leafConfig.PanicBackoff + s.leafConfig.PanicBackoffIncrease
-		if s.leafConfig.PanicBackoff > s.leafConfig.PanicMaxBackoff {
-			s.leafConfig.PanicBackoff = s.leafConfig.PanicMaxBackoff
-		}
-		return s.ScheduleCall(ctx, req)
 	}
 
-	// Pick a worker which currently hosts an instance if possible
-	targetWorker := autoscaler.Pick()
 	if targetWorker == "" {
-		return nil, status.Errorf(codes.NotFound, "leaf could not schedule: no worker currently hosting an instance for function %s", req.FunctionId)
+		// pick a worker, we are not in panic mode and we are not scaled down
+		targetWorker = autoscaler.Pick()
+		if targetWorker == "" {
+			return nil, status.Errorf(codes.NotFound, "leaf could not schedule: no worker currently hosting an instance for function %s", req.FunctionId)
+		}
 	}
 
 	s.functionMetricChansMutex.RLock()

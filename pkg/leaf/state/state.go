@@ -4,6 +4,7 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"sync"
@@ -55,17 +56,26 @@ type Autoscaler struct {
 	WorkersWithInstances      map[WorkerID]*atomic.Int32
 	WorkersWithInstancesMutex sync.RWMutex
 
-	panicMode                 atomic.Bool
-	MetricChan                chan bool
-	concurrencyLevel          atomic.Int32
-	runningInstances          atomic.Int32
-	startingInstances         atomic.Int32
-	maxStartingInstances      int32
-	maxRunningInstances       int32
+	// whether the autoscaler is in panic mode. Panic mode is when ForceScaleUp is being called (maybe concurrently) and maxStartingInstances has not yet been reached.
+	panicMode atomic.Bool
+
+	// used to update the concurrency level of the function
+	MetricChan chan bool
+	// the current concurrency level of the function
+	concurrencyLevel atomic.Int32
+	// the number of instances that are currently running
+	runningInstances atomic.Int32
+	// the number of instances that are currently starting
+	startingInstances atomic.Int32
+	// the maximum number of instances that can be started
+	maxStartingInstances int32
+	// the maximum number of instances that can be running
+	maxRunningInstances int32
+	// the target instance concurrency for the function
 	targetInstanceConcurrency int32
 	// how often to evaluate the scaling algorithm
 	evaluationInterval time.Duration
-	// the function to be called when scaling up
+	// the function to be called when scaling up.
 	scaleUpCallback func(ctx context.Context, functionID FunctionID, workerID WorkerID) error
 	logger          *slog.Logger
 }
@@ -192,7 +202,11 @@ func (a *Autoscaler) MarkInstanceStopped(workerID WorkerID) {
 	a.WorkersWithInstancesMutex.Lock()
 	// counter must never be nil in this case
 	if a.WorkersWithInstances[workerID] == nil {
-		panic("tried to mark instance stopped for worker " + workerID + " but counter is nil")
+		panic("tried to mark instance stopped for worker " +
+			string(workerID) +
+			" but counter is nil. " +
+			"Current workers with instances: " +
+			fmt.Sprintf("%v", a.WorkersWithInstances))
 	}
 	a.WorkersWithInstances[workerID].Add(-1)
 	a.WorkersWithInstancesMutex.Unlock()

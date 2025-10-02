@@ -126,8 +126,8 @@ test-integration color="false":
     if [ "{{color}}" = "false" ]; then go test -v ./... -tags=integration; fi
 
 test-e2e color="false" *FLAGS:
-    if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest -v ./test -tags=e2e {{FLAGS}}; fi
-    if [ "{{color}}" = "false" ]; then go test -v ./test -tags=e2e {{FLAGS}}; fi
+    if [ "{{color}}" = "true" ]; then GOTEST_PALETTE="red,green" gotest ./test -tags=e2e {{FLAGS}}; fi
+    if [ "{{color}}" = "false" ]; then go test ./test -tags=e2e {{FLAGS}}; fi
 
 #Containerized integration tests via docker compose
 build-integration-containerized-all:
