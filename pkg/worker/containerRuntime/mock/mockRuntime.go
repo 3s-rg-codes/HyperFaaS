@@ -72,11 +72,11 @@ func (m *MockRuntime) RemoveImage(ctx context.Context, imageID string) error {
 
 // Start implements containerRuntime.ContainerRuntime.
 func (m *MockRuntime) Start(ctx context.Context, functionID string, imageTag string, config *commonpb.Config) (cr.Container, error) {
-	longID, err := uuid.NewUUID()
+	longID, err := uuid.NewRandom()
 	if err != nil {
 		return cr.Container{}, err
 	}
-	instanceID := longID.String()[:8] // truncating the ID to 8 for compatibility
+	instanceID := longID.String()[:12] // truncating the ID to 12 chars for compatibility w/ Docker Runtime
 
 	var handler handler
 	switch imageTag {
