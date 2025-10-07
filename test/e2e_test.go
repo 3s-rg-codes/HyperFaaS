@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	"github.com/goforj/godump"
 	"google.golang.org/grpc"
 )
 
@@ -131,7 +132,8 @@ func TestCallRequest(t *testing.T) {
 				if len(errors) > 0 {
 					// it can get very cluttered if verbose
 					if testing.Verbose() {
-						t.Logf("Error messages: %v", errors)
+						t.Log("Error messages: \n")
+						godump.Dump(errors)
 					} else {
 						t.Logf("First error: %v", errors[0])
 					}
@@ -166,7 +168,7 @@ func createFunction(imageTag string) string {
 				Quota:  50000,
 			},
 			MaxConcurrency: 500,
-			Timeout:        10,
+			Timeout:        13,
 		},
 	})
 	if err != nil {

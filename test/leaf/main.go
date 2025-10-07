@@ -28,7 +28,7 @@ const (
 	RequestedCPUQuota  = 50000
 	SQLITE_DB_PATH     = "metrics.db"
 	TIMEOUT            = 30 * time.Second
-	DURATION           = 10 * time.Second
+	DURATION           = 120 * time.Second
 	RPS                = 2500
 	LB_ADDRESS         = "localhost:50052"
 )
@@ -72,7 +72,7 @@ func main() {
 	// testConcurrentCallsForDuration(client, functionIDs[0], RPS, DURATION)
 	go testRampingCallsForDuration(client, functionIDs[0], RPS, DURATION, 60*time.Second)
 	go testRampingCallsForDuration(client, functionIDs[1], RPS, DURATION, 60*time.Second)
-	//go testRampingCallsForDuration(client, functionIDs[2], RPS, DURATION, 60*time.Second)
+	go testRampingCallsForDuration(client, functionIDs[2], RPS, DURATION, 60*time.Second)
 	time.Sleep(DURATION + 5*time.Second)
 	// Send thumbnail request
 	//sendThumbnailRequest(client, functiocallerServer := caller.NewCallerServer(config.Config.CallerServerAddress, logger, statsManager)nIDs[3])
@@ -81,6 +81,7 @@ func main() {
 	//testBFS(client, functionIDs[4])
 
 	// Test call with sleep
+	fmt.Printf("Testing call after sleeping\n")
 	testCallWithSleep(client, functionIDs[0], 20*time.Second)
 }
 

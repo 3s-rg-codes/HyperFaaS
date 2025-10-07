@@ -11,7 +11,6 @@ services:
       - function-logs:/root/functions/logs
     ports:
       - "50051:50051"
-    #network_mode: host
     networks:
       - hyperfaas-network
     command: ["./app", "-address=0.0.0.0:50051", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-a-1"]
@@ -41,7 +40,6 @@ services:
       - function-logs:/root/functions/logs
     ports:
       - "50041:50041"
-    #network_mode: host
     networks:
       - hyperfaas-network
     command: ["./app", "-address=0.0.0.0:50041", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-a-2"]
@@ -71,7 +69,6 @@ services:
       - function-logs:/root/functions/logs
     ports:
       - "50031:50031"
-    #network_mode: host
     networks:
       - hyperfaas-network
     command: ["./app", "-address=0.0.0.0:50031", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-b-1"]
@@ -101,7 +98,6 @@ services:
       - function-logs:/root/functions/logs
     ports:
       - "50021:50021"
-    #network_mode: host
     networks:
       - hyperfaas-network
     command: ["./app", "-address=0.0.0.0:50021", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-b-2"]
@@ -120,18 +116,26 @@ services:
       database:
         condition: service_healthy
   leaf-A:
-    image: hyperfaas-leaf-a
+    image: hyperfaas-leafv2-a
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        COMPONENT: leaf
+        COMPONENT: leafv2
     ports:
       - "50050:50050"
-    #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "--address=0.0.0.0:50050", "--log-level=${LOG_LEVEL}", "--log-format=text", "--worker-ids=worker-A-1:50051",  "--worker-ids=worker-A-2:50041","--database-address=http://database:8999", "--max-starting-instances-per-function=2", "--starting-instance-wait-timeout=10s", "--max-running-instances-per-function=10", "--panic-backoff=1s", "--panic-backoff-increase=1s", "--panic-max-backoff=10s"]
+    command: [
+      "./app",
+      "-address=0.0.0.0:50050",
+      "-log-level=${LOG_LEVEL}",
+      "-log-format=text",
+      "-worker-addr=worker-A-1:50051",
+      "-worker-addr=worker-A-2:50041",
+      "-scale-to-zero-after=10s",
+      "-max-instances-per-worker=4"
+    ]
     develop:
       watch:
         - action: rebuild
@@ -148,22 +152,29 @@ services:
         condition: service_healthy
       worker-A-2:
         condition: service_healthy
-
       database:
         condition: service_healthy
   leaf-B:
-    image: hyperfaas-leaf-b
+    image: hyperfaas-leafv2-b
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        COMPONENT: leaf
+        COMPONENT: leafv2
     ports:
       - "50040:50040"
-    #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "--address=0.0.0.0:50040", "--log-level=${LOG_LEVEL}", "--log-format=text", "--worker-ids=worker-B-1:50031","--worker-ids=worker-B-2:50021", "--database-address=http://database:8999", "--max-starting-instances-per-function=2", "--starting-instance-wait-timeout=10s", "--max-running-instances-per-function=10", "--panic-backoff=1s", "--panic-backoff-increase=1s", "--panic-max-backoff=10s"]
+    command: [
+      "./app",
+      "-address=0.0.0.0:50040",
+      "-log-level=${LOG_LEVEL}",
+      "-log-format=text",
+      "-worker-addr=worker-B-1:50031",
+      "-worker-addr=worker-B-2:50021",
+      "-scale-to-zero-after=10s",
+      "-max-instances-per-worker=4"
+    ]
     develop:
       watch:
         - action: rebuild
@@ -193,7 +204,7 @@ services:
       - "50052:50052"
     networks:
       - hyperfaas-network
-    command: ["./app", "--log-level=${LOG_LEVEL}", "--log-format=text", "--leaf-addr=leaf-A:50050","--leaf-addr=leaf-B:50040", "--strategy=hyperfaas_round_robin", "--database-address=http://database:8999"]
+    command: ["./app", "--log-level=${LOG_LEVEL}", "--log-format=text", "--leaf-addr=leaf-A:50050", "--leaf-addr=leaf-B:50040", "--strategy=hyperfaas_round_robin", "--database-address=http://database:8999"]
     depends_on:
       leaf-A:
         condition: service_healthy
@@ -214,7 +225,6 @@ services:
         COMPONENT: database
     ports:
       - "8999:8999"
-    #network_mode: host
     networks:
       - hyperfaas-network
     healthcheck:
