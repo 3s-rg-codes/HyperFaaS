@@ -33,7 +33,7 @@ type Server struct {
 	functions map[string]*functionController
 }
 
-// NewServer wires a LeafV2 server with the provided configuration and logger.
+// NewServer initialises a leaf server with the provided configuration and logger.
 func NewServer(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) {
 	cfg.applyDefaults()
 
@@ -124,7 +124,7 @@ func (s *Server) RegisterFunction(ctx context.Context, req *leafpb.RegisterFunct
 	return &common.CreateFunctionResponse{FunctionId: functionID}, nil
 }
 
-// ScheduleCall forwards a call request to one of the managed workers, scaling pods as needed.
+// ScheduleCall forwards a call request to one of the managed workers
 func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 	if req == nil || req.FunctionId == "" {
 		return nil, status.Error(codes.InvalidArgument, "function_id is required")
