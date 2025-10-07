@@ -37,7 +37,6 @@ type lbServer struct {
 }
 
 func (l *lbServer) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-
 	if len(l.leafAddrs) > 0 {
 		l.logger.Debug("Forwarding to leaf node", "function_id", req.FunctionId)
 		return l.leafClient.ScheduleCall(ctx, req)
@@ -54,10 +53,9 @@ func (l *lbServer) ScheduleCall(ctx context.Context, req *common.CallRequest) (*
 // the creation to all connected leaf nodes so they can initialize local state.
 // Returns the created function ID.
 func (l *lbServer) CreateFunction(ctx context.Context, req *common.CreateFunctionRequest) (*common.CreateFunctionResponse, error) {
-
 	if l.database == nil {
 		l.logger.Error("Database client not configured for LB")
-		return nil, fmt.Errorf("database client not configured")
+		return nil, errors.New("database client not configured")
 	}
 
 	functionID, err := l.database.Put(req.Image, req.Config)

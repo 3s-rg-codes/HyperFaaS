@@ -324,7 +324,7 @@ func (f *functionController) ensureCapacity(workerIdx int) {
 	if capacity > 0 && inFlight < capacity {
 		return
 	}
-	//TODO: handle error
+	// TODO: handle error
 	_ = f.scaleUp(ctx, workerIdx)
 }
 

@@ -2,6 +2,7 @@ package leafv2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -38,10 +39,10 @@ func NewServer(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, e
 	cfg.applyDefaults()
 
 	if len(cfg.WorkerAddresses) == 0 {
-		return nil, fmt.Errorf("at least one worker address is required")
+		return nil, errors.New("at least one worker address is required")
 	}
 	if logger == nil {
-		return nil, fmt.Errorf("logger must not be nil")
+		return nil, errors.New("logger must not be nil")
 	}
 
 	serverCtx, cancel := context.WithCancel(ctx)
