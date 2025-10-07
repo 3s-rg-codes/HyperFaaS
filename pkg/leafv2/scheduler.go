@@ -16,9 +16,11 @@ type WorkerState struct {
 type WorkerScheduler interface {
 	// PickForCall implements an algorithm that decides which worker to use for a call.
 	// It receives a full copy of the worker states.
+	// It should return -1 if none is found.
 	PickForCall(state []WorkerState, maxConcurrency int) int
 	// PickForScale implements an algorithm that decides which worker to use for a scaling request.
 	// It receives a full copy of the worker states.
+	// It should return -1 if none is found.
 	PickForScale(state []WorkerState, maxInstancesPerWorker int) (int, bool)
 }
 
