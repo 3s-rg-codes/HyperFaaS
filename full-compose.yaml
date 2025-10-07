@@ -116,12 +116,12 @@ services:
       database:
         condition: service_healthy
   leaf-A:
-    image: hyperfaas-leafv2-a
+    image: hyperfaas-leaf-a
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        COMPONENT: leafv2
+        COMPONENT: leaf
     ports:
       - "50050:50050"
     networks:
@@ -155,12 +155,12 @@ services:
       database:
         condition: service_healthy
   leaf-B:
-    image: hyperfaas-leafv2-b
+    image: hyperfaas-leaf-b
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        COMPONENT: leafv2
+        COMPONENT: leaf
     ports:
       - "50040:50040"
     networks:

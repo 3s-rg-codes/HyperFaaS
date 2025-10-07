@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/3s-rg-codes/HyperFaaS/pkg/leafv2"
+	leaf "github.com/3s-rg-codes/HyperFaaS/pkg/leaf"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"google.golang.org/grpc"
@@ -61,7 +61,7 @@ func main() {
 		"max_instances_per_worker", *maxInstancesPerWorker,
 	)
 
-	cfg := leafv2.Config{
+	cfg := leaf.Config{
 		WorkerAddresses:       append([]string(nil), workerAddrs...),
 		ScaleToZeroAfter:      *scaleToZeroAfter,
 		MaxInstancesPerWorker: *maxInstancesPerWorker,
@@ -75,7 +75,7 @@ func main() {
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server, err := leafv2.NewServer(sigCtx, cfg, logger)
+	server, err := leaf.NewServer(sigCtx, cfg, logger)
 	if err != nil {
 		logger.Error("failed to build leaf server", "error", err)
 		os.Exit(1)

@@ -18,8 +18,6 @@ RUN case "${COMPONENT}" in \
         go build -o app ./cmd/worker/main.go ;; \
     "leaf") \
         go build -o app ./cmd/leaf/main.go ;; \
-    "leafv2") \
-        go build -o app ./cmd/leafv2/main.go ;; \
     "database") \
         go build -o app ./cmd/database/main.go ;; \
     "lb") \
@@ -33,7 +31,7 @@ FROM alpine:${ALPINE_VERSION}
 # Install runtime dependencies based on component
 ARG COMPONENT=worker
 RUN case "${COMPONENT}" in \
-    "worker"|"leaf"|"leafv2"|"lb") \
+    "worker"|"leaf"|"lb") \
         apk add --no-cache netcat-openbsd bash ;; \
     "database") \
         apk add --no-cache wget ;; \

@@ -54,6 +54,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create function: %v", err)
 		}
+		log.Printf("Created function: %v", functionID)
 		functionIDs[i] = functionID
 	}
 
