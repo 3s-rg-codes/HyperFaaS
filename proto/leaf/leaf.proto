@@ -12,7 +12,7 @@ message RegisterFunctionRequest {
 }
 
 service Leaf {
-  // Schedules a function call on the worker identified by the provided function ID.
+  // Schedules a function call on a worker.
   rpc ScheduleCall(common.CallRequest) returns (common.CallResponse);
   // Registers a function autoscaler on the leaf. 
   // Must be called before calling ScheduleCall.
