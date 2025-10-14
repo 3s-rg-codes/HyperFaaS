@@ -6,19 +6,16 @@ import "common/common.proto";
 
 option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/leaf";
 
-
-message CreateFunctionRequest {
-  common.Image image = 1;
-  common.Config config = 2;
-}
-
-message CreateFunctionResponse {
-  string function_id = 1;
+message RegisterFunctionRequest {
+  common.CreateFunctionRequest config = 1;
+  string function_id = 2;
 }
 
 service Leaf {
-  // Schedules a function call on the worker identified by the provided function ID.
+  // Schedules a function call on a worker.
   rpc ScheduleCall(common.CallRequest) returns (common.CallResponse);
-  //Creates a function on the LeafLeader (e.g. writes it to the cache, which is currently not purged)
-  rpc CreateFunction(CreateFunctionRequest) returns (CreateFunctionResponse);
+  // Registers a function autoscaler on the leaf. 
+  // Must be called before calling ScheduleCall.
+  // An entry for the function must exist in the database.
+  rpc RegisterFunction(RegisterFunctionRequest) returns (common.CreateFunctionResponse);
 }

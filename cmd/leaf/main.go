@@ -4,93 +4,87 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
-	"log/slog"
 	"net"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 	"time"
 
-	"github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
-
-	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/api"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/state"
-	pb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
-	"github.com/golang-cz/devslog"
+	leaf "github.com/3s-rg-codes/HyperFaaS/pkg/leaf"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
+	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
-type workerIDs []string
+type addressList []string
 
-func (i *workerIDs) String() string {
-	return fmt.Sprintf("%v", *i)
+func (a *addressList) String() string {
+	return strings.Join(*a, ",")
 }
 
-func (i *workerIDs) Set(value string) error {
-	*i = append(*i, value)
+func (a *addressList) Set(value string) error {
+	*a = append(*a, value)
 	return nil
 }
 
 func main() {
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
-	workerIDs := workerIDs{}
-	address := flag.String("address", "0.0.0.0:50050", "The address to listen on")
-	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error) (Env: LOG_LEVEL)")
-	logFormat := flag.String("log-format", "text", "Log format (json, text or dev) (Env: LOG_FORMAT)")
-	logFilePath := flag.String("log-file", "", "Log file path (defaults to stdout) (Env: LOG_FILE)")
-	databaseType := flag.String("database-type", "http", "\"database\" used for managing the functionID -> config relationship")
-	databaseAddress := flag.String("database-address", "http://localhost:8999/", "address of the database server")
-	maxStartingInstancesPerFunction := flag.Int("max-starting-instances-per-function", 10, "The maximum number of instances starting at once per function")
-	startingInstanceWaitTimeout := flag.Duration("starting-instance-wait-timeout", time.Second*5, "The timeout for waiting for an instance to start")
-	maxRunningInstancesPerFunction := flag.Int("max-running-instances-per-function", 10, "The maximum number of instances running at once per function")
-	panicBackoff := flag.Duration("panic-backoff", time.Millisecond*50, "The starting backoff time for the panic mode")
-	panicBackoffIncrease := flag.Duration("panic-backoff-increase", time.Millisecond*50, "The backoff increase for the panic mode")
-	panicMaxBackoff := flag.Duration("panic-max-backoff", time.Second*1, "The maximum backoff for the panic mode")
-	flag.Var(&workerIDs, "worker-ids", "The IDs of the workers to manage")
+	var workerAddrs addressList
+
+	address := flag.String("address", "0.0.0.0:50050", "Leaf listen address")
+	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	logFormat := flag.String("log-format", "text", "Log format (text, json, dev)")
+	logFile := flag.String("log-file", "", "Optional log file path")
+
+	scaleToZeroAfter := flag.Duration("scale-to-zero-after", 90*time.Second, "Duration of inactivity before scaling to zero")
+	maxInstancesPerWorker := flag.Int("max-instances-per-worker", 4, "Maximum warm instances per worker for a function")
+	dialTimeout := flag.Duration("dial-timeout", 5*time.Second, "Worker dial timeout")
+	startTimeout := flag.Duration("start-timeout", 45*time.Second, "Worker start timeout")
+	stopTimeout := flag.Duration("stop-timeout", 10*time.Second, "Worker stop timeout")
+	callTimeout := flag.Duration("call-timeout", 20*time.Second, "Worker call timeout")
+	statusBackoff := flag.Duration("status-backoff", 2*time.Second, "Backoff applied when worker status stream fails")
+
+	flag.Var(&workerAddrs, "worker-addr", "Worker gRPC address (repeat for multiple workers)")
+
 	flag.Parse()
 
-	if len(workerIDs) == 0 {
-		panic("no worker IDs provided")
+	if len(workerAddrs) == 0 {
+		fmt.Fprintln(os.Stderr, "at least one --worker-addr must be provided")
+		os.Exit(1)
 	}
 
-	logger := setupLogger(*logLevel, *logFormat, *logFilePath)
+	logger := utils.SetupLogger(*logLevel, *logFormat, *logFile)
+	logger.Info("starting LeafV2",
+		"address", *address,
+		"workers", workerAddrs,
+		"scale_to_zero_after", scaleToZeroAfter.String(),
+		"max_instances_per_worker", *maxInstancesPerWorker,
+	)
 
-	// Print configuration
-	logger.Info("Configuration", "address", *address, "logLevel", *logLevel, "logFormat", *logFormat, "logFilePath", *logFilePath, "databaseType", *databaseType, "databaseAddress", *databaseAddress, "workerIDs", workerIDs)
+	cfg := leaf.Config{
+		WorkerAddresses:       append([]string(nil), workerAddrs...),
+		ScaleToZeroAfter:      *scaleToZeroAfter,
+		MaxInstancesPerWorker: *maxInstancesPerWorker,
+		DialTimeout:           *dialTimeout,
+		StartTimeout:          *startTimeout,
+		StopTimeout:           *stopTimeout,
+		CallTimeout:           *callTimeout,
+		StatusBackoff:         *statusBackoff,
+	}
 
-	var ids []state.WorkerID
-	logger.Debug("Setting worker IDs", "workerIDs", workerIDs, "len", len(workerIDs))
-	for _, id := range workerIDs {
-		err := healthCheckWorker(id)
-		if err != nil {
-			logger.Error("failed to health check worker", "error", err)
-			os.Exit(1)
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	server, err := leaf.NewServer(sigCtx, cfg, logger)
+	if err != nil {
+		logger.Error("failed to build leaf server", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if cerr := server.Close(); cerr != nil {
+			logger.Warn("error while closing server", "error", cerr)
 		}
-		ids = append(ids, state.WorkerID(id))
-	}
-
-	var dbClient keyValueStore.FunctionMetadataStore
-
-	switch *databaseType {
-	case "http":
-		dbClient = keyValueStore.NewHttpDBClient(*databaseAddress, logger)
-	}
-
-	leafConfig := config.LeafConfig{
-		MaxStartingInstancesPerFunction: *maxStartingInstancesPerFunction,
-		StartingInstanceWaitTimeout:     *startingInstanceWaitTimeout,
-		MaxRunningInstancesPerFunction:  *maxRunningInstancesPerFunction,
-		PanicBackoff:                    *panicBackoff,
-		PanicBackoffIncrease:            *panicBackoffIncrease,
-		PanicMaxBackoff:                 *panicMaxBackoff,
-	}
-
-	server := api.NewLeafServer(leafConfig, dbClient, ids, logger)
+	}()
 
 	listener, err := net.Listen("tcp", *address)
 	if err != nil {
@@ -98,88 +92,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	grpcServer := grpc.NewServer()
-	pb.RegisterLeafServer(grpcServer, server)
-	logger.Info("Leaf server started", "address", listener.Addr())
-	if err := grpcServer.Serve(listener); err != nil {
-		logger.Error("failed to serve", "error", err)
-		os.Exit(1)
-	}
-}
-
-func setupLogger(logLevel string, logFormat string, logFilePath string) *slog.Logger {
-	// Set up log level
-	var level slog.Level
-	switch logLevel {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
-
-	// Set up log output
-	var output *os.File
-	var err error
-	if logFilePath != "" {
-		output, err = os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			slog.Error("Failed to open log file, falling back to stdout", "error", err)
-			output = os.Stdout
-		}
-	} else {
-		output = os.Stdout
-	}
-
-	// Set up handler options
-	opts := &slog.HandlerOptions{
-		Level:     level,
-		AddSource: true,
-	}
-
-	// Create handler based on format
-	var handler slog.Handler
-	switch logFormat {
-	case "json":
-		handler = slog.NewJSONHandler(output, opts)
-	case "text":
-		handler = slog.NewTextHandler(output, opts)
-	case "dev":
-		devOpts := &devslog.Options{
-			HandlerOptions:    opts,
-			MaxSlicePrintSize: 5,
-			SortKeys:          true,
-			NewLineAfterLog:   true,
-			StringerFormatter: true,
-		}
-		handler = devslog.NewHandler(output, devOpts)
-	}
-	logger := slog.New(handler)
-	slog.SetDefault(logger)
-
-	return logger
-}
-
-//nolint:all
-func healthCheckWorker(workerID string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// This function is deprecated but I'm not sure how to replace it
-	// https://github.com/grpc/grpc-go/blob/master/Documentation/anti-patterns.md
-	conn, err := grpc.DialContext(ctx, workerID,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(), // This makes the dial synchronous
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(utils.InterceptorLogger(logger)),
 	)
-	if err != nil {
-		return fmt.Errorf("failed to connect to worker %s: %w", workerID, err)
-	}
-	defer conn.Close()
 
-	return nil
+	leafpb.RegisterLeafServer(grpcServer, server)
+
+	logger.Info("leaf server ready", "address", listener.Addr())
+
+	if err := grpcServer.Serve(listener); err != nil {
+		logger.Error("gRPC server stopped", "error", err)
+	}
 }

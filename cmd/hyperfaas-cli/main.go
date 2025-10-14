@@ -200,7 +200,7 @@ func main() {
 							memory := cmd.Int64("memory")
 							timeout := cmd.Duration("timeout")
 
-							client, _, err := createLeafClient(cmd.String("address"))
+							client, _, err := createLoadBalancerClient(cmd.String("address"))
 							if err != nil {
 								return err
 							}
@@ -286,7 +286,7 @@ func main() {
 }
 
 // CreateFunction creates a function by talking to the leaf API. Returns the function ID.
-func CreateFunction(client leafpb.LeafClient,
+func CreateFunction(client lbpb.LBClient,
 	imageTag string,
 	cpuPeriod int64,
 	cpuQuota int64,
@@ -303,7 +303,7 @@ func CreateFunction(client leafpb.LeafClient,
 		Cpu:    cpuConfig,
 	}
 
-	funcReq := &leafpb.CreateFunctionRequest{
+	funcReq := &commonpb.CreateFunctionRequest{
 		Image: &commonpb.Image{
 			Tag: imageTag,
 		},

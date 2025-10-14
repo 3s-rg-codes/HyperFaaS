@@ -7,7 +7,7 @@ Having a running docker compose version of HyperFaaS is required for these tests
 
 Requirements:
 
-- running docker compose version of HyperFaaS
+- running docker compose version of  full HyperFaaS (full-compose.yaml in root directory)
 - environment variables set for the addresses of the load balancer, worker, and database
 - Images:
   - "hyperfaas-hello:latest"

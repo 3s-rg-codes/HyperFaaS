@@ -9,4 +9,8 @@ option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/lb";
 service LB {
   // Sends a call request down the load balancing chain
   rpc ScheduleCall(common.CallRequest) returns (common.CallResponse);
+  // CreateFunction registers a function on all Leaf Nodes managed.
+  // It also stores the function metadata in the database.
+  // It is necessary to call this before calling ScheduleCall.
+  rpc CreateFunction(common.CreateFunctionRequest) returns (common.CreateFunctionResponse);
 }

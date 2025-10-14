@@ -9,12 +9,14 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 
+	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
 	_ "github.com/3s-rg-codes/HyperFaaS/pkg/lb" // Register custom load balancer
+	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"github.com/3s-rg-codes/HyperFaaS/proto/lb"
 	"github.com/3s-rg-codes/HyperFaaS/proto/leaf"
-	"github.com/golang-cz/devslog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/resolver"
@@ -30,11 +32,11 @@ type lbServer struct {
 	// list of LB nodes
 	lbAddrs []string
 	logger  *slog.Logger
+	// function metadata database client
+	database kv.FunctionMetadataStore
 }
 
 func (l *lbServer) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-	l.logger.Debug("Received ScheduleCall request", "function_id", req.FunctionId)
-
 	if len(l.leafAddrs) > 0 {
 		l.logger.Debug("Forwarding to leaf node", "function_id", req.FunctionId)
 		return l.leafClient.ScheduleCall(ctx, req)
@@ -47,44 +49,52 @@ func (l *lbServer) ScheduleCall(ctx context.Context, req *common.CallRequest) (*
 	}
 }
 
-func setupLogger(level, format, filePath string) *slog.Logger {
-	var handler slog.Handler
-	opts := &slog.HandlerOptions{}
-
-	switch level {
-	case "debug":
-		opts.Level = slog.LevelDebug
-	case "info":
-		opts.Level = slog.LevelInfo
-	case "warn":
-		opts.Level = slog.LevelWarn
-	case "error":
-		opts.Level = slog.LevelError
-	default:
-		opts.Level = slog.LevelInfo
+// CreateFunction stores the function metadata in the database and broadcasts
+// the creation to all connected leaf nodes so they can initialize local state.
+// Returns the created function ID.
+func (l *lbServer) CreateFunction(ctx context.Context, req *common.CreateFunctionRequest) (*common.CreateFunctionResponse, error) {
+	if l.database == nil {
+		l.logger.Error("Database client not configured for LB")
+		return nil, errors.New("database client not configured")
 	}
 
-	writer := os.Stdout
-	if filePath != "" {
-		file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
-		if err != nil {
-			panic(fmt.Sprintf("failed to open log file: %v", err))
+	functionID, err := l.database.Put(req.Image, req.Config)
+	if err != nil {
+		l.logger.Error("Failed to store function metadata", "error", err)
+		return nil, fmt.Errorf("failed to store function metadata: %w", err)
+	}
+
+	if len(l.leafAddrs) > 0 {
+		for _, addr := range l.leafAddrs {
+			err := l.broadcastCreateToLeaf(ctx, addr, &leaf.RegisterFunctionRequest{Config: req, FunctionId: functionID})
+			if err != nil {
+				l.logger.Warn("Broadcast to leaf failed", "addr", addr, "error", err)
+				// todo: maybe handle partial failure here
+				return nil, err
+			}
 		}
-		writer = file
 	}
 
-	switch format {
-	case "json":
-		handler = slog.NewJSONHandler(writer, opts)
-	case "dev":
-		handler = devslog.NewHandler(writer, &devslog.Options{
-			HandlerOptions: opts,
-		})
-	default:
-		handler = slog.NewTextHandler(writer, opts)
-	}
+	return &common.CreateFunctionResponse{FunctionId: functionID}, nil
+}
 
-	return slog.New(handler)
+func (l *lbServer) broadcastCreateToLeaf(ctx context.Context, addr string, req *leaf.RegisterFunctionRequest) error {
+	_, err := utils.CallWithRetry(ctx, func() (struct{}, error) {
+		// we need to create a new client here because if we use l.leafClient, it will use the load balancer.
+		// TODO: find an actually good pub/sub solution for this.
+		conn, dialErr := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if dialErr != nil {
+			return struct{}{}, fmt.Errorf("failed to dial leaf %s: %w", addr, dialErr)
+		}
+		client := leaf.NewLeafClient(conn)
+		_, callErr := client.RegisterFunction(ctx, req)
+		_ = conn.Close()
+		if callErr != nil {
+			return struct{}{}, fmt.Errorf("leaf %s RegisterFunction error: %w", addr, callErr)
+		}
+		return struct{}{}, nil
+	}, 3, 300*time.Millisecond)
+	return err
 }
 
 // Helper function to create gRPC client with load balancer
@@ -134,6 +144,7 @@ func main() {
 	logFormat := flag.String("log-format", "text", "Log format (json, text or dev)")
 	logFilePath := flag.String("log-file", "", "Log file path (defaults to stdout)")
 	strategy := flag.String("strategy", "round_robin", "Load balancing strategy (round_robin, random)")
+	databaseAddress := flag.String("database-address", "http://database:8999", "Function metadata database address (HTTP)")
 
 	flag.Var(&leafAddrs, "leaf-addr", "Address of a leaf node to connect to (can be specified multiple times)")
 	flag.Var(&lbAddrs, "lb-addr", "Address of another LB node to connect to (can be specified multiple times)")
@@ -151,7 +162,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := setupLogger(*logLevel, *logFormat, *logFilePath)
+	logger := utils.SetupLogger(*logLevel, *logFormat, *logFilePath)
 	logger.Info("Starting HyperFaaS Load Balancer",
 		"address", *address,
 		"leaf_addrs", leafAddrs,
@@ -163,6 +174,8 @@ func main() {
 		lbAddrs:   lbAddrs,
 		logger:    logger,
 	}
+
+	server.database = kv.NewHttpDBClient(*databaseAddress, logger)
 
 	if len(leafAddrs) > 0 {
 		cc, err := createClientConnection(leafAddrs, "leaf-lb", *strategy)
@@ -188,7 +201,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(utils.InterceptorLogger(logger)),
+	)
 	lb.RegisterLBServer(grpcServer, server)
 
 	logger.Info("Load balancer server started", "address", listener.Addr())

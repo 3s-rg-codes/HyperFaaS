@@ -40,6 +40,9 @@ type DockerRuntime struct {
 	workerAddress string
 	// the absolute path to the output folder for logs
 	outputFolderAbs string
+
+	// the name of the docker service used to run the container if containerized is true
+	serviceName string
 	// the logger
 	logger *slog.Logger
 }
@@ -56,7 +59,7 @@ const (
 var forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 
 // NewDockerRuntime creates a new DockerRuntime instance. It can be containerized, meaning that it considers that this code will run inside a container, which changes how we address the docker API and how we manage networks.
-func NewDockerRuntime(containerized bool, autoRemove bool, workerAddress string, logger *slog.Logger) *DockerRuntime {
+func NewDockerRuntime(containerized bool, autoRemove bool, workerAddress string, logger *slog.Logger, serviceName string) *DockerRuntime {
 	var clientOpt client.Opt
 	if containerized {
 		clientOpt = client.WithHost("unix:///var/run/docker.sock")
@@ -96,7 +99,7 @@ func NewDockerRuntime(containerized bool, autoRemove bool, workerAddress string,
 		}
 	}
 
-	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized, workerAddress: workerAddress}
+	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized, workerAddress: workerAddress, serviceName: serviceName}
 }
 
 // Start a container with the given image tag and configuration.
@@ -252,7 +255,7 @@ func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string
 	port := strings.Split(d.workerAddress, ":")[1]
 	if d.containerized {
 		// this depends on the compose.yaml , the name of the service is worker
-		a = fmt.Sprintf("%s:%s", "worker", port)
+		a = fmt.Sprintf("%s:%s", d.serviceName, port)
 	} else {
 		a = fmt.Sprintf("%s:%s", dockerBridgeGatewayIP, port)
 	}

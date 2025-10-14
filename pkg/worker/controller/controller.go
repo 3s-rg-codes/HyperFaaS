@@ -11,6 +11,7 @@ import (
 	"time"
 
 	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
@@ -208,7 +209,9 @@ func NewController(runtime cr.ContainerRuntime,
 }
 
 func (s *Controller) StartServer(ctx context.Context) {
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(utils.InterceptorLogger(s.logger)),
+	)
 	// TODO pass context to sub servers
 	// ctx, cancel := context.WithCancel(context.Background())
 	// defer cancel()
