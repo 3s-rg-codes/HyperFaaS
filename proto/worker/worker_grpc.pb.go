@@ -34,7 +34,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WorkerClient interface {
 	// Start a new instance for the given function ID.
-	// The function must be registered in the database.
+	// The function metadata must exist in etcd.
 	// A response with status code OK means that the instance is
 	// created and ready to serve requests.
 	Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StartResponse, error)
@@ -133,7 +133,7 @@ func (c *workerClient) SignalReady(ctx context.Context, in *SignalReadyRequest, 
 // for forward compatibility.
 type WorkerServer interface {
 	// Start a new instance for the given function ID.
-	// The function must be registered in the database.
+	// The function metadata must exist in etcd.
 	// A response with status code OK means that the instance is
 	// created and ready to serve requests.
 	Start(context.Context, *StartRequest) (*StartResponse, error)

@@ -4,15 +4,16 @@ HyperFaaS is a serverless platform with a tree-like load balancing structure. It
 The load balancer nodes that forward calls to worker nodes are called "leaf nodes".
 ## Architecture
 
-HyperFaaS consists of three main components:
+HyperFaaS is composed of the following services:
 
-- **Load Balancer Nodes**: Schedule function calls to other nodes or workers and handle load balancing
-- **Worker Nodes**: Execute the serverless functions in containers
-- **Database**: Manages function metadata and configurations like resource limits
+- **Load Balancer Nodes (HAProxy + Routing Controller)**: receive gRPC traffic and forward calls to the appropriate downstream nodes, which can be other load balancer nodes or leaf nodes.
+- **Leaf Nodes**: Scale function instances, and route calls to workers.
+- **Worker Nodes**: Execute serverless functions inside containers and stream metrics back to the leaf nodes.
+- **etcd**: Stores function metadata (image, resource limits, timeouts, etc.) that is consumed by both leaves and workers.
 
 The platform can be run in two modes:
-- **Containerized Mode**: All components (load balancer nodes, workers and database) run in Docker containers
-- **Native Mode**: All components run directly on the host
+- **Containerized Mode**: All components run in Docker containers via Compose (`etcd`, workers, leaves, routing controller, HAProxy, ...)
+- **Native Mode**: Each component runs directly on the host; make sure an etcd instance is available.
 
 
 
@@ -57,22 +58,34 @@ just start-rebuild
 
 #### Native Mode
 
-Run database, leaf, and worker components separately:
+Run etcd, leaf, and worker components separately:
 
-1. Start the database:
+1. Start etcd (single node):
    ```
-   cd ./cmd/database && go run .
-   ```
-
-2. Start a leaf node:
-   ```
-   just run-local-leaf
+   etcd --advertise-client-urls http://localhost:2379 --listen-client-urls http://0.0.0.0:2379
    ```
 
-3. Start a worker node:
+2. Start a worker node (requires access to Docker):
    ```
    just run-local-worker
    ```
+
+3. Start a leaf node pointing to your worker(s):
+   ```
+   just run-local-leaf --worker-addr=127.0.0.1:50051
+   ```
+
+4. (Optional) Run HAProxy / routing controller if you want the full tree locally; else the leaf gRPC endpoint can be used directly.
+
+### Managing Functions
+
+Function metadata is stored directly in etcd. You can register a new function image and configuration with the CLI:
+
+```
+go run ./cmd/hyperfaas-cli function create hyperfaas-hello:latest --cpu-period 100000 --cpu-quota 50000 --memory $((256*1024*1024)) --function-timeout=45s
+```
+
+By default the CLI talks to `localhost:2379`; use the global flags `--etcd-endpoint`, `--metadata-prefix`, and `--metadata-dial-timeout` to customise the etcds connection.
 
 ## Developing Functions
 

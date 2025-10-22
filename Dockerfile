@@ -18,8 +18,6 @@ RUN case "${COMPONENT}" in \
         go build -o app ./cmd/worker/main.go ;; \
     "leaf") \
         go build -o app ./cmd/leaf/main.go ;; \
-    "database") \
-        go build -o app ./cmd/database/main.go ;; \
     "routingcontroller") \
         go build -o app ./cmd/routing-controller/main.go ;; \
     *) \
@@ -33,8 +31,6 @@ ARG COMPONENT=worker
 RUN case "${COMPONENT}" in \
     "worker"|"leaf"|"routingcontroller") \
         apk add --no-cache netcat-openbsd bash ;; \
-    "database") \
-        apk add --no-cache wget ;; \
     esac
 
 WORKDIR /app

@@ -13,13 +13,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	lbpb "github.com/3s-rg-codes/HyperFaaS/proto/lb"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -30,7 +32,7 @@ const (
 	TIMEOUT            = 30 * time.Second
 	DURATION           = 120 * time.Second
 	RPS                = 2500
-	LB_ADDRESS         = "localhost:50052"
+	ETCD_ADDRESS       = "localhost:2379"
 )
 
 func main() {
@@ -57,14 +59,6 @@ func main() {
 		log.Printf("Created function: %v", functionID)
 		functionIDs[i] = functionID
 	}
-
-	lbConn, err := grpc.NewClient(LB_ADDRESS, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		log.Fatalf("Failed to create LB client: %v", err)
-	}
-	defer lbConn.Close()
-
-	testSequentialCallsToLB(lbpb.NewLBClient(lbConn), functionIDs[0])
 
 	// Sequential calls
 	testSequentialCalls(client, functionIDs[0])
@@ -200,26 +194,30 @@ func testRampingCallsForDuration(client leafpb.LeafClient, functionID string, ta
 }
 
 func sendCall(client leafpb.LeafClient, functionID string) (time.Duration, error) {
-	//time.Sleep(time.Duration(rand.Intn(10)+100) * time.Millisecond)
 	startReq := &common.CallRequest{
 		FunctionId: functionID,
 		Data:       []byte(""),
 	}
-	//ctx := context.WithValue(context.Background(), "RequestID", uuid.New().String())
-	ctx, cancel := context.WithTimeout(context.Background(), TIMEOUT)
-	defer cancel()
-	start := time.Now()
-	_, err := client.ScheduleCall(ctx, startReq)
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			//fmt.Printf("Timeout error: %v\n", ctx.Err())
-			return 0, fmt.Errorf("timeout error: %v", ctx.Err())
-		}
-		//fmt.Printf("Failed to schedule call: %v\n", err)
-		return 0, fmt.Errorf("failed to schedule call: %v", err)
-	}
 
-	return time.Since(start), nil
+	deadline := time.Now().Add(TIMEOUT)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), TIMEOUT)
+		start := time.Now()
+		_, err := client.ScheduleCall(ctx, startReq)
+		cancel()
+		if err != nil {
+			st, ok := status.FromError(err)
+			if ok && st.Code() == codes.NotFound && time.Now().Before(deadline) {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			if ctx.Err() == context.DeadlineExceeded {
+				return 0, fmt.Errorf("timeout error: %v", ctx.Err())
+			}
+			return 0, fmt.Errorf("failed to schedule call: %v", err)
+		}
+		return time.Since(start), nil
+	}
 }
 
 func testSequentialCalls(client leafpb.LeafClient, functionID string) {
@@ -250,12 +248,16 @@ func BuildMockClientHelper(controllerServerAddress string) (workerpb.WorkerClien
 }
 
 func createFunction(imageTag string) (string, error) {
-	conn, err := grpc.NewClient(LB_ADDRESS, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return "", fmt.Errorf("failed to create LB client: %v", err)
+	etcdAddr := os.Getenv("ETCD_ADDRESS")
+	if etcdAddr == "" {
+		etcdAddr = ETCD_ADDRESS
 	}
-	defer conn.Close()
-	client := lbpb.NewLBClient(conn)
+
+	client, err := metadata.NewClient([]string{etcdAddr}, metadata.Options{}, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create metadata client: %w", err)
+	}
+	defer client.Close()
 
 	createReq := &common.CreateFunctionRequest{
 		Image: &common.Image{Tag: imageTag},
@@ -270,12 +272,15 @@ func createFunction(imageTag string) (string, error) {
 		},
 	}
 
-	createFunctionResp, err := client.CreateFunction(context.Background(), createReq)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	id, err := client.PutFunction(ctx, createReq)
 	if err != nil {
-		return "", fmt.Errorf("failed to create function: %v", err)
+		return "", fmt.Errorf("failed to store metadata: %w", err)
 	}
 
-	return createFunctionResp.FunctionId, nil
+	return id, nil
 }
 
 func sendThumbnailRequest(client leafpb.LeafClient, functionID string) (time.Duration, error) {
@@ -379,21 +384,5 @@ func testCallWithSleep(client leafpb.LeafClient, functionID string, sleep time.D
 	_, err = sendCall(client, functionID)
 	if err != nil {
 		log.Fatalf("failed to send call: %v", err)
-	}
-}
-
-func sendCallToLB(client lbpb.LBClient, functionID string) {
-	_, err := client.ScheduleCall(context.Background(), &common.CallRequest{
-		FunctionId: functionID,
-		Data:       []byte(""),
-	})
-	if err != nil {
-		log.Fatalf("failed to send call: %v", err)
-	}
-}
-
-func testSequentialCallsToLB(client lbpb.LBClient, functionID string) {
-	for i := 0; i < 100; i++ {
-		sendCallToLB(client, functionID)
 	}
 }

@@ -1,4 +1,29 @@
 services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.15
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd
+      - --data-dir=/etcd-data
+      - --advertise-client-urls=http://0.0.0.0:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-advertise-peer-urls=http://0.0.0.0:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-cluster=etcd=http://0.0.0.0:2380
+      - --initial-cluster-state=new
+    ports:
+      - "2379:2379"
+    networks:
+      - hyperfaas-network
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    environment:
+      ETCDCTL_ENDPOINTS: http://127.0.0.1:2379
+
   worker:
     build:
       context: .
@@ -14,7 +39,18 @@ services:
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "-address=0.0.0.0:50051", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "-log-file=/root/log/worker.log", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000"]
+    command: [
+      "./app",
+      "-address=0.0.0.0:50051",
+      "-runtime=${RUNTIME_TYPE}",
+      "-log-level=${LOG_LEVEL}",
+      "-log-format=text",
+      "-log-file=/root/log/worker.log",
+      "--auto-remove=true",
+      "-containerized=true",
+      "-update-buffer-size=100000",
+      "-etcd-endpoint=etcd:2379"
+    ]
     develop:
       watch:
         - action: rebuild
@@ -27,7 +63,7 @@ services:
       retries: 3
       start_period: 5s
     depends_on:
-      database:
+      etcd:
         condition: service_healthy
   leaf:
     build:
@@ -42,7 +78,17 @@ services:
     #network_mode: host
     networks:
       - hyperfaas-network
-    command: ["./app", "--address=0.0.0.0:50050", "--log-level=${LOG_LEVEL}", "--log-format=text", "--log-file=/root/log/leaf.log", "--worker-ids=worker:50051", "--database-address=http://database:8999", "--max-starting-instances-per-function=2", "--starting-instance-wait-timeout=10s", "--max-running-instances-per-function=10", "--panic-backoff=1s", "--panic-backoff-increase=1s", "--panic-max-backoff=10s"]
+    command: [
+      "./app",
+      "-address=0.0.0.0:50050",
+      "-log-level=${LOG_LEVEL}",
+      "-log-format=text",
+      "-log-file=/root/log/leaf.log",
+      "-worker-addr=worker:50051",
+      "-scale-to-zero-after=10s",
+      "-max-instances-per-worker=4",
+      "-etcd-endpoint=etcd:2379"
+    ]
     develop:
       watch:
         - action: rebuild
@@ -57,53 +103,59 @@ services:
     depends_on:
       worker:
         condition: service_healthy
-      database:
+      etcd:
         condition: service_healthy
-  lb:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        COMPONENT: lb
-    ports:
-      - "50052:50052"
-    volumes:
-      - ./log/:/root/log/
-    networks:
-      - hyperfaas-network
-    command: ["./app", "--log-level=${LOG_LEVEL}", "--log-format=text", "--log-file=/root/log/lb.log", "--leaf-addr=leaf:50050", "--strategy=hyperfaas_round_robin"]
+  haproxy:
+    image: haproxy:3.0
     depends_on:
-      worker:
-        condition: service_healthy
+      routingcontroller:
+        condition: service_started
       leaf:
         condition: service_healthy
+    volumes:
+      - ./config/hyperfaas-haproxy-grpc-compose.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./config/hyperfaas-spoe-grpc.cfg:/usr/local/etc/haproxy/hyperfaas-spoe-grpc.cfg:ro
+      - routingcontroller-sock:/var/run/hyperfaas
+    ports:
+      - "50052:9090"
+      - "8404:8404"
+    networks:
+      - hyperfaas-network
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "50052"]
-      interval: 3s
+      test: ["CMD", "nc", "-z", "localhost", "9090"]
+      interval: 5s
       timeout: 5s
-      retries: 3
+      retries: 5
       start_period: 5s
-  database:
+
+  routingcontroller:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        COMPONENT: database
-    ports:
-      - "8999:8999"
-    #network_mode: host
+        COMPONENT: routingcontroller
+    command:
+      [
+        "./app",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "-socket-path=/var/run/hyperfaas/spoe.sock",
+        "-child-addr=leaf:50050",
+        "-child-types=leaf"
+      ]
+    volumes:
+      - routingcontroller-sock:/var/run/hyperfaas
     networks:
       - hyperfaas-network
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "8999"]
-      interval: 3s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-volumes:
-  function-logs:
-    name: function-logs
+    depends_on:
+      leaf:
+        condition: service_healthy
 networks:
   hyperfaas-network:
     name: hyperfaas-network
     driver: bridge
+
+volumes:
+  function-logs:
+    name: function-logs
+  routingcontroller-sock:

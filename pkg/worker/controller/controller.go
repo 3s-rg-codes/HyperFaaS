@@ -2,15 +2,15 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
-	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
@@ -19,23 +19,23 @@ import (
 	cpu "github.com/shirou/gopsutil/v4/cpu"
 	mem "github.com/shirou/gopsutil/v4/mem"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Controller struct {
 	workerPB.UnimplementedWorkerServer
-	runtime         cr.ContainerRuntime
-	StatsManager    *stats.StatsManager
-	callRouter      CallRouter
-	logger          *slog.Logger
-	address         string
-	dbClient        kv.FunctionMetadataStore
-	functionIDCache map[string]kv.FunctionData
-	readySignals    *ReadySignals
-	mu              sync.RWMutex
+	runtime        cr.ContainerRuntime
+	StatsManager   *stats.StatsManager
+	callRouter     CallRouter
+	logger         *slog.Logger
+	address        string
+	metadataClient metadataProvider
+	readySignals   *ReadySignals
 }
 
 type CallRouter interface {
@@ -44,33 +44,33 @@ type CallRouter interface {
 	HandleInstanceTimeout(functionID string, ip string)
 }
 
+type metadataProvider interface {
+	GetFunction(ctx context.Context, id string) (*metadata.FunctionMetadata, error)
+}
+
 func (s *Controller) Start(ctx context.Context, req *workerPB.StartRequest) (*workerPB.StartResponse, error) {
-	// Check if we have config and image for ID cached and if not get it from db
-	s.mu.RLock()
-	_, ok := s.functionIDCache[req.FunctionId]
-	s.mu.RUnlock()
-
-	if !ok {
-		s.logger.Debug("FunctionData not available locally, fetching from server", "functionID", req.FunctionId)
-		imageTag, config, err := s.dbClient.Get(req.FunctionId)
-		if err != nil {
-			return &workerPB.StartResponse{}, err
+	meta, err := s.metadataClient.GetFunction(ctx, req.FunctionId)
+	if err != nil {
+		if errors.Is(err, metadata.ErrFunctionNotFound) {
+			s.logger.Warn("Function metadata not found", "functionID", req.FunctionId)
+			return nil, status.Errorf(codes.NotFound, "function %s is not registered", req.FunctionId)
 		}
-
-		d := kv.FunctionData{
-			Config: config,
-			Image:  &common.Image{Tag: imageTag},
-		}
-
-		s.mu.Lock()
-		s.functionIDCache[req.FunctionId] = d
-		s.mu.Unlock()
+		s.logger.Error("Failed to fetch function metadata", "functionID", req.FunctionId, "error", err)
+		return nil, status.Errorf(codes.Unavailable, "metadata lookup failed: %v", err)
 	}
 
-	functionData := s.functionIDCache[req.FunctionId]
-	s.logger.Debug("Starting container with params:", "tag", functionData.Image, "memory", functionData.Config.Memory, "quota", functionData.Config.Cpu.Quota, "period", functionData.Config.Cpu.Period)
+	if meta.Image == nil || meta.Image.Tag == "" {
+		s.logger.Error("Function metadata missing image tag", "functionID", req.FunctionId)
+		return nil, status.Errorf(codes.InvalidArgument, "function %s has no image configured", req.FunctionId)
+	}
+	if meta.Config == nil {
+		s.logger.Error("Function metadata missing config", "functionID", req.FunctionId)
+		return nil, status.Errorf(codes.InvalidArgument, "function %s has no config configured", req.FunctionId)
+	}
 
-	container, err := s.runtime.Start(ctx, req.FunctionId, functionData.Image.Tag, functionData.Config)
+	s.logger.Debug("Starting container with params:", "tag", meta.Image, "memory", meta.Config.Memory, "quota", meta.Config.Cpu.Quota, "period", meta.Config.Cpu.Period)
+
+	container, err := s.runtime.Start(ctx, req.FunctionId, meta.Image.Tag, meta.Config)
 
 	// Truncate the ID to the first 12 characters to match Docker's short ID format
 	shortID := container.Id
@@ -192,19 +192,18 @@ func NewController(runtime cr.ContainerRuntime,
 	statsManager *stats.StatsManager,
 	logger *slog.Logger,
 	address string,
-	client kv.FunctionMetadataStore,
+	metadataClient metadataProvider,
 	callRouter CallRouter,
 	readySignals *ReadySignals,
 ) *Controller {
 	return &Controller{
-		runtime:         runtime,
-		StatsManager:    statsManager,
-		logger:          logger,
-		address:         address,
-		callRouter:      callRouter,
-		dbClient:        client,
-		functionIDCache: make(map[string]kv.FunctionData),
-		readySignals:    readySignals,
+		runtime:        runtime,
+		StatsManager:   statsManager,
+		logger:         logger,
+		address:        address,
+		callRouter:     callRouter,
+		metadataClient: metadataClient,
+		readySignals:   readySignals,
 	}
 }
 

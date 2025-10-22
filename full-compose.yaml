@@ -16,26 +16,33 @@ x-worker-template: &worker-template
     LOG_LEVEL: ${LOG_LEVEL:-info}
     RUNTIME_TYPE: ${RUNTIME_TYPE:-docker}
   depends_on:
-    database:
+    etcd:
       condition: service_healthy
 
 services:
-  database:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        COMPONENT: database
-    image: hyperfaas-database
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.15
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd
+      - --data-dir=/etcd-data
+      - --advertise-client-urls=http://0.0.0.0:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-advertise-peer-urls=http://0.0.0.0:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-cluster=etcd=http://0.0.0.0:2380
+      - --initial-cluster-state=new
     ports:
-      - "8999:8999"
+      - "2379:2379"
     networks:
       hyperfaas-network:
+    environment:
+      ETCDCTL_ENDPOINTS: http://127.0.0.1:2379
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "8999"]
-      interval: 3s
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
       timeout: 5s
-      retries: 3
+      retries: 5
       start_period: 5s
 
   worker-A-1:
@@ -45,7 +52,7 @@ services:
       - "50051:50051"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50051", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-a-1", "-network-name=hyperfaas_hyperfaas-network"]
+    command: ["./app", "-address=0.0.0.0:50051", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-a-1", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50051"]
       interval: 3s
@@ -60,7 +67,7 @@ services:
       - "50041:50041"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50041", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-a-2", "-network-name=hyperfaas_hyperfaas-network"]
+    command: ["./app", "-address=0.0.0.0:50041", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-a-2", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50041"]
       interval: 3s
@@ -75,7 +82,7 @@ services:
       - "50031:50031"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50031", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-b-1", "-network-name=hyperfaas_hyperfaas-network"]
+    command: ["./app", "-address=0.0.0.0:50031", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-b-1", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50031"]
       interval: 3s
@@ -90,7 +97,7 @@ services:
       - "50021:50021"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50021", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-database-type=http", "-update-buffer-size=100000", "-service-name=worker-b-2", "-network-name=hyperfaas_hyperfaas-network"]
+    command: ["./app", "-address=0.0.0.0:50021", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-b-2", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50021"]
       interval: 3s
@@ -120,7 +127,8 @@ services:
         "-worker-addr=worker-A-1:50051",
         "-worker-addr=worker-A-2:50041",
         "-scale-to-zero-after=10s",
-        "-max-instances-per-worker=4"
+        "-max-instances-per-worker=4",
+        "-etcd-endpoint=etcd:2379"
       ]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50050"]
@@ -133,7 +141,7 @@ services:
         condition: service_healthy
       worker-A-2:
         condition: service_healthy
-      database:
+      etcd:
         condition: service_healthy
 
   leaf-B:
@@ -158,7 +166,8 @@ services:
         "-worker-addr=worker-B-1:50031",
         "-worker-addr=worker-B-2:50021",
         "-scale-to-zero-after=10s",
-        "-max-instances-per-worker=4"
+        "-max-instances-per-worker=4",
+        "-etcd-endpoint=etcd:2379"
       ]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50050"]
@@ -171,7 +180,7 @@ services:
         condition: service_healthy
       worker-B-2:
         condition: service_healthy
-      database:
+      etcd:
         condition: service_healthy
 
   haproxy:

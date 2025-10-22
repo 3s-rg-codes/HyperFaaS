@@ -6,7 +6,7 @@ import (
 )
 
 // ChildCache is a thread safe cache to store our child state in.
-// The main idea for the mapping is function_id -> list of nodes (workers or load balancer nodes)
+// The main idea for the mapping is function_id -> list of downstream nodes (workers, leaves, etc.).
 // For now there is no raking or order in the children for a given key. In the future, we could have an optimised structure that lets us make reads faster (for example, if the first element is always the best child to pick).
 // This is not trivial as there are many factors to consider. A child might have more warm capacity, or more resources available, but this can quickly change with the metrics received.
 type ChildCache[K comparable, V comparable] struct {

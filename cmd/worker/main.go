@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/network"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
@@ -24,8 +24,12 @@ import (
 type WorkerConfig struct {
 	General struct {
 		Address         string `env:"WORKER_ADDRESS"`
-		DatabaseType    string `env:"DATABASE_TYPE"`
 		ListenerTimeout int    `env:"LISTENER_TIMEOUT"`
+	}
+	Metadata struct {
+		Endpoints   []string
+		Prefix      string
+		DialTimeout time.Duration
 	}
 	Runtime struct {
 		Type          string `env:"RUNTIME_TYPE"`
@@ -45,8 +49,8 @@ type WorkerConfig struct {
 }
 
 func parseArgs() (wc WorkerConfig) {
+	var etcdEndpoints utils.StringList
 	flag.StringVar(&(wc.General.Address), "address", "", "Worker address. (Env: WORKER_ADDRESS)")
-	flag.StringVar(&(wc.General.DatabaseType), "database-type", "", "Type of the database. (Env: DATABASE_TYPE)")
 	flag.StringVar(&(wc.Runtime.Type), "runtime", "docker", "Container runtime type. (Env: RUNTIME_TYPE)")
 	flag.IntVar(&(wc.General.ListenerTimeout), "timeout", 20, "Timeout in seconds before leafnode listeners are removed from status stream updates. (Env: LISTENER_TIMEOUT)")
 	flag.BoolVar(&(wc.Runtime.AutoRemove), "auto-remove", false, "Auto remove containers. (Env: RUNTIME_AUTOREMOVE)")
@@ -57,7 +61,14 @@ func parseArgs() (wc WorkerConfig) {
 	flag.Int64Var(&(wc.Stats.UpdateBufferSize), "update-buffer-size", 10000, "Update buffer size. (Env: UPDATE_BUFFER_SIZE)")
 	flag.StringVar(&(wc.Runtime.ServiceName), "service-name", "worker", "Docker compose service name. (Env: RUNTIME_SERVICE_NAME)")
 	flag.StringVar(&(wc.Runtime.NetworkName), "network-name", "hyperfaas-network", "Docker network name for function containers. (Env: RUNTIME_NETWORK_NAME)")
+	flag.Var(&etcdEndpoints, "etcd-endpoint", "Etcd endpoint (can be specified multiple times). Defaults to localhost:2379")
+	metadataPrefix := flag.String("metadata-prefix", metadata.DefaultPrefix, "Etcd key prefix for function metadata")
+	metadataDialTimeout := flag.Duration("metadata-dial-timeout", metadata.DefaultDialTimeout, "Etcd dial timeout")
 	flag.Parse()
+
+	wc.Metadata.Endpoints = append(wc.Metadata.Endpoints, etcdEndpoints...)
+	wc.Metadata.Prefix = *metadataPrefix
+	wc.Metadata.DialTimeout = *metadataDialTimeout
 	return
 }
 
@@ -72,21 +83,31 @@ func main() {
 
 	statsManager := stats.NewStatsManager(logger, time.Duration(wc.General.ListenerTimeout)*time.Second, 1.0, wc.Stats.UpdateBufferSize)
 
-	var dbAddress string
-	var dbClient kv.FunctionMetadataStore
 	var runtime cr.ContainerRuntime
 	var router controller.CallRouter
 	var readySignals *controller.ReadySignals
-	if wc.Runtime.Containerized {
-		dbAddress = "http://database:8999/" // needs to have this format for http to work
-	} else {
-		dbAddress = "http://localhost:8999"
+
+	if len(wc.Metadata.Endpoints) == 0 {
+		if wc.Runtime.Containerized {
+			wc.Metadata.Endpoints = []string{"etcd:2379"}
+		} else {
+			wc.Metadata.Endpoints = []string{"localhost:2379"}
+		}
 	}
 
-	switch wc.General.DatabaseType {
-	case "http":
-		dbClient = kv.NewHttpDBClient(dbAddress, logger)
+	metadataClient, err := metadata.NewClient(wc.Metadata.Endpoints, metadata.Options{
+		Prefix:      wc.Metadata.Prefix,
+		DialTimeout: wc.Metadata.DialTimeout,
+	}, logger)
+	if err != nil {
+		logger.Error("Failed to create metadata client", "error", err)
+		os.Exit(1)
 	}
+	defer func() {
+		if cerr := metadataClient.Close(); cerr != nil {
+			logger.Warn("Failed to close metadata client", "error", cerr)
+		}
+	}()
 
 	// Runtime
 	switch wc.Runtime.Type {
@@ -103,7 +124,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	c := controller.NewController(runtime, statsManager, logger, wc.General.Address, dbClient, router, readySignals)
+	c := controller.NewController(runtime, statsManager, logger, wc.General.Address, metadataClient, router, readySignals)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

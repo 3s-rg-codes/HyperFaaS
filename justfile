@@ -19,7 +19,6 @@ proto:
     protoc --proto_path=proto "proto/worker/worker.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
     protoc --proto_path=proto "proto/leaf/leaf.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
     protoc --proto_path=proto "proto/common/common.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
-    protoc --proto_path=proto "proto/lb/lb.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
     protoc --proto_path=proto "proto/routingcontroller/routingcontroller.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
 
 # build the worker binary
@@ -93,17 +92,13 @@ d runtime_type="docker" log_level="info":
 # generates proto, builds binary, builds docker go and runs the workser
 dev: build start
 
-run-local-database:
-    @echo "Running local database"
-    go run cmd/database/main.go --address=0.0.0.0:8080
-
 run-local-worker:
     @echo "Running local worker"
-    go run cmd/worker/main.go --address=0.0.0.0:50051 --runtime=fake --log-level=info --log-format=dev --auto-remove=true --containerized=false --database-type=http
+    go run cmd/worker/main.go --address=0.0.0.0:50051 --runtime=fake --log-level=info --log-format=dev --auto-remove=true --containerized=false --etcd-endpoint=localhost:2379
 
 run-local-leaf:
     @echo "Running local leaf"
-    go run cmd/leaf/main.go --address=0.0.0.0:50050 --log-level=info --log-format=dev --worker-ids=127.0.0.1:50051 --scheduler-type=mru --database-address=http://localhost:8080
+    go run cmd/leaf/main.go --address=0.0.0.0:50050 --log-level=info --log-format=dev --worker-addr=127.0.0.1:50051 --etcd-endpoint=localhost:2379
 
 
 ############################
@@ -145,7 +140,6 @@ test-integration-containerized list:
 
 #Local integration tests
 test-integration-local-all runtime loglevel:
-    cd ./cmd/database && go run . &
     cd ./tests/worker && go run . {{runtime}} {{loglevel}}
 
 ###### Metrics Tests ########
@@ -198,10 +192,7 @@ clean:
 kill-worker:
     pid=$(ps aux | grep '[e]xe/worker' | awk '{print $2}') && kill -9 $pid
 
-kill-db:
-    pid=$(ps aux | grep '[e]xe/database' | awk '{print $2}') && kill -9 $pid
-
-kill: kill-worker kill-db
+kill: kill-worker
 
 
 lint:

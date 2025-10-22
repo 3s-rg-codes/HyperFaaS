@@ -20,9 +20,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Leaf_ScheduleCall_FullMethodName     = "/leaf.Leaf/ScheduleCall"
-	Leaf_RegisterFunction_FullMethodName = "/leaf.Leaf/RegisterFunction"
-	Leaf_State_FullMethodName            = "/leaf.Leaf/State"
+	Leaf_ScheduleCall_FullMethodName = "/leaf.Leaf/ScheduleCall"
+	Leaf_State_FullMethodName        = "/leaf.Leaf/State"
 )
 
 // LeafClient is the client API for Leaf service.
@@ -31,10 +30,6 @@ const (
 type LeafClient interface {
 	// Schedules a function call on a worker.
 	ScheduleCall(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error)
-	// Registers a function autoscaler on the leaf.
-	// Must be called before calling ScheduleCall.
-	// An entry for the function must exist in the database.
-	RegisterFunction(ctx context.Context, in *RegisterFunctionRequest, opts ...grpc.CallOption) (*common.CreateFunctionResponse, error)
 	// State streams changes in state of a function_id.
 	// A change in the number of running instances.
 	State(ctx context.Context, in *common.StateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[common.StateResponse], error)
@@ -52,16 +47,6 @@ func (c *leafClient) ScheduleCall(ctx context.Context, in *common.CallRequest, o
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(common.CallResponse)
 	err := c.cc.Invoke(ctx, Leaf_ScheduleCall_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *leafClient) RegisterFunction(ctx context.Context, in *RegisterFunctionRequest, opts ...grpc.CallOption) (*common.CreateFunctionResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(common.CreateFunctionResponse)
-	err := c.cc.Invoke(ctx, Leaf_RegisterFunction_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -93,10 +78,6 @@ type Leaf_StateClient = grpc.ServerStreamingClient[common.StateResponse]
 type LeafServer interface {
 	// Schedules a function call on a worker.
 	ScheduleCall(context.Context, *common.CallRequest) (*common.CallResponse, error)
-	// Registers a function autoscaler on the leaf.
-	// Must be called before calling ScheduleCall.
-	// An entry for the function must exist in the database.
-	RegisterFunction(context.Context, *RegisterFunctionRequest) (*common.CreateFunctionResponse, error)
 	// State streams changes in state of a function_id.
 	// A change in the number of running instances.
 	State(*common.StateRequest, grpc.ServerStreamingServer[common.StateResponse]) error
@@ -112,9 +93,6 @@ type UnimplementedLeafServer struct{}
 
 func (UnimplementedLeafServer) ScheduleCall(context.Context, *common.CallRequest) (*common.CallResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ScheduleCall not implemented")
-}
-func (UnimplementedLeafServer) RegisterFunction(context.Context, *RegisterFunctionRequest) (*common.CreateFunctionResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RegisterFunction not implemented")
 }
 func (UnimplementedLeafServer) State(*common.StateRequest, grpc.ServerStreamingServer[common.StateResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method State not implemented")
@@ -158,24 +136,6 @@ func _Leaf_ScheduleCall_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Leaf_RegisterFunction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RegisterFunctionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(LeafServer).RegisterFunction(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Leaf_RegisterFunction_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LeafServer).RegisterFunction(ctx, req.(*RegisterFunctionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _Leaf_State_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(common.StateRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -197,10 +157,6 @@ var Leaf_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ScheduleCall",
 			Handler:    _Leaf_ScheduleCall_Handler,
-		},
-		{
-			MethodName: "RegisterFunction",
-			Handler:    _Leaf_RegisterFunction_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -50,6 +50,21 @@ type functionController struct {
 	idleTickerInterval time.Duration
 }
 
+func (f *functionController) emitScaleChange(value bool) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				f.logger.Debug("failed to emit scale change", "value", value, "reason", r)
+			}
+		}()
+		select {
+		case <-f.ctx.Done():
+			return
+		case f.scaleChan <- value:
+		}
+	}()
+}
+
 // local representation of a single worker holding instances for this function.
 type workerState struct {
 	instances []instance
@@ -257,9 +272,7 @@ func (f *functionController) scaleUp(ctx context.Context, workerIdx int) error {
 	// if that is the case, we need to notify the routing controller that the function is now available.
 	if f.totalInstances == 1 {
 		// can happen async as metric computing is not immediate.
-		go func() {
-			f.scaleChan <- true
-		}()
+		f.emitScaleChange(true)
 	}
 
 	f.notifyWaiters()
@@ -431,9 +444,7 @@ func (f *functionController) removeInstance(workerIdx int, instanceID string) {
 
 			// if this was the last instance, we need to notify the routing controller that the function is no longer available.
 			if f.totalInstances == 0 {
-				go func() {
-					f.scaleChan <- false
-				}()
+				f.emitScaleChange(false)
 			}
 
 			f.notifyWaiters()

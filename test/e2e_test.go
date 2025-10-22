@@ -5,40 +5,40 @@ package test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"github.com/goforj/godump"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 // set the env vars to override the default values
 var WORKER_ADDRESS = envOrDefault("WORKER_ADDRESS", "localhost:50051")
 var LEAF_ADDRESS = envOrDefault("LEAF_ADDRESS", "localhost:50050")
 var HAPROXY_ADDRESS = envOrDefault("HAPROXY_ADDRESS", "localhost:50052")
-var DATABASE_ADDRESS = envOrDefault("DATABASE_ADDRESS", "localhost:8999")
+var ETCD_ADDRESS = envOrDefault("ETCD_ADDRESS", "localhost:2379")
 
 // The timeout used for the calls
 const TIMEOUT = 60 * time.Second
 const CONCURRENCY = 50
 
 func TestMain(m *testing.M) {
-
 	os.Exit(m.Run())
 }
 
-// Tests creating a function via the database HTTP API
+// Tests creating a function by writing metadata to etcd
 func TestCreateFunctionRequest(t *testing.T) {
-	functionID := createFunctionViaDatabase("hyperfaas-hello:latest")
+	functionID := createFunctionMetadata("hyperfaas-hello:latest")
 	if functionID == "" {
 		t.Errorf("Function id is an empty string")
 	}
@@ -71,7 +71,7 @@ func TestCallRequest(t *testing.T) {
 	for _, d := range data {
 		t.Run("Single Call", func(t *testing.T) {
 			//t.Skip("Skipping single call test")
-			functionId := createFunctionViaDatabase(d.ImageTag)
+			functionId := createFunctionMetadata(d.ImageTag)
 			testCall(t, haproxyClient, functionId, d.Data, d.ExpectedResponse)
 		})
 	}
@@ -79,7 +79,7 @@ func TestCallRequest(t *testing.T) {
 	for _, d := range data {
 		t.Run("Concurrent Calls", func(t *testing.T) {
 			//t.Skip("Skipping concurrent calls test")
-			functionId := createFunctionViaDatabase(d.ImageTag)
+			functionId := createFunctionMetadata(d.ImageTag)
 			t.Log("Sending Concurrent Calls")
 			wg := sync.WaitGroup{}
 			success := atomic.Int32{}
@@ -125,52 +125,9 @@ func envOrDefault(env string, defaultValue string) string {
 	return defaultValue
 }
 
-// creates a function via the database HTTP API and registers it with both leaves... we have to do this until we have etcd working
-func createFunctionViaDatabase(imageTag string) string {
-	// Create the function via HTTP POST to the database
-	functionData := map[string]interface{}{
-		"image_tag": imageTag,
-		"config": map[string]interface{}{
-			"mem_limit":       100 * 1024 * 1024,
-			"cpu_quota":       50000,
-			"cpu_period":      100000,
-			"timeout":         13,
-			"max_concurrency": 500,
-		},
-	}
+// createFunctionMetadata stores the function definition in etcd so leaves/workers discover it.
 
-	jsonData, err := json.Marshal(functionData)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to marshal function data: %v", err))
-	}
-
-	resp, err := http.Post(fmt.Sprintf("http://%s/", DATABASE_ADDRESS), "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		panic(fmt.Sprintf("Failed to create function: %v", err))
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		panic(fmt.Sprintf("Failed to create function, status: %d", resp.StatusCode))
-	}
-
-	var result struct {
-		FunctionID string `json:"function_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		panic(fmt.Sprintf("Failed to decode response: %v", err))
-	}
-
-	// Register the function with both leaves
-	registerFunctionWithLeaves(result.FunctionID, imageTag)
-
-	return result.FunctionID
-}
-
-// registerFunctionWithLeaves registers a function with both leaf services
-// TODO: make this configurable and adaptable
-func registerFunctionWithLeaves(functionID, imageTag string) {
-	// Create the function config for the leaves
+func createFunctionMetadata(imageTag string) string {
 	config := &common.Config{
 		Memory: 100 * 1024 * 1024,
 		Cpu: &common.CPUConfig{
@@ -182,34 +139,25 @@ func registerFunctionWithLeaves(functionID, imageTag string) {
 	}
 
 	createFunctionReq := &common.CreateFunctionRequest{
-		Image: &common.Image{
-			Tag: imageTag,
-		},
+		Image:  &common.Image{Tag: imageTag},
 		Config: config,
 	}
 
-	registerReq := &leafpb.RegisterFunctionRequest{
-		FunctionId: functionID,
-		Config:     createFunctionReq,
-	}
-
-	// Register with leaf-A (localhost:50050)
-	leafAClient, leafAConn := GetLeafClient("localhost:50050")
-	defer leafAConn.Close()
-
-	_, err := leafAClient.RegisterFunction(context.Background(), registerReq)
+	client, err := metadata.NewClient([]string{ETCD_ADDRESS}, metadata.Options{}, nil)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to register function with leaf-A: %v", err))
+		panic(fmt.Sprintf("Failed to create metadata client: %v", err))
 	}
+	defer client.Close()
 
-	// Register with leaf-B (localhost:50040)
-	leafBClient, leafBConn := GetLeafClient("localhost:50040")
-	defer leafBConn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	_, err = leafBClient.RegisterFunction(context.Background(), registerReq)
+	functionID, err := client.PutFunction(ctx, createFunctionReq)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to register function with leaf-B: %v", err))
+		panic(fmt.Sprintf("Failed to store function metadata: %v", err))
 	}
+
+	return functionID
 }
 
 // client interface for gRPC clients
@@ -244,20 +192,27 @@ func (h *haproxyClient) Close() error {
 
 // tests a call to a function using data. Verifies the response is as expected. Receives a leaf or lb client.
 func testCall(t *testing.T, c client, functionId string, data []byte, expectedResponse []byte) error {
-	ctx, cancel := context.WithTimeout(context.Background(), TIMEOUT)
-	defer cancel()
-	resp, err := c.ScheduleCall(ctx, &common.CallRequest{
-		FunctionId: functionId,
-		Data:       data,
-	})
-	if err != nil {
-		// not Errorf because the stdout gets cluttered
-		t.Fail()
-		return err
-	}
-	if !bytes.Equal(resp.Data, expectedResponse) {
-		t.Errorf("Expected response %s, got %s", expectedResponse, resp.Data)
+	deadline := time.Now().Add(TIMEOUT)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), TIMEOUT)
+		resp, err := c.ScheduleCall(ctx, &common.CallRequest{
+			FunctionId: functionId,
+			Data:       data,
+		})
+		cancel()
+		if err != nil {
+			st, ok := status.FromError(err)
+			if ok && st.Code() == codes.NotFound && time.Now().Before(deadline) {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			t.Fail()
+			return err
+		}
+		if !bytes.Equal(resp.Data, expectedResponse) {
+			t.Errorf("Expected response %s, got %s", expectedResponse, resp.Data)
+			return nil
+		}
 		return nil
 	}
-	return nil
 }
