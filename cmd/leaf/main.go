@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -17,19 +16,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-type addressList []string
-
-func (a *addressList) String() string {
-	return strings.Join(*a, ",")
-}
-
-func (a *addressList) Set(value string) error {
-	*a = append(*a, value)
-	return nil
-}
-
 func main() {
-	var workerAddrs addressList
+	var workerAddrs utils.StringList
 
 	address := flag.String("address", "0.0.0.0:50050", "Leaf listen address")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
