@@ -55,7 +55,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	s := NewServer(logger, *childTypes)
+	s := NewServer(logger, *childTypes, childAddrs)
 
 	// Run the cache updater, this listens to the child streams and updates the cache.
 	go s.UpdateCacheLoop(ctx)
@@ -75,11 +75,12 @@ type server struct {
 	childType string
 }
 
-func NewServer(logger *slog.Logger, childType string) server {
+func NewServer(logger *slog.Logger, childType string, children []string) server {
 	return server{
 		c:         state.NewCache[string, string](),
 		l:         logger,
 		childType: childType,
+		children:  children,
 	}
 }
 func (s *server) handler() func(req *request.Request) {

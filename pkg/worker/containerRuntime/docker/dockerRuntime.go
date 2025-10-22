@@ -43,6 +43,8 @@ type DockerRuntime struct {
 
 	// the name of the docker service used to run the container if containerized is true
 	serviceName string
+	// the name of the docker network for function containers
+	networkName string
 	// the logger
 	logger *slog.Logger
 }
@@ -59,7 +61,7 @@ const (
 var forbiddenChars = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 
 // NewDockerRuntime creates a new DockerRuntime instance. It can be containerized, meaning that it considers that this code will run inside a container, which changes how we address the docker API and how we manage networks.
-func NewDockerRuntime(containerized bool, autoRemove bool, workerAddress string, logger *slog.Logger, serviceName string) *DockerRuntime {
+func NewDockerRuntime(containerized bool, autoRemove bool, workerAddress string, logger *slog.Logger, serviceName string, networkName string) *DockerRuntime {
 	var clientOpt client.Opt
 	if containerized {
 		clientOpt = client.WithHost("unix:///var/run/docker.sock")
@@ -99,7 +101,7 @@ func NewDockerRuntime(containerized bool, autoRemove bool, workerAddress string,
 		}
 	}
 
-	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized, workerAddress: workerAddress, serviceName: serviceName}
+	return &DockerRuntime{Cli: cli, autoRemove: autoRemove, outputFolderAbs: outputFolderAbs, logger: logger, containerized: containerized, workerAddress: workerAddress, serviceName: serviceName, networkName: networkName}
 }
 
 // Start a container with the given image tag and configuration.
@@ -277,7 +279,7 @@ func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string
 func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostConfig {
 	var networkMode string
 	if d.containerized {
-		networkMode = "hyperfaas-network"
+		networkMode = d.networkName
 		// networkMode = "host"
 	} else {
 		networkMode = "bridge" // Cannot be host since otherwise the container id pulled by the docker container from env will always be docker-desktop
@@ -312,11 +314,11 @@ func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID st
 		return "", err
 	}
 
-	network, ok := containerJSON.NetworkSettings.Networks["hyperfaas-network"]
+	network, ok := containerJSON.NetworkSettings.Networks[d.networkName]
 	if !ok {
 		network, ok = containerJSON.NetworkSettings.Networks["bridge"]
 		if !ok {
-			return "", errors.New("container not connected to hyperfaas-network network or bridge network")
+			return "", fmt.Errorf("container not connected to %s network or bridge network", d.networkName)
 		}
 	}
 

@@ -32,6 +32,7 @@ type WorkerConfig struct {
 		AutoRemove    bool   `env:"RUNTIME_AUTOREMOVE"`
 		Containerized bool   `env:"RUNTIME_CONTAINERIZED"`
 		ServiceName   string `env:"RUNTIME_SERVICE_NAME"`
+		NetworkName   string `env:"RUNTIME_NETWORK_NAME"`
 	}
 	Log struct {
 		Level    string `env:"LOG_LEVEL"`
@@ -55,6 +56,7 @@ func parseArgs() (wc WorkerConfig) {
 	flag.BoolVar(&(wc.Runtime.Containerized), "containerized", false, "Use socket to connect to Docker. (Env: RUNTIME_CONTAINERIZED)")
 	flag.Int64Var(&(wc.Stats.UpdateBufferSize), "update-buffer-size", 10000, "Update buffer size. (Env: UPDATE_BUFFER_SIZE)")
 	flag.StringVar(&(wc.Runtime.ServiceName), "service-name", "worker", "Docker compose service name. (Env: RUNTIME_SERVICE_NAME)")
+	flag.StringVar(&(wc.Runtime.NetworkName), "network-name", "hyperfaas-network", "Docker network name for function containers. (Env: RUNTIME_NETWORK_NAME)")
 	flag.Parse()
 	return
 }
@@ -90,7 +92,7 @@ func main() {
 	switch wc.Runtime.Type {
 	case "docker":
 		readySignals = controller.NewReadySignals(false)
-		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.Address, logger, wc.Runtime.ServiceName)
+		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.Address, logger, wc.Runtime.ServiceName, wc.Runtime.NetworkName)
 		router = network.NewCallRouter(logger)
 	case "mock":
 		readySignals = controller.NewReadySignals(true)
