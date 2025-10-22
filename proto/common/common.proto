@@ -50,3 +50,15 @@ message CreateFunctionRequest {
 message CreateFunctionResponse {
   string function_id = 1;
 }
+
+message StateRequest {
+
+}
+// StateResponse is used to report an event in relation to a function_id.
+// It may be that a downstream node now has an instance for the function,
+// or no longer has an instance. 
+// This is used to propagate state changes to the routing controller.
+message StateResponse {
+  string function_id = 1;
+  bool have = 2;
+}

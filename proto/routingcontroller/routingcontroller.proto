@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package routingcontroller;
+
+import "common/common.proto";
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/routingcontroller";
+
+
+service RoutingController {
+  // State streams changes in state of a function_id.
+  // A change in the number of downstream nodes
+  // that manage nodes which have an instance of this function.
+  rpc State(common.StateRequest) returns (stream common.StateResponse);
+}

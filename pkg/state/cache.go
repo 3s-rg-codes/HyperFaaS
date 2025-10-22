@@ -1,17 +1,20 @@
 package state
 
-import "sync"
+import (
+	"slices"
+	"sync"
+)
 
 // ChildCache is a thread safe cache to store our child state in.
 // The main idea for the mapping is function_id -> list of nodes (workers or load balancer nodes)
 // For now there is no raking or order in the children for a given key. In the future, we could have an optimised structure that lets us make reads faster (for example, if the first element is always the best child to pick).
 // This is not trivial as there are many factors to consider. A child might have more warm capacity, or more resources available, but this can quickly change with the metrics received.
-type ChildCache[K comparable, V any] struct {
+type ChildCache[K comparable, V comparable] struct {
 	mu   sync.RWMutex
 	data map[K][]V
 }
 
-func NewCache[K comparable, V any]() *ChildCache[K, V] {
+func NewCache[K comparable, V comparable]() *ChildCache[K, V] {
 	return &ChildCache[K, V]{data: make(map[K][]V)}
 }
 
@@ -38,10 +41,24 @@ func (c *ChildCache[K, V]) Get(key K) ([]V, bool) {
 }
 
 // Deletes the list of children for a given key.
-func (c *ChildCache[K, V]) Delete(key K) {
+func (c *ChildCache[K, V]) DeleteKey(key K) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.data, key)
+}
+
+// Remove a value from the list of children for a given key.
+func (c *ChildCache[K, V]) Remove(key K, value V) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	list, ok := c.data[key]
+	if !ok {
+		return
+	}
+	newList := slices.DeleteFunc(list, func(v V) bool {
+		return v == value
+	})
+	c.data[key] = newList
 }
 
 // Keys returns a copy of the list of keys in the cache.

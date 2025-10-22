@@ -18,4 +18,8 @@ service Leaf {
   // Must be called before calling ScheduleCall.
   // An entry for the function must exist in the database.
   rpc RegisterFunction(RegisterFunctionRequest) returns (common.CreateFunctionResponse);
+
+  // State streams changes in state of a function_id.
+  // A change in the number of running instances.
+  rpc State(common.StateRequest) returns (stream common.StateResponse);
 }
