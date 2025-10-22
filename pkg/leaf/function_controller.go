@@ -39,6 +39,10 @@ type functionController struct {
 
 	scaling bool
 
+	// Channel to notify when the function has been scaled up or down.
+	// False means scaled down, True means scaled up. Regardless of the number of instances.
+	scaleChan chan bool
+
 	totalInFlight  int
 	totalInstances int
 	lastRequest    time.Time
@@ -60,7 +64,13 @@ type instance struct {
 	ip        string
 }
 
-func newFunctionController(ctx context.Context, functionID string, cfg *common.Config, workers []*workerClient, globalCfg Config, logger *slog.Logger) *functionController {
+func newFunctionController(ctx context.Context,
+	functionID string,
+	cfg *common.Config,
+	workers []*workerClient,
+	globalCfg Config,
+	logger *slog.Logger,
+	scaleChan chan bool) *functionController {
 	subCtx, cancel := context.WithCancel(ctx)
 
 	maxConcurrency := int(cfg.GetMaxConcurrency())
@@ -87,6 +97,7 @@ func newFunctionController(ctx context.Context, functionID string, cfg *common.C
 		lastRequest:               time.Now(),
 		// seems like a good initial value, so we dont check too often.
 		idleTickerInterval: globalCfg.ScaleToZeroAfter / 2,
+		scaleChan:          scaleChan,
 	}
 
 	for i := range controller.workerStates {
@@ -241,6 +252,16 @@ func (f *functionController) scaleUp(ctx context.Context, workerIdx int) error {
 	ws := &f.workerStates[workerIdx]
 	ws.instances = append(ws.instances, instance{id: resp.InstanceId, ip: resp.InstanceIp, lastUsage: time.Now()})
 	f.totalInstances++
+
+	// check if this is the first instance we have started for this function.
+	// if that is the case, we need to notify the routing controller that the function is now available.
+	if f.totalInstances == 1 {
+		// can happen async as metric computing is not immediate.
+		go func() {
+			f.scaleChan <- true
+		}()
+	}
+
 	f.notifyWaiters()
 
 	f.logger.Debug("started instance", "worker", worker.Address(), "instance", resp.InstanceId)
@@ -407,6 +428,14 @@ func (f *functionController) removeInstance(workerIdx int, instanceID string) {
 			ws.instances[i] = ws.instances[last]
 			ws.instances = ws.instances[:last]
 			f.totalInstances--
+
+			// if this was the last instance, we need to notify the routing controller that the function is no longer available.
+			if f.totalInstances == 0 {
+				go func() {
+					f.scaleChan <- false
+				}()
+			}
+
 			f.notifyWaiters()
 			return
 		}

@@ -118,7 +118,9 @@ func (s *Server) RegisterFunction(ctx context.Context, req *leafpb.RegisterFunct
 		return &common.CreateFunctionResponse{FunctionId: functionID}, nil
 	}
 
-	ctrl = newFunctionController(s.ctx, functionID, cfg, s.workers, s.cfg, s.logger.With("function", functionID))
+	scaleChan := make(chan bool)
+
+	ctrl = newFunctionController(s.ctx, functionID, cfg, s.workers, s.cfg, s.logger.With("function", functionID), scaleChan)
 	s.functions[functionID] = ctrl
 	s.mu.Unlock()
 
@@ -145,6 +147,41 @@ func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*co
 		return nil, status.Errorf(codes.Unavailable, "call failed: %v", err)
 	}
 	return resp, nil
+}
+
+// State streams changes in state of a function_id.
+// A change in the number of running instances.
+// IMPORTANT: this is meant for only ONE client to be listening to.
+// IMPORTANT: this does not handle additional functions being registered after the stream is established.
+// To get the latest state of all functions, the client must call this again.
+func (s *Server) State(req *common.StateRequest, stream leafpb.Leaf_StateServer) error {
+	ctx := stream.Context()
+
+	s.mu.RLock()
+	wg := sync.WaitGroup{}
+
+	for _, ctrl := range s.functions {
+		wg.Go(func() {
+			for have := range ctrl.scaleChan {
+				// exit if context is done
+				if ctx.Err() != nil {
+					return
+				}
+				err := stream.Send(&common.StateResponse{
+					FunctionId: ctrl.functionID,
+					Have:       have,
+				})
+				if err != nil {
+					s.logger.Error("failed to send state response", "error", err)
+				}
+			}
+		})
+	}
+	s.mu.RUnlock()
+
+	wg.Wait()
+
+	return nil
 }
 
 func (s *Server) getFunction(functionID string) *functionController {
