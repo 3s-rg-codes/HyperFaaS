@@ -22,7 +22,10 @@ func NewCache[K comparable, V comparable]() *ChildCache[K, V] {
 func (c *ChildCache[K, V]) Append(key K, value V) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.data[key] = append(c.data[key], value)
+	list := c.data[key]
+	if !slices.Contains(list, value) {
+		c.data[key] = append(list, value)
+	}
 }
 
 // Sets the list of children for a given key to the given value.
@@ -30,14 +33,22 @@ func (c *ChildCache[K, V]) Append(key K, value V) {
 func (c *ChildCache[K, V]) Set(key K, value []V) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.data[key] = value
+	clone := make([]V, len(value))
+	copy(clone, value)
+	c.data[key] = clone
 }
 
-// Get returns the list of children for a given key and a boolean indicating if the key exists.
+// Get returns a copy of the list of children for a given key and a boolean indicating if the key exists.
 func (c *ChildCache[K, V]) Get(key K) ([]V, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.data[key], true
+	list, ok := c.data[key]
+	if !ok {
+		return nil, false
+	}
+	clone := make([]V, len(list))
+	copy(clone, list)
+	return clone, true
 }
 
 // Deletes the list of children for a given key.

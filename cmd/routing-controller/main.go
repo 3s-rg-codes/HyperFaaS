@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"math/rand"
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/state"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
@@ -51,6 +54,14 @@ func main() {
 		log.Printf("error create listener, %v", err)
 		os.Exit(1)
 	}
+
+	// Set socket permissions to allow HAProxy to connect
+	// I couldnt solve this directly in the docker compose file, so I'm doing it here
+	if err := os.Chmod(*socketPath, 0666); err != nil {
+		log.Printf("warning: failed to set socket permissions: %v", err)
+	}
+
+	logger.Info("SPOE socket created", "path", *socketPath)
 	defer listener.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -131,11 +142,17 @@ func (s *server) handler() func(req *request.Request) {
 		}
 
 		children, ok := s.c.Get(functionID)
-		if !ok {
-			s.l.Error("no children found for function", "function_id", functionID)
-			return
+		if !ok || len(children) == 0 {
+			if len(s.children) == 0 {
+				s.l.Error("no children configured", "function_id", functionID)
+				return
+			}
+			child := s.children[rand.Intn(len(s.children))]
+			s.l.Debug("cache miss, assigning default child", "function_id", functionID, "child", child)
+			s.c.Append(functionID, child)
+			children = []string{child}
 		}
-		// For now, pick random child
+
 		child := children[rand.Intn(len(children))]
 
 		s.l.Debug("routing request to child", "function_id", functionID, "child", child, "protocol", protocol)
@@ -158,39 +175,64 @@ type child interface {
 	State(ctx context.Context, req *common.StateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[common.StateResponse], error)
 }
 
+// ListenToChildStream calls consumeChildStream for each child. If the stream is closed, it will back off and try again.
 func (s *server) ListenToChildStream(ctx context.Context, address string) {
-	client, conn, err := getChildClient(s.childType, address)
-	if err != nil {
-		s.l.Error("failed to get child client", "error", err)
-		return
-	}
-	defer conn.Close()
+	backoff := time.Second
+	for {
+		if ctx.Err() != nil {
+			return
+		}
 
+		client, conn, err := getChildClient(s.childType, address)
+		if err != nil {
+			s.l.Error("failed to get child client", "address", address, "error", err)
+			sleepWithContext(ctx, backoff)
+			backoff = nextBackoff(backoff)
+			continue
+		}
+
+		s.l.Info("connected to child", "address", address)
+		backoff = time.Second
+
+		err = s.consumeChildStream(ctx, client, address)
+		_ = conn.Close()
+
+		if err == nil || errors.Is(err, context.Canceled) {
+			return
+		}
+
+		if errors.Is(err, io.EOF) {
+			s.l.Info("child stream closed", "address", address)
+		} else {
+			s.l.Warn("child stream error", "address", address, "error", err)
+		}
+
+		sleepWithContext(ctx, backoff)
+		backoff = nextBackoff(backoff)
+	}
+}
+
+// consumeChildStream consumes the child stream and updates the cache.
+func (s *server) consumeChildStream(ctx context.Context, client child, address string) error {
 	stream, err := client.State(ctx, &common.StateRequest{})
 	if err != nil {
-		s.l.Error("failed to get child stream", "error", err)
-		return
+		return err
 	}
+
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			for {
-				msg, err := stream.Recv()
-				if err != nil {
-					s.l.Error("failed to receive state from child", "error", err)
-					return
-				}
-				s.l.Debug("received state from child", "address", address, "function_id", msg.FunctionId, "have", msg.Have)
-				if msg.Have {
-					// we add the address to the cache as a child
-					s.c.Append(msg.FunctionId, address)
-				} else {
-					// we remove the address from the cache as a child
-					s.c.Remove(msg.FunctionId, address)
-				}
-			}
+		msg, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if msg.GetFunctionId() == "" {
+			continue
+		}
+
+		s.l.Debug("received state from child", "address", address, "function_id", msg.FunctionId, "have", msg.Have)
+		if msg.Have {
+			s.c.Append(msg.FunctionId, address)
+		} else {
+			s.c.Remove(msg.FunctionId, address)
 		}
 	}
 }
@@ -207,4 +249,27 @@ func getChildClient(childType string, address string) (child, *grpc.ClientConn, 
 		return rcpb.NewRoutingControllerClient(conn), conn, nil
 	}
 	return nil, nil, fmt.Errorf("invalid child type: %s", childType)
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) {
+	if d <= 0 {
+		d = time.Millisecond * 100
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
+	}
+}
+
+func nextBackoff(current time.Duration) time.Duration {
+	if current <= 0 {
+		return time.Second
+	}
+	next := current * 2
+	if next > 10*time.Second {
+		return 10 * time.Second
+	}
+	return next
 }

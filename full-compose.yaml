@@ -187,7 +187,7 @@ services:
     image: haproxy:3.0
     depends_on:
       routingcontroller:
-        condition: service_started
+        condition: service_healthy
       leaf-A:
         condition: service_healthy
       leaf-B:
@@ -231,7 +231,7 @@ services:
       leaf-B:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "50051"]
+      test: ["CMD", "sh", "-c", "test -S /var/run/hyperfaas/spoe.sock"]
       interval: 5s
       timeout: 5s
       retries: 5
