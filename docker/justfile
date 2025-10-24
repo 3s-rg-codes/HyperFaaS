@@ -2,6 +2,7 @@ set dotenv-load
 set export
 set windows-shell := ["powershell"]
 set shell := ["bash", "-c"]
+export COMPOSE_PROJECT_NAME := "hyperfaas"
 
 # list all commands
 default:
