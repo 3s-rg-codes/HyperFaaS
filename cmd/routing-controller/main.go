@@ -31,10 +31,12 @@ func main() {
 	var childAddrs utils.StringList
 
 	address := flag.String("address", "0.0.0.0:50051", "Routing controller listen address")
+	grpcAddress := flag.String("grpc-address", "0.0.0.0:50052", "Routing controller gRPC listen address")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	logFormat := flag.String("log-format", "text", "Log format (text, json, dev)")
 	logFile := flag.String("log-file", "", "Optional log file path")
 	socketPath := flag.String("socket-path", "/var/run/haproxy-spoe.sock", "Socket path to use for communication with HAPROXY")
+	root := flag.Bool("root", true, "Whether this is the root routing controller")
 	//spoeLoggerPath := flag.String("spoe-logger-path", "", "Path to file to write SPOE agent log to")
 
 	flag.Var(&childAddrs, "child-addr", "Child address (repeat for multiple children)")
@@ -66,10 +68,32 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	s := NewServer(logger, *childTypes, childAddrs)
+	s := NewServer(logger, *childTypes, childAddrs, *root)
 
 	// Run the cache updater, this listens to the child streams and updates the cache.
 	go s.UpdateCacheLoop(ctx)
+
+	// Run the gRPC server, this allows parent routing controllers to subscribe to state changes.
+	go func() {
+		// only non-root routing controllers run the gRPC server.
+		if *root {
+			return
+		}
+		listener, err := net.Listen("tcp", *grpcAddress)
+		if err != nil {
+			logger.Error("failed to listen", "error", err)
+			os.Exit(1)
+		}
+
+		grpcServer := grpc.NewServer(
+			grpc.ChainUnaryInterceptor(utils.InterceptorLogger(logger)),
+		)
+		rcpb.RegisterRoutingControllerServer(grpcServer, &s)
+		logger.Info("routing controller gRPC server ready", "address", listener.Addr())
+		if err := grpcServer.Serve(listener); err != nil {
+			logger.Error("gRPC server stopped", "error", err)
+		}
+	}()
 
 	a := agent.New(s.handler(), spoeLogger.NewDefaultLog())
 	// Run the SPOE agent, this handles the SPOE protocol and routes the requests to the appropriate child.
@@ -80,15 +104,17 @@ func main() {
 }
 
 type server struct {
+	rcpb.UnimplementedRoutingControllerServer
 	c         *state.ChildCache[string, string]
 	l         *slog.Logger
 	children  []string
 	childType string
 }
 
-func NewServer(logger *slog.Logger, childType string, children []string) server {
+func NewServer(logger *slog.Logger, childType string, children []string, root bool) server {
 	return server{
-		c:         state.NewCache[string, string](),
+		// only non-root routing controllers send updates about the state of the children to the parent.
+		c:         state.NewCache[string, string](!root),
 		l:         logger,
 		childType: childType,
 		children:  children,
@@ -272,4 +298,22 @@ func nextBackoff(current time.Duration) time.Duration {
 		return 10 * time.Second
 	}
 	return next
+}
+
+// State streams changes in state of a function_id.
+func (s *server) State(req *common.StateRequest, stream rcpb.RoutingController_StateServer) error {
+	ctx := stream.Context()
+	for update := range s.c.Updates() {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		err := stream.Send(&common.StateResponse{
+			FunctionId: update.Id,
+			Have:       update.Have,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
