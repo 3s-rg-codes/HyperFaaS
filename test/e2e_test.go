@@ -25,7 +25,7 @@ import (
 // set the env vars to override the default values
 var WORKER_ADDRESS = envOrDefault("WORKER_ADDRESS", "localhost:50051")
 var LEAF_ADDRESS = envOrDefault("LEAF_ADDRESS", "localhost:50050")
-var HAPROXY_ADDRESS = envOrDefault("HAPROXY_ADDRESS", "localhost:50052")
+var HAPROXY_ADDRESS = envOrDefault("HAPROXY_ADDRESS", "localhost:9999")
 var ETCD_ADDRESS = envOrDefault("ETCD_ADDRESS", "localhost:2379")
 
 // The timeout used for the calls

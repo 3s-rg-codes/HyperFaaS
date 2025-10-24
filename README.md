@@ -42,40 +42,26 @@ To get started with HyperFaaS, follow these steps:
    just build
    ```
 
-### Running the Platform
+### Running the Platform Locally
 
 #### Containerized Mode
 
-Start all components with Docker Compose:
+We have three different setups available: small, medium, and large.
+To read more about the setups, see [docker/README.md](docker/README.md).
 ```
-just d
+# deploy a small setup
+just docker/start-small
 ```
 
-Or with automatic rebuilding:
+
 ```
-just start-rebuild
+# stop it
+just docker/down-small
 ```
 
 #### Native Mode
 
-Run etcd, leaf, and worker components separately:
-
-1. Start etcd (single node):
-   ```
-   etcd --advertise-client-urls http://localhost:2379 --listen-client-urls http://0.0.0.0:2379
-   ```
-
-2. Start a worker node (requires access to Docker):
-   ```
-   just run-local-worker
-   ```
-
-3. Start a leaf node pointing to your worker(s):
-   ```
-   just run-local-leaf --worker-addr=127.0.0.1:50051
-   ```
-
-4. (Optional) Run HAProxy / routing controller if you want the full tree locally; else the leaf gRPC endpoint can be used directly.
+You can run HyperFaaS on your host by running etcd, haproxy, routing controller, leaf, and worker components separately (not recommended).
 
 ### Managing Functions
 
@@ -101,6 +87,18 @@ To build all Go functions:
 just build-functions-go
 ```
 ## Development
+
+### Linting
+
+We use [golangci-lint](https://golangci-lint.run/) for linting.
+You can run it with:
+```
+just lint
+```
+
+
+### Testing
+
 There are three Go build tags used for testing:
 - unit
 - integration
@@ -114,25 +112,15 @@ Please make sure your editor and tools (such as gopls) are configured to recogni
 }
 ```
 
-### Linting
-
-We use [golangci-lint](https://golangci-lint.run/) for linting.
-You can run it with:
-```
-just lint
-```
-
-
-### Testing
-We have unit, integration and end to end tests.
-For the end to end tests, you need to have a running docker compose version of HyperFaaS.
+For the end to end tests, you need to have a running docker compose version of HyperFaaS (small, medium, or large setup).
 For more information, see [test/README.md](test/README.md).
+
 ```
-just test-unit
+just test unit
 
-just test-integration
+just test integration
 
-just test-e2e
+just test e2e
 ```
 If you want colored output, install gotest:
 ```
@@ -141,14 +129,6 @@ go install github.com/rakyll/gotest@latest
 
 Then you can run the tests with a "true" parameter.
 ```
-# prints with color
-just test-e2e true
-```
-
-
-## Cleanup
-
-Remove all Docker containers/images and logs:
-```
-just clean
+# prints with color , verbose output and runs even if cached results are found
+just test e2e true -v -count=1
 ```

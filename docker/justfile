@@ -1,0 +1,94 @@
+set dotenv-load
+set export
+set windows-shell := ["powershell"]
+set shell := ["bash", "-c"]
+
+# list all commands
+default:
+  @just --list --unsorted
+
+############################
+# Docker Compose Commands
+############################
+
+# Start small setup (1 worker, 1 leaf, 1 haproxy, 1 routing controller)
+start-small runtime_type="docker" log_level="info" *FLAGS:
+    @echo "Starting small HyperFaaS setup"
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose -f small.yaml up --detach --remove-orphans {{FLAGS}}
+alias ss := start-small
+
+# Start medium setup (4 workers, 2 leafs, 1 haproxy, 1 routing controller)
+start-medium runtime_type="docker" log_level="info":
+    @echo "Starting medium HyperFaaS setup"
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose -f medium.yaml up --detach --remove-orphans
+alias sm := start-medium
+
+# Start large setup (8 workers, 4 leafs, 3 haproxy, 3 routing controllers)
+start-large runtime_type="docker" log_level="info":
+    @echo "Starting large HyperFaaS setup"
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose -f large.yaml up --detach --remove-orphans
+alias sl := start-large
+
+# Stop/Down commands
+
+down-small:
+    @echo "Stopping small setup"
+    docker compose -f small.yaml down
+alias ds := down-small
+
+down-medium:
+    @echo "Stopping medium setup"
+    docker compose -f medium.yaml down
+alias dm := down-medium
+
+down-large:
+    @echo "Stopping large setup"
+    docker compose -f large.yaml down
+alias dl := down-large
+
+# Restart/Up commands
+
+restart-small runtime_type="docker" log_level="info":
+    @echo "Restarting small setup"
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose -f small.yaml restart
+alias rs := restart-small
+
+restart-medium runtime_type="docker" log_level="info":
+    @echo "Restarting medium setup"
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose -f medium.yaml restart
+alias rm := restart-medium
+
+restart-large runtime_type="docker" log_level="info":
+    @echo "Restarting large setup"
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose -f large.yaml restart
+alias rl := restart-large
+############################
+# Logs
+############################
+
+# Print the logs of a specific component
+logs component:
+    docker logs $(docker ps -a | grep {{component}} | awk '{print $1}')
+
+# Print the last n function logs
+function-logs n:
+    sudo bash -c ' cd /var/lib/docker/volumes/function-logs/_data && ls -t | head -n {{n}} | xargs -r cat'
+
+############################
+# Profiling
+############################
+# only works with small setup
+pprof-worker:
+    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
+# only works with small setup
+pprof-leaf:
+    docker exec -it $(docker ps | grep leaf | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
+# only works with small setup
+memory-worker:
+    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/heap
+# only works with small setup
+trace-worker:
+    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool trace http://localhost:6060/debug/pprof/trace?seconds=60
+# only works with small setup
+block-worker:
+    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/block

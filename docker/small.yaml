@@ -26,8 +26,8 @@ services:
 
   worker:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
       args:
         COMPONENT: worker
     volumes:
@@ -35,13 +35,13 @@ services:
       - function-logs:/root/functions/logs
       - ./log/:/root/log/
     ports:
-      - "50051:50051"
+      - "50001:50001"
     #network_mode: host
     networks:
       - hyperfaas-network
     command: [
       "./app",
-      "-address=0.0.0.0:50051",
+      "-address=0.0.0.0:50001",
       "-runtime=${RUNTIME_TYPE}",
       "-log-level=${LOG_LEVEL}",
       "-log-format=text",
@@ -57,7 +57,7 @@ services:
           path: .
           target: .
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "50051"]
+      test: ["CMD", "nc", "-z", "localhost", "50001"]
       interval: 3s
       timeout: 5s
       retries: 3
@@ -67,8 +67,8 @@ services:
         condition: service_healthy
   leaf:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
       args:
         COMPONENT: leaf
     volumes:
@@ -84,7 +84,7 @@ services:
       "-log-level=${LOG_LEVEL}",
       "-log-format=text",
       "-log-file=/root/log/leaf.log",
-      "-worker-addr=worker:50051",
+      "-worker-addr=worker:50001",
       "-scale-to-zero-after=10s",
       "-max-instances-per-worker=4",
       "-etcd-endpoint=etcd:2379"
@@ -107,22 +107,25 @@ services:
         condition: service_healthy
   haproxy:
     image: haproxy:3.0
+    environment:
+      HAPROXY_PORT: 9999
+      CHILD_1: leaf:50050
     depends_on:
       routingcontroller:
         condition: service_started
       leaf:
         condition: service_healthy
     volumes:
-      - ./config/hyperfaas-haproxy-grpc-compose.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./config/hyperfaas-haproxy-grpc-compose-1-child.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
       - ./config/hyperfaas-spoe-grpc.cfg:/usr/local/etc/haproxy/hyperfaas-spoe-grpc.cfg:ro
       - routingcontroller-sock:/var/run/hyperfaas
     ports:
-      - "50052:9090"
+      - "9999:9999"
       - "8404:8404"
     networks:
       - hyperfaas-network
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "9090"]
+      test: ["CMD", "nc", "-z", "localhost", "9999"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -130,8 +133,8 @@ services:
 
   routingcontroller:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
       args:
         COMPONENT: routingcontroller
     command:
