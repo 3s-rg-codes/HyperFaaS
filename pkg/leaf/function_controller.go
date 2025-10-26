@@ -52,11 +52,12 @@ type functionController struct {
 
 func (f *functionController) emitScaleChange(value bool) {
 	go func() {
-		defer func() {
+		// should not be needed because the channel is closed after context is cancelled:
+		/* defer func() {
 			if r := recover(); r != nil {
 				f.logger.Debug("failed to emit scale change", "value", value, "reason", r)
 			}
-		}()
+		}() */
 		select {
 		case <-f.ctx.Done():
 			return
@@ -85,7 +86,6 @@ func newFunctionController(ctx context.Context,
 	workers []*workerClient,
 	globalCfg Config,
 	logger *slog.Logger,
-	scaleChan chan bool,
 ) *functionController {
 	subCtx, cancel := context.WithCancel(ctx)
 
@@ -113,7 +113,7 @@ func newFunctionController(ctx context.Context,
 		lastRequest:               time.Now(),
 		// seems like a good initial value, so we dont check too often.
 		idleTickerInterval: globalCfg.ScaleToZeroAfter / 2,
-		scaleChan:          scaleChan,
+		scaleChan:          make(chan bool),
 	}
 
 	for i := range controller.workerStates {
@@ -128,6 +128,7 @@ func newFunctionController(ctx context.Context,
 // stop cancels the context of the function controller.
 func (f *functionController) stop() {
 	f.cancel()
+	close(f.scaleChan)
 }
 
 func (f *functionController) updateConfig(cfg *common.Config) {

@@ -199,9 +199,7 @@ func (s *Server) upsertFunction(meta *metadata.FunctionMetadata) {
 		ctrl.updateConfig(meta.Config)
 		return
 	}
-
-	scaleChan := make(chan bool)
-	ctrl = newFunctionController(s.ctx, meta.ID, meta.Config, s.workers, s.cfg, s.logger.With("function", meta.ID), scaleChan)
+	ctrl = newFunctionController(s.ctx, meta.ID, meta.Config, s.workers, s.cfg, s.logger.With("function", meta.ID))
 	s.functions[meta.ID] = ctrl
 	s.mu.Unlock()
 
