@@ -205,7 +205,11 @@ func main() {
 							if err != nil {
 								return err
 							}
-							defer metaClient.Close()
+							defer func() {
+								if err := metaClient.Close(); err != nil {
+									log.Printf("warning: failed to close metadata client: %v", err)
+								}
+							}()
 
 							req, err := buildFunctionRequest(cmd, imageTag)
 							if err != nil {
@@ -252,7 +256,11 @@ func main() {
 							if err != nil {
 								return err
 							}
-							defer metaClient.Close()
+							defer func() {
+								if err := metaClient.Close(); err != nil {
+									log.Printf("warning: failed to close metadata client: %v", err)
+								}
+							}()
 
 							opTimeout := cmd.Duration("timeout")
 							if opTimeout <= 0 {
@@ -288,7 +296,11 @@ func main() {
 							if err != nil {
 								return err
 							}
-							defer metaClient.Close()
+							defer func() {
+								if err := metaClient.Close(); err != nil {
+									log.Printf("warning: failed to close metadata client: %v", err)
+								}
+							}()
 
 							opTimeout := cmd.Duration("timeout")
 							if opTimeout <= 0 {
@@ -372,7 +384,11 @@ func main() {
 							if err != nil {
 								return err
 							}
-							defer conn.Close()
+							defer func() {
+								if err := conn.Close(); err != nil {
+									log.Printf("warning: failed to close connection: %v", err)
+								}
+							}()
 
 							response, err := ScheduleCall(client, funcID, data, timeout)
 							if err != nil {

@@ -69,7 +69,7 @@ func parseArgs() (wc WorkerConfig) {
 	wc.Metadata.Endpoints = append(wc.Metadata.Endpoints, etcdEndpoints...)
 	wc.Metadata.Prefix = *metadataPrefix
 	wc.Metadata.DialTimeout = *metadataDialTimeout
-	return
+	return wc
 }
 
 func main() {

@@ -37,7 +37,7 @@ func main() {
 	logFile := flag.String("log-file", "", "Optional log file path")
 	socketPath := flag.String("socket-path", "/var/run/haproxy-spoe.sock", "Socket path to use for communication with HAPROXY")
 	root := flag.Bool("root", true, "Whether this is the root routing controller")
-	//spoeLoggerPath := flag.String("spoe-logger-path", "", "Path to file to write SPOE agent log to")
+	// spoeLoggerPath := flag.String("spoe-logger-path", "", "Path to file to write SPOE agent log to")
 
 	flag.Var(&childAddrs, "child-addr", "Child address (repeat for multiple children)")
 	childTypes := flag.String("child-types", "leaf", "Type of children (leaf or routing-controller)")
@@ -59,12 +59,16 @@ func main() {
 
 	// Set socket permissions to allow HAProxy to connect
 	// I couldnt solve this directly in the docker compose file, so I'm doing it here
-	if err := os.Chmod(*socketPath, 0666); err != nil {
+	if err := os.Chmod(*socketPath, 0o666); err != nil {
 		log.Printf("warning: failed to set socket permissions: %v", err)
 	}
 
 	logger.Info("SPOE socket created", "path", *socketPath)
-	defer listener.Close()
+	err = listener.Close()
+	if err != nil {
+		logger.Error("failed to close listener", "error", err)
+		os.Exit(1)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -100,7 +104,6 @@ func main() {
 	if err := a.Serve(listener); err != nil {
 		log.Printf("error agent serve: %+v\n", err)
 	}
-
 }
 
 type server struct {
@@ -120,6 +123,7 @@ func NewServer(logger *slog.Logger, childType string, children []string, root bo
 		children:  children,
 	}
 }
+
 func (s *server) handler() func(req *request.Request) {
 	return func(req *request.Request) {
 		s.l.Debug("handle request",

@@ -15,10 +15,12 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 )
 
-var ErrFunctionNotFound = errors.New("metadata: function not found")
-var ErrFunctionIDIsEmpty = errors.New("metadata: function id is empty")
-var ErrFunctionAlreadyExists = errors.New("metadata: function already exists")
-var ErrReqIsNil = errors.New("metadata: request is nil")
+var (
+	ErrFunctionNotFound      = errors.New("metadata: function not found")
+	ErrFunctionIDIsEmpty     = errors.New("metadata: function id is empty")
+	ErrFunctionAlreadyExists = errors.New("metadata: function already exists")
+	ErrReqIsNil              = errors.New("metadata: request is nil")
+)
 
 // Client wraps etcd to manage HyperFaaS function metadata.
 type Client struct {

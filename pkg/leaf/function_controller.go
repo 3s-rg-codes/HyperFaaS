@@ -85,7 +85,8 @@ func newFunctionController(ctx context.Context,
 	workers []*workerClient,
 	globalCfg Config,
 	logger *slog.Logger,
-	scaleChan chan bool) *functionController {
+	scaleChan chan bool,
+) *functionController {
 	subCtx, cancel := context.WithCancel(ctx)
 
 	maxConcurrency := int(cfg.GetMaxConcurrency())
