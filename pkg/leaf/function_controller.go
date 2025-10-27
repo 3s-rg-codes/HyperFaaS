@@ -104,7 +104,7 @@ func newFunctionController(ctx context.Context,
 		startTimeout:              globalCfg.StartTimeout,
 		stopTimeout:               globalCfg.StopTimeout,
 		workers:                   workers,
-		logger:                    logger,
+		logger:                    logger.With("function_id", functionID),
 		scheduler:                 scheduler,
 		ctx:                       subCtx,
 		cancel:                    cancel,
@@ -262,6 +262,7 @@ func (f *functionController) scaleUp(ctx context.Context, workerIdx int) error {
 	if err != nil {
 		return err
 	}
+	f.logger.Info("started instance", "worker", worker.Address(), "instance_id", resp.InstanceId)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -278,8 +279,6 @@ func (f *functionController) scaleUp(ctx context.Context, workerIdx int) error {
 	}
 
 	f.notifyWaiters()
-
-	f.logger.Debug("started instance", "worker", worker.Address(), "instance", resp.InstanceId)
 
 	return nil
 }
@@ -421,6 +420,7 @@ func (f *functionController) tryScaleToZero() {
 			continue
 		}
 		f.removeInstance(item.workerIdx, item.instanceID)
+		f.logger.Info("stopped instance", "worker", f.workers[item.workerIdx].Address(), "instance_id", item.instanceID, "reason", "timeout", "totalInstances", f.totalInstances)
 	}
 }
 

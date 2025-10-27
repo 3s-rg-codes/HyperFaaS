@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
@@ -209,7 +208,8 @@ func NewController(runtime cr.ContainerRuntime,
 
 func (s *Controller) StartServer(ctx context.Context) {
 	grpcServer := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(utils.InterceptorLogger(s.logger)),
+	// Uncomment if you need logging of all grpc requests and responses.
+	// grpc.ChainUnaryInterceptor(utils.InterceptorLogger(s.logger)),
 	)
 	// TODO pass context to sub servers
 	// ctx, cancel := context.WithCancel(context.Background())

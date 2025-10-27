@@ -172,6 +172,8 @@ services:
     image: hyperfaas-leaf-1
     ports:
       - "50010:50010"
+    volumes:
+      - ./logs:/app/logs
     networks:
       hyperfaas-network:
         aliases:
@@ -182,6 +184,7 @@ services:
         "-address=0.0.0.0:50010",
         "-log-level=${LOG_LEVEL:-info}",
         "-log-format=text",
+        "-log-file=/app/logs/leaf-1.log",
         "-worker-addr=worker-1:50001",
         "-worker-addr=worker-2:50002",
         "-scale-to-zero-after=10s",
@@ -211,6 +214,8 @@ services:
     image: hyperfaas-leaf-2
     ports:
       - "50011:50011"
+    volumes:
+      - ./logs:/app/logs
     networks:
       hyperfaas-network:
         aliases:
@@ -221,6 +226,7 @@ services:
         "-address=0.0.0.0:50011",
         "-log-level=${LOG_LEVEL:-info}",
         "-log-format=text",
+        "-log-file=/app/logs/leaf-2.log",
         "-worker-addr=worker-3:50003",
         "-worker-addr=worker-4:50004",
         "-scale-to-zero-after=10s",
@@ -250,6 +256,8 @@ services:
     image: hyperfaas-leaf-3
     ports:
       - "50012:50012"
+    volumes:
+      - ./logs:/app/logs
     networks:
       hyperfaas-network:
         aliases:
@@ -260,6 +268,7 @@ services:
         "-address=0.0.0.0:50012",
         "-log-level=${LOG_LEVEL:-info}",
         "-log-format=text",
+        "-log-file=/app/logs/leaf-3.log",
         "-worker-addr=worker-5:50005",
         "-worker-addr=worker-6:50006",
         "-scale-to-zero-after=10s",
@@ -289,6 +298,8 @@ services:
     image: hyperfaas-leaf-4
     ports:
       - "50013:50013"
+    volumes:
+      - ./logs:/app/logs
     networks:
       hyperfaas-network:
         aliases:
@@ -299,6 +310,7 @@ services:
         "-address=0.0.0.0:50013",
         "-log-level=${LOG_LEVEL:-info}",
         "-log-format=text",
+        "-log-file=/app/logs/leaf-4.log",
         "-worker-addr=worker-7:50007",
         "-worker-addr=worker-8:50008",
         "-scale-to-zero-after=10s",
@@ -361,6 +373,7 @@ services:
         "-root=false",
         "-log-level=${LOG_LEVEL}",
         "-log-format=text",
+        "-log-file=/app/logs/routingcontroller-l1-a.log",
         "-socket-path=/var/run/hyperfaas/spoe.sock",
         "-child-addr=leaf-1:50010",
         "-child-addr=leaf-2:50011",
@@ -368,6 +381,7 @@ services:
       ]
     volumes:
       - routingcontroller-l1-a-sock:/var/run/hyperfaas
+      - ./logs:/app/logs
     networks:
       hyperfaas-network:
         aliases:
@@ -426,6 +440,7 @@ services:
         "-root=false",
         "-log-level=${LOG_LEVEL}",
         "-log-format=text",
+        "-log-file=/app/logs/routingcontroller-l1-b.log",
         "-socket-path=/var/run/hyperfaas/spoe.sock",
         "-child-addr=leaf-3:50012",
         "-child-addr=leaf-4:50013",
@@ -433,6 +448,7 @@ services:
       ]
     volumes:
       - routingcontroller-l1-b-sock:/var/run/hyperfaas
+      - ./logs:/app/logs
     networks:
       hyperfaas-network:
         aliases:
@@ -491,21 +507,23 @@ services:
         "-root=true",
         "-log-level=${LOG_LEVEL}",
         "-log-format=text",
+        "-log-file=/app/logs/routingcontroller-l2.log",
         "-socket-path=/var/run/hyperfaas/spoe.sock",
-        "-child-addr=routingcontroller-l1-a:",
-        "-child-addr=haproxy-l1-b:9090",
-        "-child-types=haproxy"
+        "-child-addr=routingcontroller-l1-a:40000",
+        "-child-addr=routingcontroller-l1-b:40000",
+        "-child-types=routing-controller"
       ]
     volumes:
       - routingcontroller-l2-sock:/var/run/hyperfaas
+      - ./logs:/app/logs
     networks:
       hyperfaas-network:
         aliases:
           - routingcontroller-l2
     depends_on:
-      haproxy-l1-a:
+      routingcontroller-l1-a:
         condition: service_healthy
-      haproxy-l1-b:
+      routingcontroller-l1-b:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "sh", "-c", "test -S /var/run/hyperfaas/spoe.sock"]

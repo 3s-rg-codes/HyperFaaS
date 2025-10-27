@@ -21,10 +21,13 @@ func main() {
 	var workerAddrs utils.StringList
 	var metadataEndpoints utils.StringList
 
+	rNodeID := utils.GetRandomNodeID()
+
 	address := flag.String("address", "0.0.0.0:50050", "Leaf listen address")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	logFormat := flag.String("log-format", "text", "Log format (text, json, dev)")
 	logFile := flag.String("log-file", "", "Optional log file path")
+	nodeID := flag.String("node-id", rNodeID, "Node ID to be used for logging and metrics for this node.")
 
 	scaleToZeroAfter := flag.Duration("scale-to-zero-after", 90*time.Second, "Duration of inactivity before scaling to zero")
 	maxInstancesPerWorker := flag.Int("max-instances-per-worker", 4, "Maximum warm instances per worker for a function")
@@ -47,6 +50,8 @@ func main() {
 	}
 
 	logger := utils.SetupLogger(*logLevel, *logFormat, *logFile)
+	logger = logger.With("node_id", *nodeID)
+
 	logger.Info("starting LeafV2",
 		"address", *address,
 		"workers", workerAddrs,
@@ -104,7 +109,8 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(utils.InterceptorLogger(logger)),
+	// Uncomment if you need logging of all grpc requests and responses.
+	// grpc.ChainUnaryInterceptor(utils.InterceptorLogger(logger)),
 	)
 
 	leafpb.RegisterLeafServer(grpcServer, server)

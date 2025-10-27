@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -29,7 +28,8 @@ import (
 
 func main() {
 	var childAddrs utils.StringList
-
+	rNodeID := utils.GetRandomNodeID()
+	nodeID := flag.String("node-id", rNodeID, "Node ID to be used for logging and metrics for this node.")
 	address := flag.String("address", "0.0.0.0:50051", "Routing controller listen address")
 	grpcAddress := flag.String("grpc-address", "0.0.0.0:50052", "Routing controller gRPC listen address")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
@@ -45,6 +45,7 @@ func main() {
 	flag.Parse()
 
 	logger := utils.SetupLogger(*logLevel, *logFormat, *logFile)
+	logger = logger.With("node_id", *nodeID)
 	logger.Info("Starting Routing Controller",
 		"address", *address,
 		"children", childAddrs,
@@ -64,11 +65,13 @@ func main() {
 	}
 
 	logger.Info("SPOE socket created", "path", *socketPath)
-	err = listener.Close()
-	if err != nil {
-		logger.Error("failed to close listener", "error", err)
-		os.Exit(1)
-	}
+	defer func() {
+		err = listener.Close()
+		if err != nil {
+			logger.Error("failed to close listener", "error", err)
+			os.Exit(1)
+		}
+	}()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -90,7 +93,8 @@ func main() {
 		}
 
 		grpcServer := grpc.NewServer(
-			grpc.ChainUnaryInterceptor(utils.InterceptorLogger(logger)),
+		// Uncomment if you need logging of all grpc requests and responses.
+		// grpc.ChainUnaryInterceptor(utils.InterceptorLogger(logger)),
 		)
 		rcpb.RegisterRoutingControllerServer(grpcServer, &s)
 		logger.Info("routing controller gRPC server ready", "address", listener.Addr())
@@ -272,13 +276,14 @@ func getChildClient(childType string, address string) (child, *grpc.ClientConn, 
 	if err != nil {
 		return nil, nil, err
 	}
-	if childType == "leaf" {
+	switch childType {
+	case "leaf":
 		return leafpb.NewLeafClient(conn), conn, nil
-	}
-	if childType == "routing-controller" {
+	case "routing-controller":
 		return rcpb.NewRoutingControllerClient(conn), conn, nil
+	default:
+		panic("invalid child type: " + childType)
 	}
-	return nil, nil, fmt.Errorf("invalid child type: %s", childType)
 }
 
 func sleepWithContext(ctx context.Context, d time.Duration) {

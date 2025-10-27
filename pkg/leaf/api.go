@@ -199,7 +199,7 @@ func (s *Server) upsertFunction(meta *metadata.FunctionMetadata) {
 		ctrl.updateConfig(meta.Config)
 		return
 	}
-	ctrl = newFunctionController(s.ctx, meta.ID, meta.Config, s.workers, s.cfg, s.logger.With("function", meta.ID))
+	ctrl = newFunctionController(s.ctx, meta.ID, meta.Config, s.workers, s.cfg, s.logger)
 	s.functions[meta.ID] = ctrl
 	s.mu.Unlock()
 

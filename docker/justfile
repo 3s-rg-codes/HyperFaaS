@@ -75,6 +75,9 @@ logs component:
 function-logs n:
     sudo bash -c ' cd /var/lib/docker/volumes/function-logs/_data && ls -t | head -n {{n}} | xargs -r cat'
 
+clean-logs:
+    rm ./logs/*
+
 ############################
 # Profiling
 ############################

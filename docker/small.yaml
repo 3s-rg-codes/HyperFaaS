@@ -72,7 +72,7 @@ services:
       args:
         COMPONENT: leaf
     volumes:
-      - ./log/:/root/log/
+      - ./logs:/app/logs
     ports:
       - "50050:50050"
     #network_mode: host
@@ -83,7 +83,7 @@ services:
       "-address=0.0.0.0:50050",
       "-log-level=${LOG_LEVEL}",
       "-log-format=text",
-      "-log-file=/root/log/leaf.log",
+      "-log-file=/app/logs/leaf.log",
       "-worker-addr=worker:50001",
       "-scale-to-zero-after=10s",
       "-max-instances-per-worker=4",
@@ -142,12 +142,14 @@ services:
         "./app",
         "-log-level=${LOG_LEVEL}",
         "-log-format=text",
+        "-log-file=/app/logs/routingcontroller.log",
         "-socket-path=/var/run/hyperfaas/spoe.sock",
         "-child-addr=leaf:50050",
         "-child-types=leaf"
       ]
     volumes:
       - routingcontroller-sock:/var/run/hyperfaas
+      - ./logs:/app/logs
     networks:
       - hyperfaas-network
     depends_on:

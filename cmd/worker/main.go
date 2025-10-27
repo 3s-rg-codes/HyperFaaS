@@ -24,6 +24,7 @@ import (
 type WorkerConfig struct {
 	General struct {
 		Address         string `env:"WORKER_ADDRESS"`
+		NodeID          string `env:"NODE_ID"`
 		ListenerTimeout int    `env:"LISTENER_TIMEOUT"`
 	}
 	Metadata struct {
@@ -50,7 +51,9 @@ type WorkerConfig struct {
 
 func parseArgs() (wc WorkerConfig) {
 	var etcdEndpoints utils.StringList
+	rNodeID := utils.GetRandomNodeID()
 	flag.StringVar(&(wc.General.Address), "address", "", "Worker address. (Env: WORKER_ADDRESS)")
+	flag.StringVar(&(wc.General.NodeID), "node-id", rNodeID, "Node ID to be used for logging and metrics for this node.")
 	flag.StringVar(&(wc.Runtime.Type), "runtime", "docker", "Container runtime type. (Env: RUNTIME_TYPE)")
 	flag.IntVar(&(wc.General.ListenerTimeout), "timeout", 20, "Timeout in seconds before leafnode listeners are removed from status stream updates. (Env: LISTENER_TIMEOUT)")
 	flag.BoolVar(&(wc.Runtime.AutoRemove), "auto-remove", false, "Auto remove containers. (Env: RUNTIME_AUTOREMOVE)")
@@ -78,7 +81,7 @@ func main() {
 	}()
 	wc := parseArgs()
 	logger := utils.SetupLogger(wc.Log.Level, wc.Log.Format, wc.Log.FilePath)
-
+	logger = logger.With("node_id", wc.General.NodeID)
 	logger.Info("Current configuration", "config", wc)
 
 	statsManager := stats.NewStatsManager(logger, time.Duration(wc.General.ListenerTimeout)*time.Second, 1.0, wc.Stats.UpdateBufferSize)
