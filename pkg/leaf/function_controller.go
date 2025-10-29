@@ -39,11 +39,31 @@ type functionController struct {
 
 	scaling bool
 
+	// Channel to notify when the function has been scaled up or down.
+	// False means scaled down, True means scaled up. Regardless of the number of instances.
+	scaleChan chan bool
+
 	totalInFlight  int
 	totalInstances int
 	lastRequest    time.Time
 	// how often the idle ticker should check for idle instances and attempt to scale them down
 	idleTickerInterval time.Duration
+}
+
+func (f *functionController) emitScaleChange(value bool) {
+	go func() {
+		// should not be needed because the channel is closed after context is cancelled:
+		/* defer func() {
+			if r := recover(); r != nil {
+				f.logger.Debug("failed to emit scale change", "value", value, "reason", r)
+			}
+		}() */
+		select {
+		case <-f.ctx.Done():
+			return
+		case f.scaleChan <- value:
+		}
+	}()
 }
 
 // local representation of a single worker holding instances for this function.
@@ -60,7 +80,13 @@ type instance struct {
 	ip        string
 }
 
-func newFunctionController(ctx context.Context, functionID string, cfg *common.Config, workers []*workerClient, globalCfg Config, logger *slog.Logger) *functionController {
+func newFunctionController(ctx context.Context,
+	functionID string,
+	cfg *common.Config,
+	workers []*workerClient,
+	globalCfg Config,
+	logger *slog.Logger,
+) *functionController {
 	subCtx, cancel := context.WithCancel(ctx)
 
 	maxConcurrency := int(cfg.GetMaxConcurrency())
@@ -78,7 +104,7 @@ func newFunctionController(ctx context.Context, functionID string, cfg *common.C
 		startTimeout:              globalCfg.StartTimeout,
 		stopTimeout:               globalCfg.StopTimeout,
 		workers:                   workers,
-		logger:                    logger,
+		logger:                    logger.With("function_id", functionID),
 		scheduler:                 scheduler,
 		ctx:                       subCtx,
 		cancel:                    cancel,
@@ -87,6 +113,7 @@ func newFunctionController(ctx context.Context, functionID string, cfg *common.C
 		lastRequest:               time.Now(),
 		// seems like a good initial value, so we dont check too often.
 		idleTickerInterval: globalCfg.ScaleToZeroAfter / 2,
+		scaleChan:          make(chan bool),
 	}
 
 	for i := range controller.workerStates {
@@ -101,6 +128,7 @@ func newFunctionController(ctx context.Context, functionID string, cfg *common.C
 // stop cancels the context of the function controller.
 func (f *functionController) stop() {
 	f.cancel()
+	close(f.scaleChan)
 }
 
 func (f *functionController) updateConfig(cfg *common.Config) {
@@ -234,6 +262,7 @@ func (f *functionController) scaleUp(ctx context.Context, workerIdx int) error {
 	if err != nil {
 		return err
 	}
+	f.logger.Info("started instance", "worker", worker.Address(), "instance_id", resp.InstanceId)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -241,9 +270,15 @@ func (f *functionController) scaleUp(ctx context.Context, workerIdx int) error {
 	ws := &f.workerStates[workerIdx]
 	ws.instances = append(ws.instances, instance{id: resp.InstanceId, ip: resp.InstanceIp, lastUsage: time.Now()})
 	f.totalInstances++
-	f.notifyWaiters()
 
-	f.logger.Debug("started instance", "worker", worker.Address(), "instance", resp.InstanceId)
+	// check if this is the first instance we have started for this function.
+	// if that is the case, we need to notify the routing controller that the function is now available.
+	if f.totalInstances == 1 {
+		// can happen async as metric computing is not immediate.
+		f.emitScaleChange(true)
+	}
+
+	f.notifyWaiters()
 
 	return nil
 }
@@ -385,6 +420,7 @@ func (f *functionController) tryScaleToZero() {
 			continue
 		}
 		f.removeInstance(item.workerIdx, item.instanceID)
+		f.logger.Info("stopped instance", "worker", f.workers[item.workerIdx].Address(), "instance_id", item.instanceID, "reason", "timeout", "totalInstances", f.totalInstances)
 	}
 }
 
@@ -407,6 +443,12 @@ func (f *functionController) removeInstance(workerIdx int, instanceID string) {
 			ws.instances[i] = ws.instances[last]
 			ws.instances = ws.instances[:last]
 			f.totalInstances--
+
+			// if this was the last instance, we need to notify the routing controller that the function is no longer available.
+			if f.totalInstances == 0 {
+				f.emitScaleChange(false)
+			}
+
 			f.notifyWaiters()
 			return
 		}

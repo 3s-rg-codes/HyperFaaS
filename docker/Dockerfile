@@ -18,10 +18,8 @@ RUN case "${COMPONENT}" in \
         go build -o app ./cmd/worker/main.go ;; \
     "leaf") \
         go build -o app ./cmd/leaf/main.go ;; \
-    "database") \
-        go build -o app ./cmd/database/main.go ;; \
-    "lb") \
-        go build -o app ./cmd/lb/main.go ;; \
+    "routingcontroller") \
+        go build -o app ./cmd/routing-controller/main.go ;; \
     *) \
         echo "Unknown component: ${COMPONENT}" && exit 1 ;; \
     esac
@@ -31,10 +29,8 @@ FROM alpine:${ALPINE_VERSION}
 # Install runtime dependencies based on component
 ARG COMPONENT=worker
 RUN case "${COMPONENT}" in \
-    "worker"|"leaf"|"lb") \
+    "worker"|"leaf"|"routingcontroller") \
         apk add --no-cache netcat-openbsd bash ;; \
-    "database") \
-        apk add --no-cache wget ;; \
     esac
 
 WORKDIR /app

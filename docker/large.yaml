@@ -1,0 +1,543 @@
+x-worker-template: &worker-template
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+    args:
+      COMPONENT: worker
+  image: hyperfaas-worker
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - function-logs:/root/functions/logs
+  networks:
+    hyperfaas-network:
+  environment: &worker-environment
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    RUNTIME_TYPE: ${RUNTIME_TYPE:-docker}
+  depends_on:
+    etcd:
+      condition: service_healthy
+
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.15
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd
+      - --data-dir=/etcd-data
+      - --advertise-client-urls=http://0.0.0.0:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-advertise-peer-urls=http://0.0.0.0:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-cluster=etcd=http://0.0.0.0:2380
+      - --initial-cluster-state=new
+    ports:
+      - "2379:2379"
+    networks:
+      hyperfaas-network:
+    environment:
+      ETCDCTL_ENDPOINTS: http://127.0.0.1:2379
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  worker-1:
+    <<: *worker-template
+    image: hyperfaas-worker-1
+    ports:
+      - "50001:50001"
+    environment:
+      <<: *worker-environment
+    command: ["./app", "-address=0.0.0.0:50001", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-1", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50001"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  worker-2:
+    <<: *worker-template
+    image: hyperfaas-worker-2
+    ports:
+      - "50002:50002"
+    environment:
+      <<: *worker-environment
+    command: ["./app", "-address=0.0.0.0:50002", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-2", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50002"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  worker-3:
+    <<: *worker-template
+    image: hyperfaas-worker-3
+    ports:
+      - "50003:50003"
+    environment:
+      <<: *worker-environment
+    command: ["./app", "-address=0.0.0.0:50003", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-3", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50003"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  worker-4:
+    <<: *worker-template
+    image: hyperfaas-worker-4
+    ports:
+      - "50004:50004"
+    environment:
+      <<: *worker-environment
+    command: ["./app", "-address=0.0.0.0:50004", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-4", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50004"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  worker-5:
+    <<: *worker-template
+    image: hyperfaas-worker-5
+    ports:
+      - "50005:50005"
+    environment:
+      <<: *worker-environment
+    command: ["./app", "-address=0.0.0.0:50005", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-5", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50005"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  worker-6:
+    <<: *worker-template
+    image: hyperfaas-worker-6
+    ports:
+      - "50006:50006"
+    environment:
+      <<: *worker-environment
+    command: ["./app", "-address=0.0.0.0:50006", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-6", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50006"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  worker-7:
+    <<: *worker-template
+    image: hyperfaas-worker-7
+    ports:
+      - "50007:50007"
+    environment:
+      <<: *worker-environment
+    command: ["./app", "-address=0.0.0.0:50007", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-7", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50007"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  worker-8:
+    <<: *worker-template
+    image: hyperfaas-worker-8
+    ports:
+      - "50008:50008"
+    environment:
+      <<: *worker-environment
+    command: ["./app", "-address=0.0.0.0:50008", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-8", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50008"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  leaf-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        COMPONENT: leaf
+    image: hyperfaas-leaf-1
+    ports:
+      - "50010:50010"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      hyperfaas-network:
+        aliases:
+          - leaf-1
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50010",
+        "-log-level=${LOG_LEVEL:-info}",
+        "-log-format=text",
+        "-log-file=/app/logs/leaf-1.log",
+        "-worker-addr=worker-1:50001",
+        "-worker-addr=worker-2:50002",
+        "-scale-to-zero-after=10s",
+        "-max-instances-per-worker=4",
+        "-etcd-endpoint=etcd:2379"
+      ]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50010"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      worker-1:
+        condition: service_healthy
+      worker-2:
+        condition: service_healthy
+      etcd:
+        condition: service_healthy
+
+  leaf-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        COMPONENT: leaf
+    image: hyperfaas-leaf-2
+    ports:
+      - "50011:50011"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      hyperfaas-network:
+        aliases:
+          - leaf-2
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50011",
+        "-log-level=${LOG_LEVEL:-info}",
+        "-log-format=text",
+        "-log-file=/app/logs/leaf-2.log",
+        "-worker-addr=worker-3:50003",
+        "-worker-addr=worker-4:50004",
+        "-scale-to-zero-after=10s",
+        "-max-instances-per-worker=4",
+        "-etcd-endpoint=etcd:2379"
+      ]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50011"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      worker-3:
+        condition: service_healthy
+      worker-4:
+        condition: service_healthy
+      etcd:
+        condition: service_healthy
+
+  leaf-3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        COMPONENT: leaf
+    image: hyperfaas-leaf-3
+    ports:
+      - "50012:50012"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      hyperfaas-network:
+        aliases:
+          - leaf-3
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50012",
+        "-log-level=${LOG_LEVEL:-info}",
+        "-log-format=text",
+        "-log-file=/app/logs/leaf-3.log",
+        "-worker-addr=worker-5:50005",
+        "-worker-addr=worker-6:50006",
+        "-scale-to-zero-after=10s",
+        "-max-instances-per-worker=4",
+        "-etcd-endpoint=etcd:2379"
+      ]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50012"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      worker-5:
+        condition: service_healthy
+      worker-6:
+        condition: service_healthy
+      etcd:
+        condition: service_healthy
+
+  leaf-4:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        COMPONENT: leaf
+    image: hyperfaas-leaf-4
+    ports:
+      - "50013:50013"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      hyperfaas-network:
+        aliases:
+          - leaf-4
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50013",
+        "-log-level=${LOG_LEVEL:-info}",
+        "-log-format=text",
+        "-log-file=/app/logs/leaf-4.log",
+        "-worker-addr=worker-7:50007",
+        "-worker-addr=worker-8:50008",
+        "-scale-to-zero-after=10s",
+        "-max-instances-per-worker=4",
+        "-etcd-endpoint=etcd:2379"
+      ]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50013"]
+      interval: 3s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      worker-7:
+        condition: service_healthy
+      worker-8:
+        condition: service_healthy
+      etcd:
+        condition: service_healthy
+
+  haproxy-l1-a:
+    image: haproxy:3.0
+    environment:
+      HAPROXY_PORT: 9090
+      CHILD_1: leaf-1:50010
+      CHILD_2: leaf-2:50011
+    depends_on:
+      routingcontroller-l1-a:
+        condition: service_healthy
+      leaf-1:
+        condition: service_healthy
+      leaf-2:
+        condition: service_healthy
+    volumes:
+      - ./config/hyperfaas-haproxy-grpc-compose-2-child.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./config/hyperfaas-spoe-grpc.cfg:/usr/local/etc/haproxy/hyperfaas-spoe-grpc.cfg:ro
+      - routingcontroller-l1-a-sock:/var/run/hyperfaas
+    ports:
+      - "8401:8404"
+    networks:
+      hyperfaas-network:
+    healthcheck:
+      test: ["CMD", "sh", "-c", "sleep 5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  routingcontroller-l1-a:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        COMPONENT: routingcontroller
+    image: hyperfaas-routingcontroller-l1-a
+    command:
+      [
+        "./app",
+        "-grpc-address=0.0.0.0:40000",
+        "-root=false",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "-log-file=/app/logs/routingcontroller-l1-a.log",
+        "-socket-path=/var/run/hyperfaas/spoe.sock",
+        "-child-addr=leaf-1:50010",
+        "-child-addr=leaf-2:50011",
+        "-child-types=leaf"
+      ]
+    volumes:
+      - routingcontroller-l1-a-sock:/var/run/hyperfaas
+      - ./logs:/app/logs
+    networks:
+      hyperfaas-network:
+        aliases:
+          - routingcontroller-l1-a
+    depends_on:
+      leaf-1:
+        condition: service_healthy
+      leaf-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -S /var/run/hyperfaas/spoe.sock"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  haproxy-l1-b:
+    image: haproxy:3.0
+    environment:
+      HAPROXY_PORT: 9091
+      CHILD_1: leaf-3:50012
+      CHILD_2: leaf-4:50013
+    depends_on:
+      routingcontroller-l1-b:
+        condition: service_healthy
+      leaf-3:
+        condition: service_healthy
+      leaf-4:
+        condition: service_healthy
+    volumes:
+      - ./config/hyperfaas-haproxy-grpc-compose-2-child.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./config/hyperfaas-spoe-grpc.cfg:/usr/local/etc/haproxy/hyperfaas-spoe-grpc.cfg:ro
+      - routingcontroller-l1-b-sock:/var/run/hyperfaas
+    ports:
+      - "8402:8404"
+    networks:
+      hyperfaas-network:
+    healthcheck:
+      test: ["CMD", "sh", "-c", "sleep 5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  routingcontroller-l1-b:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        COMPONENT: routingcontroller
+    image: hyperfaas-routingcontroller-l1-b
+    command:
+      [
+        "./app",
+        "-grpc-address=0.0.0.0:40000",
+        "-root=false",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "-log-file=/app/logs/routingcontroller-l1-b.log",
+        "-socket-path=/var/run/hyperfaas/spoe.sock",
+        "-child-addr=leaf-3:50012",
+        "-child-addr=leaf-4:50013",
+        "-child-types=leaf"
+      ]
+    volumes:
+      - routingcontroller-l1-b-sock:/var/run/hyperfaas
+      - ./logs:/app/logs
+    networks:
+      hyperfaas-network:
+        aliases:
+          - routingcontroller-l1-b
+    depends_on:
+      leaf-3:
+        condition: service_healthy
+      leaf-4:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -S /var/run/hyperfaas/spoe.sock"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  haproxy-l2:
+    image: haproxy:3.0
+    environment:
+      HAPROXY_PORT: 9999
+      CHILD_1: haproxy-l1-a:9090
+      CHILD_2: haproxy-l1-b:9091
+    depends_on:
+      routingcontroller-l2:
+        condition: service_healthy
+      haproxy-l1-a:
+        condition: service_healthy
+      haproxy-l1-b:
+        condition: service_healthy
+    volumes:
+      - ./config/hyperfaas-haproxy-grpc-compose-2-child.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./config/hyperfaas-spoe-grpc.cfg:/usr/local/etc/haproxy/hyperfaas-spoe-grpc.cfg:ro
+      - routingcontroller-l2-sock:/var/run/hyperfaas
+    ports:
+      - "9999:9999"
+      - "8400:8404"
+    networks:
+      hyperfaas-network:
+    healthcheck:
+      test: ["CMD", "sh", "-c", "sleep 5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  routingcontroller-l2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        COMPONENT: routingcontroller
+    image: hyperfaas-routingcontroller-l2
+    command:
+      [
+        "./app",
+        "-root=true",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "-log-file=/app/logs/routingcontroller-l2.log",
+        "-socket-path=/var/run/hyperfaas/spoe.sock",
+        "-child-addr=routingcontroller-l1-a:40000",
+        "-child-addr=routingcontroller-l1-b:40000",
+        "-child-types=routing-controller"
+      ]
+    volumes:
+      - routingcontroller-l2-sock:/var/run/hyperfaas
+      - ./logs:/app/logs
+    networks:
+      hyperfaas-network:
+        aliases:
+          - routingcontroller-l2
+    depends_on:
+      routingcontroller-l1-a:
+        condition: service_healthy
+      routingcontroller-l1-b:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -S /var/run/hyperfaas/spoe.sock"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  function-logs:
+  routingcontroller-l1-a-sock:
+  routingcontroller-l1-b-sock:
+  routingcontroller-l2-sock:
+
+networks:
+  hyperfaas-network:
+    driver: bridge

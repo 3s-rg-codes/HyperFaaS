@@ -4,15 +4,16 @@ HyperFaaS is a serverless platform with a tree-like load balancing structure. It
 The load balancer nodes that forward calls to worker nodes are called "leaf nodes".
 ## Architecture
 
-HyperFaaS consists of three main components:
+HyperFaaS is composed of the following services:
 
-- **Load Balancer Nodes**: Schedule function calls to other nodes or workers and handle load balancing
-- **Worker Nodes**: Execute the serverless functions in containers
-- **Database**: Manages function metadata and configurations like resource limits
+- **Load Balancer Nodes (HAProxy + Routing Controller)**: receive gRPC traffic and forward calls to the appropriate downstream nodes, which can be other load balancer nodes or leaf nodes.
+- **Leaf Nodes**: Scale function instances, and route calls to workers.
+- **Worker Nodes**: Execute serverless functions inside containers and stream metrics back to the leaf nodes.
+- **etcd**: Stores function metadata (image, resource limits, timeouts, etc.) that is consumed by both leaves and workers.
 
 The platform can be run in two modes:
-- **Containerized Mode**: All components (load balancer nodes, workers and database) run in Docker containers
-- **Native Mode**: All components run directly on the host
+- **Containerized Mode**: All components run in Docker containers via Compose (`etcd`, workers, leaves, routing controller, HAProxy, ...)
+- **Native Mode**: Each component runs directly on the host; make sure an etcd instance is available.
 
 
 
@@ -41,38 +42,36 @@ To get started with HyperFaaS, follow these steps:
    just build
    ```
 
-### Running the Platform
+### Running the Platform Locally
 
 #### Containerized Mode
 
-Start all components with Docker Compose:
+We have three different setups available: small, medium, and large.
+To read more about the setups, see [docker/README.md](docker/README.md).
 ```
-just d
+# deploy a small setup
+just docker/start-small
 ```
 
-Or with automatic rebuilding:
+
 ```
-just start-rebuild
+# stop it
+just docker/down-small
 ```
 
 #### Native Mode
 
-Run database, leaf, and worker components separately:
+You can run HyperFaaS on your host by running etcd, haproxy, routing controller, leaf, and worker components separately (not recommended).
 
-1. Start the database:
-   ```
-   cd ./cmd/database && go run .
-   ```
+### Managing Functions
 
-2. Start a leaf node:
-   ```
-   just run-local-leaf
-   ```
+Function metadata is stored directly in etcd. You can register a new function image and configuration with the CLI:
 
-3. Start a worker node:
-   ```
-   just run-local-worker
-   ```
+```
+go run ./cmd/hyperfaas-cli function create hyperfaas-hello:latest --cpu-period 100000 --cpu-quota 50000 --memory $((256*1024*1024)) --function-timeout=45s
+```
+
+By default the CLI talks to `localhost:2379`; use the global flags `--etcd-endpoint`, `--metadata-prefix`, and `--metadata-dial-timeout` to customise the etcds connection.
 
 ## Developing Functions
 
@@ -88,6 +87,18 @@ To build all Go functions:
 just build-functions-go
 ```
 ## Development
+
+### Linting
+
+We use [golangci-lint](https://golangci-lint.run/) for linting.
+You can run it with:
+```
+just lint
+```
+
+
+### Testing
+
 There are three Go build tags used for testing:
 - unit
 - integration
@@ -101,25 +112,15 @@ Please make sure your editor and tools (such as gopls) are configured to recogni
 }
 ```
 
-### Linting
-
-We use [golangci-lint](https://golangci-lint.run/) for linting.
-You can run it with:
-```
-just lint
-```
-
-
-### Testing
-We have unit, integration and end to end tests.
-For the end to end tests, you need to have a running docker compose version of HyperFaaS.
+For the end to end tests, you need to have a running docker compose version of HyperFaaS (small, medium, or large setup).
 For more information, see [test/README.md](test/README.md).
+
 ```
-just test-unit
+just test unit
 
-just test-integration
+just test integration
 
-just test-e2e
+just test e2e
 ```
 If you want colored output, install gotest:
 ```
@@ -128,14 +129,6 @@ go install github.com/rakyll/gotest@latest
 
 Then you can run the tests with a "true" parameter.
 ```
-# prints with color
-just test-e2e true
-```
-
-
-## Cleanup
-
-Remove all Docker containers/images and logs:
-```
-just clean
+# prints with color , verbose output and runs even if cached results are found
+just test e2e true -v -count=1
 ```

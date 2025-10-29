@@ -24,7 +24,7 @@ import (
 
 	"math/rand"
 
-	kv "github.com/3s-rg-codes/HyperFaaS/pkg/keyValueStore"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/network"
@@ -49,27 +49,28 @@ var (
 	// The address used by the worker server to listen for connections
 	// We use 0.0.0.0 so containers can connect to it
 	WORKER_LISTENER_ADDRESS = "0.0.0.0:50051"
-	DB_ADDRESS              = "http://localhost:8999"
 )
 
 var once sync.Once
+
+type fakeMetadata struct{}
+
+func (fakeMetadata) GetFunction(ctx context.Context, id string) (*metadata.FunctionMetadata, error) {
+	return nil, metadata.ErrFunctionNotFound
+}
 
 func startWorkerServer() (chan bool, context.CancelFunc) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	dr := getDockerRuntime()
 	statsManager := stats.NewStatsManager(logger, time.Duration(10)*time.Second, 1.0, 100000)
-	var dbClient kv.FunctionMetadataStore
-
 	ctx, cancel := context.WithCancel(context.Background())
-
-	dbClient = kv.NewHttpDBClient(DB_ADDRESS, logger)
 	go func() {
 		once.Do(func() {
 			c := controller.NewController(dr,
 				statsManager,
 				logger,
 				WORKER_LISTENER_ADDRESS,
-				dbClient,
+				fakeMetadata{},
 				network.NewCallRouter(logger),
 				controller.NewReadySignals(false))
 			c.StartServer(ctx)
@@ -103,6 +104,7 @@ func getDockerRuntime() *DockerRuntime {
 		WORKER_ADDRESS,
 		slog.New(slog.NewTextHandler(os.Stdout, nil)),
 		"worker",
+		"",
 	)
 }
 

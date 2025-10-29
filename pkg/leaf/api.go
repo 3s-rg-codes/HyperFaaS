@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 )
@@ -31,11 +32,17 @@ type Server struct {
 
 	mu sync.RWMutex
 	// functionId -> controller to scale and route calls.
-	functions map[string]*functionController
+	functions      map[string]*functionController
+	metadataClient metadataClient
+}
+
+type metadataClient interface {
+	ListFunctions(ctx context.Context) (*metadata.ListResult, error)
+	WatchFunctions(ctx context.Context, revision int64) (<-chan metadata.Event, <-chan error)
 }
 
 // NewServer initialises a leaf server with the provided configuration and logger.
-func NewServer(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) {
+func NewServer(ctx context.Context, cfg Config, metadataClient metadataClient, logger *slog.Logger) (*Server, error) {
 	cfg.applyDefaults()
 
 	if len(cfg.WorkerAddresses) == 0 {
@@ -44,15 +51,19 @@ func NewServer(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, e
 	if logger == nil {
 		return nil, errors.New("logger must not be nil")
 	}
+	if metadataClient == nil {
+		return nil, errors.New("metadata client must not be nil")
+	}
 
 	serverCtx, cancel := context.WithCancel(ctx)
 	s := &Server{
-		cfg:       cfg,
-		logger:    logger,
-		ctx:       serverCtx,
-		cancel:    cancel,
-		nodeID:    uuid.NewString(),
-		functions: make(map[string]*functionController),
+		cfg:            cfg,
+		logger:         logger,
+		ctx:            serverCtx,
+		cancel:         cancel,
+		nodeID:         uuid.NewString(),
+		functions:      make(map[string]*functionController),
+		metadataClient: metadataClient,
 	}
 
 	workers := make([]*workerClient, 0, len(cfg.WorkerAddresses))
@@ -67,6 +78,12 @@ func NewServer(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, e
 	}
 	s.workers = workers
 
+	if err := s.bootstrapMetadata(); err != nil {
+		cancel()
+		s.closeWorkers(workers)
+		return nil, err
+	}
+
 	for _, w := range s.workers {
 		w.startStatusStream(s.nodeID, cfg.StatusBackoff, s.handleWorkerStatus)
 	}
@@ -78,11 +95,14 @@ func NewServer(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, e
 func (s *Server) Close() error {
 	s.cancel()
 	s.closeWorkers(s.workers)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for id, ctrl := range s.functions {
-		ctrl.stop()
-		delete(s.functions, id)
+	ids := make([]string, 0)
+	s.mu.RLock()
+	for id := range s.functions {
+		ids = append(ids, id)
+	}
+	s.mu.RUnlock()
+	for _, id := range ids {
+		s.removeFunction(id)
 	}
 	return nil
 }
@@ -97,32 +117,115 @@ func (s *Server) closeWorkers(workers []*workerClient) {
 	}
 }
 
-// RegisterFunction initialises scaling state for a function.
-func (s *Server) RegisterFunction(ctx context.Context, req *leafpb.RegisterFunctionRequest) (*common.CreateFunctionResponse, error) {
-	if req == nil || req.Config == nil || req.FunctionId == "" {
-		return nil, status.Error(codes.InvalidArgument, "function config and ID are required")
+func (s *Server) bootstrapMetadata() error {
+	list, err := s.metadataClient.ListFunctions(s.ctx)
+	if err != nil {
+		return fmt.Errorf("list function metadata: %w", err)
+	}
+	count := 0
+	if list != nil {
+		for _, fn := range list.Functions {
+			s.upsertFunction(fn)
+			count++
+		}
+		go s.watchMetadata(list.Revision)
+	} else {
+		go s.watchMetadata(0)
+	}
+	if count > 0 {
+		s.logger.Info("initialised function controllers from metadata", "count", count)
+	}
+	return nil
+}
+
+func (s *Server) watchMetadata(startRevision int64) {
+	events, errs := s.metadataClient.WatchFunctions(s.ctx, startRevision)
+	eventCh := events
+	errCh := errs
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case err, ok := <-errCh:
+			if !ok {
+				errCh = nil
+				continue
+			}
+			if err != nil {
+				s.logger.Error("metadata watch error", "error", err)
+			}
+		case ev, ok := <-eventCh:
+			if !ok {
+				return
+			}
+			s.handleMetadataEvent(ev)
+		}
+	}
+}
+
+func (s *Server) handleMetadataEvent(ev metadata.Event) {
+	switch ev.Type {
+	case metadata.EventTypePut:
+		s.upsertFunction(ev.Function)
+	case metadata.EventTypeDelete:
+		if ev.FunctionID == "" {
+			s.logger.Warn("metadata delete without function id")
+			return
+		}
+		s.removeFunction(ev.FunctionID)
+	default:
+		s.logger.Warn("unknown metadata event", "type", ev.Type)
+	}
+}
+
+func (s *Server) upsertFunction(meta *metadata.FunctionMetadata) {
+	if meta == nil {
+		return
+	}
+	if meta.ID == "" {
+		s.logger.Warn("metadata missing function id")
+		return
+	}
+	if meta.Config == nil {
+		s.logger.Warn("metadata missing config", "functionID", meta.ID)
+		return
 	}
 
-	cfg := req.Config.GetConfig()
-	if cfg == nil {
-		return nil, status.Error(codes.InvalidArgument, "function config is required")
+	s.mu.Lock()
+	ctrl, exists := s.functions[meta.ID]
+	if exists {
+		s.mu.Unlock()
+		ctrl.updateConfig(meta.Config)
+		return
 	}
+	ctrl = newFunctionController(s.ctx, meta.ID, meta.Config, s.workers, s.cfg, s.logger)
+	s.functions[meta.ID] = ctrl
+	s.mu.Unlock()
 
-	functionID := req.FunctionId
+	s.logger.Info("registered function controller", "functionID", meta.ID)
+}
 
+func (s *Server) removeFunction(functionID string) {
 	s.mu.Lock()
 	ctrl, exists := s.functions[functionID]
 	if exists {
-		ctrl.updateConfig(cfg)
-		s.mu.Unlock()
-		return &common.CreateFunctionResponse{FunctionId: functionID}, nil
+		delete(s.functions, functionID)
 	}
-
-	ctrl = newFunctionController(s.ctx, functionID, cfg, s.workers, s.cfg, s.logger.With("function", functionID))
-	s.functions[functionID] = ctrl
 	s.mu.Unlock()
 
-	return &common.CreateFunctionResponse{FunctionId: functionID}, nil
+	if !exists {
+		return
+	}
+
+	ctrl.stop()
+	func() {
+		defer func() {
+			_ = recover()
+		}()
+		close(ctrl.scaleChan)
+	}()
+	s.logger.Info("removed function controller", "functionID", functionID)
 }
 
 // ScheduleCall forwards a call request to one of the managed workers
@@ -145,6 +248,41 @@ func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*co
 		return nil, status.Errorf(codes.Unavailable, "call failed: %v", err)
 	}
 	return resp, nil
+}
+
+// State streams changes in state of a function_id.
+// A change in the number of running instances.
+// IMPORTANT: this is meant for only ONE client to be listening to.
+// IMPORTANT: this does not handle additional functions being registered after the stream is established.
+// To get the latest state of all functions, the client must call this again.
+func (s *Server) State(req *common.StateRequest, stream leafpb.Leaf_StateServer) error {
+	ctx := stream.Context()
+
+	s.mu.RLock()
+	wg := sync.WaitGroup{}
+
+	for _, ctrl := range s.functions {
+		wg.Go(func() {
+			for have := range ctrl.scaleChan {
+				// exit if context is done
+				if ctx.Err() != nil {
+					return
+				}
+				err := stream.Send(&common.StateResponse{
+					FunctionId: ctrl.functionID,
+					Have:       have,
+				})
+				if err != nil {
+					s.logger.Error("failed to send state response", "error", err)
+				}
+			}
+		})
+	}
+	s.mu.RUnlock()
+
+	wg.Wait()
+
+	return nil
 }
 
 func (s *Server) getFunction(functionID string) *functionController {

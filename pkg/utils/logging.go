@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"os"
+	"strconv"
 
 	"github.com/golang-cz/devslog"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
@@ -68,4 +70,8 @@ func SetupLogger(level, format, filePath string) *slog.Logger {
 	}
 
 	return slog.New(handler)
+}
+
+func GetRandomNodeID() string {
+	return strconv.Itoa(rand.Intn(100000000))
 }
