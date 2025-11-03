@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"regexp"
 	"strconv"
@@ -315,7 +316,15 @@ func (d *DockerRuntime) resolveContainerAddrs(ctx context.Context, containerID s
 		return "", "", fmt.Errorf("container not exposed on port 50052")
 	}
 
-	externalIP := ports[0].HostIP + ":" + ports[0].HostPort
+	// external IP
+	hostPort := ports[0].HostPort
+	var externalIP string
+	detectedIP := GetLocalIP()
+	if detectedIP != "" {
+		externalIP = detectedIP + ":" + hostPort
+	} else {
+		externalIP = ""
+	}
 
 	if d.containerized {
 		return fmt.Sprintf("%s:%d", containerName, 50052), externalIP, nil
@@ -374,4 +383,21 @@ func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId string,
 			return cr.ContainerEventExit, nil
 		}
 	}
+}
+
+// GetLocalIP returns the non loopback local IP of the host
+func GetLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback the display it
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
 }

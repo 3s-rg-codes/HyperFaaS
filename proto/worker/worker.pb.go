@@ -399,12 +399,13 @@ func (x *MetricsUpdate) GetCpuPercentPercpus() []float64 {
 }
 
 type StartResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	InstanceIp    string                 `protobuf:"bytes,2,opt,name=instance_ip,json=instanceIp,proto3" json:"instance_ip,omitempty"`
-	InstanceName  string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId         string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	InstanceInternalIp string                 `protobuf:"bytes,2,opt,name=instance_internal_ip,json=instanceInternalIp,proto3" json:"instance_internal_ip,omitempty"`
+	InstanceExternalIp string                 `protobuf:"bytes,3,opt,name=instance_external_ip,json=instanceExternalIp,proto3" json:"instance_external_ip,omitempty"`
+	InstanceName       string                 `protobuf:"bytes,4,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *StartResponse) Reset() {
@@ -444,9 +445,16 @@ func (x *StartResponse) GetInstanceId() string {
 	return ""
 }
 
-func (x *StartResponse) GetInstanceIp() string {
+func (x *StartResponse) GetInstanceInternalIp() string {
 	if x != nil {
-		return x.InstanceIp
+		return x.InstanceInternalIp
+	}
+	return ""
+}
+
+func (x *StartResponse) GetInstanceExternalIp() string {
+	if x != nil {
+		return x.InstanceExternalIp
 	}
 	return ""
 }
@@ -654,13 +662,13 @@ const file_worker_worker_proto_rawDesc = "" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"i\n" +
 	"\rMetricsUpdate\x12(\n" +
 	"\x10used_ram_percent\x18\x01 \x01(\x01R\x0eusedRamPercent\x12.\n" +
-	"\x13cpu_percent_percpus\x18\x02 \x03(\x01R\x11cpuPercentPercpus\"v\n" +
+	"\x13cpu_percent_percpus\x18\x02 \x03(\x01R\x11cpuPercentPercpus\"\xb9\x01\n" +
 	"\rStartResponse\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
-	"instanceId\x12\x1f\n" +
-	"\vinstance_ip\x18\x02 \x01(\tR\n" +
-	"instanceIp\x12#\n" +
-	"\rinstance_name\x18\x03 \x01(\tR\finstanceName\"/\n" +
+	"instanceId\x120\n" +
+	"\x14instance_internal_ip\x18\x02 \x01(\tR\x12instanceInternalIp\x120\n" +
+	"\x14instance_external_ip\x18\x03 \x01(\tR\x12instanceExternalIp\x12#\n" +
+	"\rinstance_name\x18\x04 \x01(\tR\finstanceName\"/\n" +
 	"\fStartRequest\x12\x1f\n" +
 	"\vfunction_id\x18\x01 \x01(\tR\n" +
 	"functionId\".\n" +

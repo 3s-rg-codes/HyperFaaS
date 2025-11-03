@@ -226,8 +226,8 @@ services:
         "-log-file=/app/logs/routingcontroller.log",
         "-log-format=text",
         "-socket-path=/var/run/hyperfaas/spoe.sock",
-        "-child-addr=leaf-1:50050",
-        "-child-addr=leaf-2:50050",
+        "-child-addr=leaf-A:50050",
+        "-child-addr=leaf-B:50051",
         "-child-types=leaf"
       ]
     volumes:

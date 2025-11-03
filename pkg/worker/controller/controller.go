@@ -98,9 +98,10 @@ func (s *Controller) Start(ctx context.Context, req *workerPB.StartRequest) (*wo
 	s.readySignals.WaitReady(shortID)
 
 	return &workerPB.StartResponse{
-		InstanceId:   shortID,
-		InstanceIp:   container.InternalIP,
-		InstanceName: container.Name,
+		InstanceId:         shortID,
+		InstanceInternalIp: container.InternalIP,
+		InstanceExternalIp: container.ExternalIP,
+		InstanceName:       container.Name,
 	}, nil
 }
 
