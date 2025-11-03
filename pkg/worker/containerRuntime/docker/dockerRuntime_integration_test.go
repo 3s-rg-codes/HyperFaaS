@@ -27,7 +27,6 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/network"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
@@ -71,7 +70,6 @@ func startWorkerServer() (chan bool, context.CancelFunc) {
 				logger,
 				WORKER_LISTENER_ADDRESS,
 				fakeMetadata{},
-				network.NewCallRouter(logger),
 				controller.NewReadySignals(false))
 			c.StartServer(ctx)
 		})

@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 )
 
@@ -65,12 +64,6 @@ func (w *workerClient) close() error {
 		return w.conn.Close()
 	}
 	return nil
-}
-
-func (w *workerClient) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-	callCtx, cancel := context.WithTimeout(ctx, w.callTimeout)
-	defer cancel()
-	return w.client.Call(callCtx, req)
 }
 
 func (w *workerClient) Start(ctx context.Context, req *workerpb.StartRequest) (*workerpb.StartResponse, error) {

@@ -160,9 +160,6 @@ func (f *functionController) routeCall(ctx context.Context, req *common.CallRequ
 	}
 	defer release()
 
-	//worker := f.workers[workerIdx]
-
-	// here instead of worker.Call we should use the call router to directly call the instance.
 	resp, err := f.router.Client.Call(ctx, req)
 	if err != nil {
 		f.logger.Error("router call failed", "error", err)
@@ -170,16 +167,6 @@ func (f *functionController) routeCall(ctx context.Context, req *common.CallRequ
 		return nil, err
 	}
 	return resp, nil
-
-	/* resp, callErr := worker.Call(ctx, req)
-	if callErr != nil {
-		f.logger.Error("worker call failed", "worker", worker.Address(), "error", callErr)
-		// maybe scale up depending on the error?
-		f.handleCallError(workerIdx, callErr)
-		return nil, callErr
-	} */
-
-	//f.markInstanceUsed(workerIdx)
 }
 
 func (f *functionController) acquireSlot(ctx context.Context) (int, func(), error) {

@@ -89,30 +89,6 @@ func main() {
 						},
 					},
 					{
-						Name:      "call",
-						Usage:     "call a function",
-						ArgsUsage: "function ID",
-						Flags: []cli.Flag{
-							dataFlag,
-						},
-						Action: func(ctx context.Context, cmd *cli.Command) error {
-							funcID := cmd.Args().Get(0)
-							data := []byte(cmd.String("data"))
-							timeout := cmd.Duration("timeout")
-
-							client, _, err := createWorkerClient(cmd.String("address"))
-							if err != nil {
-								return err
-							}
-							response, err := CallFunction(client, funcID, data, timeout)
-							if err != nil {
-								return err
-							}
-							fmt.Printf("%v\n", string(response))
-							return nil
-						},
-					},
-					{
 						Name:      "stop",
 						Usage:     "stop a function",
 						ArgsUsage: "function ID",
@@ -459,28 +435,6 @@ func StartFunction(client workerpb.WorkerClient,
 	}
 	fmt.Printf("Started instance of function with instance id: %v\n", instanceID.InstanceId)
 	return instanceID.InstanceId, nil
-}
-
-// Call Function sends a call to the worker directly. It returns the response data.
-func CallFunction(client workerpb.WorkerClient,
-	funcID string,
-	data []byte,
-	timeout time.Duration,
-) ([]byte, error) {
-	callReq := &commonpb.CallRequest{
-		FunctionId: funcID,
-		Data:       data,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	callResp, err := client.Call(ctx, callReq)
-	if err != nil {
-		fmt.Printf("Error calling function: %v", err)
-		return nil, err
-	}
-	return callResp.Data, nil
 }
 
 // StopInstance stops an instance of a function by talking to the worker API. Returns the instance ID.

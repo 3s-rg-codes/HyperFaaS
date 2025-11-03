@@ -385,7 +385,8 @@ func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId string,
 	}
 }
 
-// GetLocalIP returns the non loopback local IP of the host
+// GetLocalIP returns the non loopback local IP of the host.
+// IMPORTANT: this will not work in containerized mode.
 func GetLocalIP() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {

@@ -79,9 +79,6 @@ service Worker {
   // created and ready to serve requests.
   rpc Start (StartRequest) returns (StartResponse);
 
-  // Call an instance of a function with the given function ID.
-  // The instance must be running.
-  rpc Call (common.CallRequest) returns (common.CallResponse);
   rpc Stop (StopRequest) returns (StopResponse);
   // Returns a stream of status events, like container crashes and timeouts.
   rpc Status (StatusRequest) returns (stream StatusUpdate);

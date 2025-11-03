@@ -7,7 +7,7 @@
 package worker
 
 import (
-	common "github.com/3s-rg-codes/HyperFaaS/proto/common"
+	_ "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
@@ -696,10 +696,9 @@ const file_worker_worker_proto_rawDesc = "" +
 	"\rEVENT_RUNNING\x10\x06*;\n" +
 	"\x06Status\x12\x1e\n" +
 	"\x1aSTATUS_SUCCESS_UNSPECIFIED\x10\x00\x12\x11\n" +
-	"\rSTATUS_FAILED\x10\x012\xda\x02\n" +
+	"\rSTATUS_FAILED\x10\x012\xa7\x02\n" +
 	"\x06Worker\x124\n" +
 	"\x05Start\x12\x14.worker.StartRequest\x1a\x15.worker.StartResponse\x121\n" +
-	"\x04Call\x12\x13.common.CallRequest\x1a\x14.common.CallResponse\x121\n" +
 	"\x04Stop\x12\x13.worker.StopRequest\x1a\x14.worker.StopResponse\x127\n" +
 	"\x06Status\x12\x15.worker.StatusRequest\x1a\x14.worker.StatusUpdate0\x01\x128\n" +
 	"\aMetrics\x12\x16.worker.MetricsRequest\x1a\x15.worker.MetricsUpdate\x12A\n" +
@@ -733,9 +732,7 @@ var file_worker_worker_proto_goTypes = []any{
 	(*StopResponse)(nil),          // 10: worker.StopResponse
 	(*SignalReadyRequest)(nil),    // 11: worker.SignalReadyRequest
 	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
-	(*common.CallRequest)(nil),    // 13: common.CallRequest
-	(*common.CallResponse)(nil),   // 14: common.CallResponse
-	(*emptypb.Empty)(nil),         // 15: google.protobuf.Empty
+	(*emptypb.Empty)(nil),         // 13: google.protobuf.Empty
 }
 var file_worker_worker_proto_depIdxs = []int32{
 	0,  // 0: worker.StatusUpdate.type:type_name -> worker.VirtualizationType
@@ -743,19 +740,17 @@ var file_worker_worker_proto_depIdxs = []int32{
 	2,  // 2: worker.StatusUpdate.status:type_name -> worker.Status
 	12, // 3: worker.StatusUpdate.timestamp:type_name -> google.protobuf.Timestamp
 	8,  // 4: worker.Worker.Start:input_type -> worker.StartRequest
-	13, // 5: worker.Worker.Call:input_type -> common.CallRequest
-	9,  // 6: worker.Worker.Stop:input_type -> worker.StopRequest
-	4,  // 7: worker.Worker.Status:input_type -> worker.StatusRequest
-	5,  // 8: worker.Worker.Metrics:input_type -> worker.MetricsRequest
-	11, // 9: worker.Worker.SignalReady:input_type -> worker.SignalReadyRequest
-	7,  // 10: worker.Worker.Start:output_type -> worker.StartResponse
-	14, // 11: worker.Worker.Call:output_type -> common.CallResponse
-	10, // 12: worker.Worker.Stop:output_type -> worker.StopResponse
-	3,  // 13: worker.Worker.Status:output_type -> worker.StatusUpdate
-	6,  // 14: worker.Worker.Metrics:output_type -> worker.MetricsUpdate
-	15, // 15: worker.Worker.SignalReady:output_type -> google.protobuf.Empty
-	10, // [10:16] is the sub-list for method output_type
-	4,  // [4:10] is the sub-list for method input_type
+	9,  // 5: worker.Worker.Stop:input_type -> worker.StopRequest
+	4,  // 6: worker.Worker.Status:input_type -> worker.StatusRequest
+	5,  // 7: worker.Worker.Metrics:input_type -> worker.MetricsRequest
+	11, // 8: worker.Worker.SignalReady:input_type -> worker.SignalReadyRequest
+	7,  // 9: worker.Worker.Start:output_type -> worker.StartResponse
+	10, // 10: worker.Worker.Stop:output_type -> worker.StopResponse
+	3,  // 11: worker.Worker.Status:output_type -> worker.StatusUpdate
+	6,  // 12: worker.Worker.Metrics:output_type -> worker.MetricsUpdate
+	13, // 13: worker.Worker.SignalReady:output_type -> google.protobuf.Empty
+	9,  // [9:14] is the sub-list for method output_type
+	4,  // [4:9] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
 	4,  // [4:4] is the sub-list for extension extendee
 	0,  // [0:4] is the sub-list for field type_name
