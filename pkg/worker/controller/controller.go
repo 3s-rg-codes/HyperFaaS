@@ -90,16 +90,16 @@ func (s *Controller) Start(ctx context.Context, req *workerPB.StartRequest) (*wo
 	go s.monitorContainerLifecycle(req.FunctionId, container)
 
 	// We use the functionID as the key for the call router
-	s.callRouter.AddInstance(req.FunctionId, container.IP)
+	s.callRouter.AddInstance(req.FunctionId, container.InternalIP)
 
-	s.logger.Debug("Created container", "functionID", req.FunctionId, "instanceID", shortID, "instanceIP", container.IP)
+	s.logger.Debug("Created container", "functionID", req.FunctionId, "instanceID", shortID, "instanceIP", container.InternalIP)
 
 	// Block until the container is ready to serve requests
 	s.readySignals.WaitReady(shortID)
 
 	return &workerPB.StartResponse{
 		InstanceId:   shortID,
-		InstanceIp:   container.IP,
+		InstanceIp:   container.InternalIP,
 		InstanceName: container.Name,
 	}, nil
 }
@@ -269,15 +269,15 @@ func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container
 	case cr.ContainerEventCrash:
 		s.logger.Debug("Container crashed", "instanceID", c.Id, "error", err)
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Down().Failed())
-		s.callRouter.HandleInstanceTimeout(functionID, c.IP)
+		s.callRouter.HandleInstanceTimeout(functionID, c.InternalIP)
 	case cr.ContainerEventTimeout, cr.ContainerEventExit:
 		s.logger.Debug("Container timed out gracefully", "instanceID", c.Id)
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Timeout().Success())
-		s.callRouter.HandleInstanceTimeout(functionID, c.IP)
+		s.callRouter.HandleInstanceTimeout(functionID, c.InternalIP)
 	case cr.ContainerEventOOM:
 		s.logger.Debug("Container ran out of memory", "instanceID", c.Id)
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Down().Failed())
-		s.callRouter.HandleInstanceTimeout(functionID, c.IP)
+		s.callRouter.HandleInstanceTimeout(functionID, c.InternalIP)
 	default:
 		s.logger.Debug("Unexpected container event", "instanceID", c.Id, "event", event)
 	}

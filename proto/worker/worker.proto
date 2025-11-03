@@ -51,8 +51,9 @@ message MetricsUpdate{
 
 message StartResponse {
   string instance_id = 1;
-  string instance_ip = 2;
-  string instance_name = 3;
+  string instance_internal_ip = 2;
+  string instance_external_ip = 3;
+  string instance_name = 4;
 }
 
 message StartRequest {

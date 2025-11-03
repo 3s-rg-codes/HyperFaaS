@@ -164,23 +164,17 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 			t.Errorf("Container ID is empty")
 		}
 
-		if container.IP == "" {
+		if container.InternalIP == "" {
 			t.Errorf("Container IP is empty")
 		}
-		// Check if container.IP looks like a valid IP:port address, and the IP part is a valid IP
-		ip := container.IP
-		host, port, err := net.SplitHostPort(ip)
-		if err != nil {
-			t.Errorf("Container IP is not a valid IP:port address: %v", ip)
-		} else {
-			ipParsed := net.ParseIP(host)
-			if ipParsed == nil || host == "" {
-				t.Errorf("Container IP does not contain a valid IP address: %v", ip)
-			}
-			if port == "" {
-				t.Errorf("Container IP does not contain a port: %v", ip)
-			}
+
+		if container.ExternalIP == "" {
+			t.Errorf("Container external IP is empty")
 		}
+
+		// Check if container.IP looks like a valid IP:port address, and the IP part is a valid IP
+		checkIP(t, container.InternalIP)
+		checkIP(t, container.ExternalIP)
 
 		exists := runtime.ContainerExists(context.Background(), container.Id)
 
@@ -196,7 +190,7 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 		})
 
 		t.Run("the created container should be callable", func(t *testing.T) {
-			err := pingContainer(context.Background(), container.IP)
+			err := pingContainer(context.Background(), container.InternalIP)
 			if err != nil {
 				t.Errorf("Error pinging container: %v", err)
 			}
@@ -232,14 +226,14 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error starting container: %v", err)
 		}
-		if container1.IP == container2.IP {
-			t.Errorf("Container 1 and container 2 should have different IPs, first: %s, second: %s", container1.IP, container2.IP)
+		if container1.InternalIP == container2.InternalIP {
+			t.Errorf("Container 1 and container 2 should have different IPs, first: %s, second: %s", container1.InternalIP, container2.InternalIP)
 		}
-		err = pingContainer(context.Background(), container1.IP)
+		err = pingContainer(context.Background(), container1.InternalIP)
 		if err != nil {
 			t.Errorf("Error pinging container 1: %v", err)
 		}
-		err = pingContainer(context.Background(), container2.IP)
+		err = pingContainer(context.Background(), container2.InternalIP)
 		if err != nil {
 			t.Errorf("Error pinging container 2: %v", err)
 		}
@@ -345,7 +339,7 @@ func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 		// send a request to the container (makes it crash)
 		go func() {
 			time.Sleep(1 * time.Second)
-			pingContainer(context.Background(), c.IP)
+			pingContainer(context.Background(), c.InternalIP)
 		}()
 
 		event, err := runtime.MonitorContainer(context.Background(), c.Id, fId)
@@ -367,7 +361,7 @@ func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 		// send a request to the container (makes it crash)
 		go func() {
 			time.Sleep(1 * time.Second)
-			pingContainer(context.Background(), c.IP)
+			pingContainer(context.Background(), c.InternalIP)
 		}()
 
 		event, err := runtime.MonitorContainer(context.Background(), c.Id, fId)
@@ -379,4 +373,19 @@ func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 			t.Errorf("Expected crash event, got %v", event)
 		}
 	})
+}
+
+// checks if the ip is a valid IP:port address
+func checkIP(t *testing.T, ip string) {
+	host, port, err := net.SplitHostPort(ip)
+	if err != nil {
+		t.Errorf("IP is not a valid IP:port address: %v", ip)
+	}
+	ipParsed := net.ParseIP(host)
+	if ipParsed == nil || host == "" {
+		t.Errorf("IP does not contain a valid IP address: %v", ip)
+	}
+	if port == "" {
+		t.Errorf("IP does not contain a port: %v", ip)
+	}
 }
