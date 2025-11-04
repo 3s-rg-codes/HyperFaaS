@@ -105,7 +105,7 @@ func (m *MockRuntime) Start(ctx context.Context, functionID string, imageTag str
 
 	go i.monitorTimeout()
 
-	return cr.Container{Id: instanceID, Name: imageTag, IP: "MOCK_RUNTIME_NO_IP"}, nil
+	return cr.Container{Id: instanceID, Name: imageTag, InternalIP: "MOCK_RUNTIME_NO_IP"}, nil
 }
 
 // Stop implements containerRuntime.ContainerRuntime.

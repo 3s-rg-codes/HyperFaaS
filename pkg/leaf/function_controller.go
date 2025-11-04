@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/network"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 )
@@ -25,7 +26,14 @@ type functionController struct {
 	startTimeout              time.Duration
 	stopTimeout               time.Duration
 
-	workers   []*workerClient
+	// whether the leaf is running in a containerized environment.
+	containerized bool
+
+	// used to start and stop instances.
+	workers []*workerClient
+	// used to route calls to the instances.
+	router *network.Router
+
 	logger    *slog.Logger
 	scheduler WorkerScheduler
 	// the context of this function controller. used to cancel/destroy all operations.
@@ -98,12 +106,14 @@ func newFunctionController(ctx context.Context,
 
 	controller := &functionController{
 		functionID:                functionID,
+		containerized:             globalCfg.Containerized,
 		maxConcurrencyPerInstance: maxConcurrency,
 		maxInstancesPerWorker:     globalCfg.MaxInstancesPerWorker,
 		scaleToZeroAfter:          globalCfg.ScaleToZeroAfter,
 		startTimeout:              globalCfg.StartTimeout,
 		stopTimeout:               globalCfg.StopTimeout,
 		workers:                   workers,
+		router:                    network.NewRouter([]string{}),
 		logger:                    logger.With("function_id", functionID),
 		scheduler:                 scheduler,
 		ctx:                       subCtx,
@@ -150,17 +160,12 @@ func (f *functionController) routeCall(ctx context.Context, req *common.CallRequ
 	}
 	defer release()
 
-	worker := f.workers[workerIdx]
-	resp, callErr := worker.Call(ctx, req)
-	if callErr != nil {
-		f.logger.Error("worker call failed", "worker", worker.Address(), "error", callErr)
-		// maybe scale up depending on the error?
-		f.handleCallError(workerIdx, callErr)
-		return nil, callErr
+	resp, err := f.router.Client.Call(ctx, req)
+	if err != nil {
+		f.logger.Error("router call failed", "error", err)
+		f.handleCallError(workerIdx, err)
+		return nil, err
 	}
-
-	f.markInstanceUsed(workerIdx)
-
 	return resp, nil
 }
 
@@ -266,9 +271,23 @@ func (f *functionController) scaleUp(ctx context.Context, workerIdx int) error {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// then update local state
+
+	// Select the appropriate IP based on whether we're containerized
+	instanceIP := resp.InstanceInternalIp
+	if !f.containerized {
+		instanceIP = resp.InstanceExternalIp
+	}
+	// add the address of the new instance to the router.
+	f.logger.Debug("Adding instance to router", "instance_id", resp.InstanceId, "ip", instanceIP, "containerized", f.containerized)
+	f.router.AddAddr(instanceIP)
+
+	// track instance in local state
 	ws := &f.workerStates[workerIdx]
-	ws.instances = append(ws.instances, instance{id: resp.InstanceId, ip: resp.InstanceIp, lastUsage: time.Now()})
+	ws.instances = append(ws.instances, instance{
+		id:        resp.InstanceId,
+		ip:        instanceIP,
+		lastUsage: time.Now(),
+	})
 	f.totalInstances++
 
 	// check if this is the first instance we have started for this function.
@@ -436,14 +455,19 @@ func (f *functionController) removeInstance(workerIdx int, instanceID string) {
 	if workerIdx < 0 || workerIdx >= len(f.workerStates) {
 		return
 	}
+
 	ws := &f.workerStates[workerIdx]
 	for i := range ws.instances {
 		if ws.instances[i].id == instanceID {
+			// save the IP before swapping
+			instanceIP := ws.instances[i].ip
 			last := len(ws.instances) - 1
 			ws.instances[i] = ws.instances[last]
 			ws.instances = ws.instances[:last]
-			f.totalInstances--
+			// remove the address of the instance from the router.
+			f.router.RemoveAddr(instanceIP)
 
+			f.totalInstances--
 			// if this was the last instance, we need to notify the routing controller that the function is no longer available.
 			if f.totalInstances == 0 {
 				f.emitScaleChange(false)

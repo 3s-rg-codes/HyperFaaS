@@ -13,7 +13,6 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	cpu "github.com/shirou/gopsutil/v4/cpu"
 	mem "github.com/shirou/gopsutil/v4/mem"
@@ -30,19 +29,11 @@ type Controller struct {
 	workerPB.UnimplementedWorkerServer
 	runtime        cr.ContainerRuntime
 	StatsManager   *stats.StatsManager
-	callRouter     CallRouter
 	logger         *slog.Logger
 	address        string
 	metadataClient metadataProvider
 	readySignals   *ReadySignals
 }
-
-type CallRouter interface {
-	AddInstance(functionID string, ip string)
-	CallFunction(ctx context.Context, functionID string, req *common.CallRequest) (*common.CallResponse, error)
-	HandleInstanceTimeout(functionID string, ip string)
-}
-
 type metadataProvider interface {
 	GetFunction(ctx context.Context, id string) (*metadata.FunctionMetadata, error)
 }
@@ -89,29 +80,22 @@ func (s *Controller) Start(ctx context.Context, req *workerPB.StartRequest) (*wo
 
 	go s.monitorContainerLifecycle(req.FunctionId, container)
 
-	// We use the functionID as the key for the call router
-	s.callRouter.AddInstance(req.FunctionId, container.IP)
-
-	s.logger.Debug("Created container", "functionID", req.FunctionId, "instanceID", shortID, "instanceIP", container.IP)
+	s.logger.Debug("Created container", "functionID", req.FunctionId, "instanceID", shortID, "instanceIP", container.InternalIP)
 
 	// Block until the container is ready to serve requests
 	s.readySignals.WaitReady(shortID)
 
 	return &workerPB.StartResponse{
-		InstanceId:   shortID,
-		InstanceIp:   container.IP,
-		InstanceName: container.Name,
+		InstanceId:         shortID,
+		InstanceInternalIp: container.InternalIP,
+		InstanceExternalIp: container.ExternalIP,
+		InstanceName:       container.Name,
 	}, nil
 }
 
 func (s *Controller) SignalReady(ctx context.Context, req *workerPB.SignalReadyRequest) (*emptypb.Empty, error) {
 	s.readySignals.SignalReady(req.InstanceId)
 	return &emptypb.Empty{}, nil
-}
-
-func (s *Controller) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-	s.logger.Debug("Calling function", "functionID", req.FunctionId)
-	return s.callRouter.CallFunction(ctx, req.FunctionId, req)
 }
 
 func (s *Controller) Stop(ctx context.Context, req *workerPB.StopRequest) (*workerPB.StopResponse, error) {
@@ -192,7 +176,6 @@ func NewController(runtime cr.ContainerRuntime,
 	logger *slog.Logger,
 	address string,
 	metadataClient metadataProvider,
-	callRouter CallRouter,
 	readySignals *ReadySignals,
 ) *Controller {
 	return &Controller{
@@ -200,7 +183,6 @@ func NewController(runtime cr.ContainerRuntime,
 		StatsManager:   statsManager,
 		logger:         logger,
 		address:        address,
-		callRouter:     callRouter,
 		metadataClient: metadataClient,
 		readySignals:   readySignals,
 	}
@@ -269,15 +251,12 @@ func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container
 	case cr.ContainerEventCrash:
 		s.logger.Debug("Container crashed", "instanceID", c.Id, "error", err)
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Down().Failed())
-		s.callRouter.HandleInstanceTimeout(functionID, c.IP)
 	case cr.ContainerEventTimeout, cr.ContainerEventExit:
 		s.logger.Debug("Container timed out gracefully", "instanceID", c.Id)
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Timeout().Success())
-		s.callRouter.HandleInstanceTimeout(functionID, c.IP)
 	case cr.ContainerEventOOM:
 		s.logger.Debug("Container ran out of memory", "instanceID", c.Id)
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Down().Failed())
-		s.callRouter.HandleInstanceTimeout(functionID, c.IP)
 	default:
 		s.logger.Debug("Unexpected container event", "instanceID", c.Id, "event", event)
 	}

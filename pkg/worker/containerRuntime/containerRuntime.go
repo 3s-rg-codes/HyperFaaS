@@ -8,14 +8,15 @@ import (
 )
 
 type Container struct {
-	Id   string
-	IP   string
-	Name string
+	Id         string
+	InternalIP string
+	ExternalIP string
+	Name       string
 }
 
 // ContainerRuntime is an interface for starting and stopping containers.
 type ContainerRuntime interface {
-	// Start a container with the given image tag and configuration. returns the container id, the container ip and the container name
+	// Start a container with the given image tag and configuration. returns the container id it's ips and the container name
 	Start(ctx context.Context, functionID string, imageTag string, config *common.Config) (Container, error)
 
 	// Stop a container with the given instance ID.

@@ -5,6 +5,10 @@ import "time"
 type Config struct {
 	// WorkerAddresses are the worker endpoints that the leaf manages.
 	WorkerAddresses []string
+
+	// Containerized is a flag to indicate if the leaf is running in a containerized environment.
+	// Primarily affects wether to use the internal or external IP of function instances to call them
+	Containerized bool
 	// ScaleToZeroAfter determines how long a function must stay idle before all instances are torn down.
 	// By staying idle means no new calls are being made to the function.
 	ScaleToZeroAfter time.Duration

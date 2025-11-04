@@ -8,7 +8,6 @@ package worker
 
 import (
 	context "context"
-	common "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -22,7 +21,6 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	Worker_Start_FullMethodName       = "/worker.Worker/Start"
-	Worker_Call_FullMethodName        = "/worker.Worker/Call"
 	Worker_Stop_FullMethodName        = "/worker.Worker/Stop"
 	Worker_Status_FullMethodName      = "/worker.Worker/Status"
 	Worker_Metrics_FullMethodName     = "/worker.Worker/Metrics"
@@ -38,9 +36,6 @@ type WorkerClient interface {
 	// A response with status code OK means that the instance is
 	// created and ready to serve requests.
 	Start(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StartResponse, error)
-	// Call an instance of a function with the given function ID.
-	// The instance must be running.
-	Call(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error)
 	Stop(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopResponse, error)
 	// Returns a stream of status events, like container crashes and timeouts.
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusUpdate], error)
@@ -63,16 +58,6 @@ func (c *workerClient) Start(ctx context.Context, in *StartRequest, opts ...grpc
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartResponse)
 	err := c.cc.Invoke(ctx, Worker_Start_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *workerClient) Call(ctx context.Context, in *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(common.CallResponse)
-	err := c.cc.Invoke(ctx, Worker_Call_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -137,9 +122,6 @@ type WorkerServer interface {
 	// A response with status code OK means that the instance is
 	// created and ready to serve requests.
 	Start(context.Context, *StartRequest) (*StartResponse, error)
-	// Call an instance of a function with the given function ID.
-	// The instance must be running.
-	Call(context.Context, *common.CallRequest) (*common.CallResponse, error)
 	Stop(context.Context, *StopRequest) (*StopResponse, error)
 	// Returns a stream of status events, like container crashes and timeouts.
 	Status(*StatusRequest, grpc.ServerStreamingServer[StatusUpdate]) error
@@ -160,9 +142,6 @@ type UnimplementedWorkerServer struct{}
 
 func (UnimplementedWorkerServer) Start(context.Context, *StartRequest) (*StartResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Start not implemented")
-}
-func (UnimplementedWorkerServer) Call(context.Context, *common.CallRequest) (*common.CallResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Call not implemented")
 }
 func (UnimplementedWorkerServer) Stop(context.Context, *StopRequest) (*StopResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Stop not implemented")
@@ -211,24 +190,6 @@ func _Worker_Start_Handler(srv interface{}, ctx context.Context, dec func(interf
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WorkerServer).Start(ctx, req.(*StartRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Worker_Call_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(common.CallRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WorkerServer).Call(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Worker_Call_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WorkerServer).Call(ctx, req.(*common.CallRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -308,10 +269,6 @@ var Worker_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Start",
 			Handler:    _Worker_Start_Handler,
-		},
-		{
-			MethodName: "Call",
-			Handler:    _Worker_Call_Handler,
 		},
 		{
 			MethodName: "Stop",

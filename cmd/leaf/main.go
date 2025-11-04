@@ -15,6 +15,8 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
@@ -28,6 +30,7 @@ func main() {
 	logFormat := flag.String("log-format", "text", "Log format (text, json, dev)")
 	logFile := flag.String("log-file", "", "Optional log file path")
 	nodeID := flag.String("node-id", rNodeID, "Node ID to be used for logging and metrics for this node.")
+	containerized := flag.Bool("containerized", true, "Whether the leaf is running in a containerized environment")
 
 	scaleToZeroAfter := flag.Duration("scale-to-zero-after", 90*time.Second, "Duration of inactivity before scaling to zero")
 	maxInstancesPerWorker := flag.Int("max-instances-per-worker", 4, "Maximum warm instances per worker for a function")
@@ -57,6 +60,7 @@ func main() {
 		"workers", workerAddrs,
 		"scale_to_zero_after", scaleToZeroAfter.String(),
 		"max_instances_per_worker", *maxInstancesPerWorker,
+		"containerized", *containerized,
 	)
 
 	if len(metadataEndpoints) == 0 {
@@ -86,6 +90,7 @@ func main() {
 		StopTimeout:           *stopTimeout,
 		CallTimeout:           *callTimeout,
 		StatusBackoff:         *statusBackoff,
+		Containerized:         *containerized,
 	}
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -112,6 +117,10 @@ func main() {
 	// Uncomment if you need logging of all grpc requests and responses.
 	// grpc.ChainUnaryInterceptor(utils.InterceptorLogger(logger)),
 	)
+
+	healthcheck := health.NewServer()
+	healthpb.RegisterHealthServer(grpcServer, healthcheck)
+	healthcheck.SetServingStatus("leaf", healthpb.HealthCheckResponse_SERVING)
 
 	leafpb.RegisterLeafServer(grpcServer, server)
 

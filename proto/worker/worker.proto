@@ -51,8 +51,9 @@ message MetricsUpdate{
 
 message StartResponse {
   string instance_id = 1;
-  string instance_ip = 2;
-  string instance_name = 3;
+  string instance_internal_ip = 2;
+  string instance_external_ip = 3;
+  string instance_name = 4;
 }
 
 message StartRequest {
@@ -78,9 +79,6 @@ service Worker {
   // created and ready to serve requests.
   rpc Start (StartRequest) returns (StartResponse);
 
-  // Call an instance of a function with the given function ID.
-  // The instance must be running.
-  rpc Call (common.CallRequest) returns (common.CallResponse);
   rpc Stop (StopRequest) returns (StopResponse);
   // Returns a stream of status events, like container crashes and timeouts.
   rpc Status (StatusRequest) returns (stream StatusUpdate);

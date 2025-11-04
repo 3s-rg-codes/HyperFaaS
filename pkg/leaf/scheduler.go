@@ -61,7 +61,7 @@ func (b *balancedRoundRobin) PickForCall(state []WorkerState, maxConcurrency int
 		b.workerCount = n
 		b.nextCall %= max(1, n)
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		idx := (b.nextCall + i) % n
 		snapshot := state[idx]
 		available := snapshot.Instances*maxConcurrency - snapshot.InFlight
@@ -84,7 +84,7 @@ func (b *balancedRoundRobin) PickForScale(state []WorkerState, maxInstancesPerWo
 		b.workerCount = n
 		b.nextScale %= max(1, n)
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		idx := (b.nextScale + i) % n
 		snapshot := state[idx]
 		if maxInstancesPerWorker <= 0 || snapshot.Instances < maxInstancesPerWorker {

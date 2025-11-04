@@ -10,7 +10,6 @@ import (
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
-	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/network"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 
 	_ "net/http/pprof"
@@ -87,7 +86,6 @@ func main() {
 	statsManager := stats.NewStatsManager(logger, time.Duration(wc.General.ListenerTimeout)*time.Second, 1.0, wc.Stats.UpdateBufferSize)
 
 	var runtime cr.ContainerRuntime
-	var router controller.CallRouter
 	var readySignals *controller.ReadySignals
 
 	if len(wc.Metadata.Endpoints) == 0 {
@@ -117,17 +115,15 @@ func main() {
 	case "docker":
 		readySignals = controller.NewReadySignals(false)
 		runtime = dockerRuntime.NewDockerRuntime(wc.Runtime.Containerized, wc.Runtime.AutoRemove, wc.General.Address, logger, wc.Runtime.ServiceName, wc.Runtime.NetworkName)
-		router = network.NewCallRouter(logger)
 	case "mock":
 		readySignals = controller.NewReadySignals(true)
 		runtime = mock.NewMockRuntime(logger, readySignals)
-		router = mock.NewMockCallRouter(logger, runtime.(*mock.MockRuntime))
 	default:
 		logger.Error("No runtime specified")
 		os.Exit(1)
 	}
 
-	c := controller.NewController(runtime, statsManager, logger, wc.General.Address, metadataClient, router, readySignals)
+	c := controller.NewController(runtime, statsManager, logger, wc.General.Address, metadataClient, readySignals)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

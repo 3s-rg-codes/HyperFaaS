@@ -1,12 +1,10 @@
 package network
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"sync"
 
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	function "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -23,7 +21,7 @@ type Router struct {
 	Client      function.FunctionServiceClient
 }
 
-func NewRouter(addrs []string, scheme string) *Router {
+func NewRouter(addrs []string) *Router {
 	mr := manual.NewBuilderWithScheme("custom-lb")
 	var endpoints []resolver.Endpoint
 	for _, addr := range addrs {
@@ -86,18 +84,4 @@ func (r *Router) DebugState() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return fmt.Sprintf("Active addrs: %v, cc: %v, mr: %v", r.activeAddrs, r.cc, r.mr)
-}
-
-func DebugCallAddr(addr string) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		log.Fatalf("failed to create client: %v", err)
-	}
-	client := function.NewFunctionServiceClient(conn)
-	log.Printf(" DEBUG: Calling function at %s", addr)
-	resp, err := client.Call(context.Background(), &common.CallRequest{FunctionId: "test"})
-	if err != nil {
-		log.Fatalf("failed to debugcall function: %v", err)
-	}
-	log.Printf(" DEBUG: Call response: %v", resp)
 }

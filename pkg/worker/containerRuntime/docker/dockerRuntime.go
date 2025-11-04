@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"regexp"
 	"strconv"
@@ -152,14 +153,14 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 		return cr.Container{}, err
 	}
 
-	addr, err := d.resolveContainerAddr(ctx, resp.ID, containerName)
-	d.logger.Debug("Resolved container address", "id", resp.ID, "address", addr)
+	internalIP, externalIP, err := d.resolveContainerAddrs(ctx, resp.ID, containerName)
+	d.logger.Debug("Resolved container address", "id", resp.ID, "internal", internalIP, "external", externalIP)
 	if err != nil {
 		return cr.Container{}, err
 	}
 	shortID := resp.ID[:12]
 
-	return cr.Container{Id: shortID, Name: containerName, IP: addr}, nil
+	return cr.Container{Id: shortID, Name: containerName, InternalIP: internalIP, ExternalIP: externalIP}, nil
 }
 
 // Stop stops a container with the given instance ID. It returns once the container is no longer running.
@@ -303,26 +304,41 @@ func (d *DockerRuntime) createHostConfig(config *common.Config) *container.HostC
 	}
 }
 
-// resolveContainerAddr resolves the address of the container , considering containerized or non-containerized mode. Docker networks have DNS which allows us to use the container name to resolve the address.
-func (d *DockerRuntime) resolveContainerAddr(ctx context.Context, containerID string, containerName string) (string, error) {
-	if d.containerized {
-		return fmt.Sprintf("%s:%d", containerName, 50052), nil
-	}
-
+// resolveContainerAddrs resolves the addresses of the container , considering containerized or non-containerized mode. Docker networks have DNS which allows us to use the container name to resolve the address.
+func (d *DockerRuntime) resolveContainerAddrs(ctx context.Context, containerID string, containerName string) (string, string, error) {
 	containerJSON, err := d.Cli.ContainerInspect(ctx, containerID)
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+
+	ports, ok := containerJSON.NetworkSettings.Ports["50052/tcp"]
+	if !ok {
+		return "", "", fmt.Errorf("container not exposed on port 50052")
+	}
+
+	// external IP
+	hostPort := ports[0].HostPort
+	var externalIP string
+	detectedIP := GetLocalIP()
+	if detectedIP != "" {
+		externalIP = detectedIP + ":" + hostPort
+	} else {
+		externalIP = ""
+	}
+
+	if d.containerized {
+		return fmt.Sprintf("%s:%d", containerName, 50052), externalIP, nil
 	}
 
 	network, ok := containerJSON.NetworkSettings.Networks[d.networkName]
 	if !ok {
 		network, ok = containerJSON.NetworkSettings.Networks["bridge"]
 		if !ok {
-			return "", fmt.Errorf("container not connected to %s network or bridge network", d.networkName)
+			return "", "", fmt.Errorf("container not connected to %s network or bridge network", d.networkName)
 		}
 	}
 
-	return fmt.Sprintf("%s:%d", network.IPAddress, 50052), nil
+	return fmt.Sprintf("%s:%d", network.IPAddress, 50052), externalIP, nil
 }
 
 // MonitorContainer monitors a container and returns when it exits
@@ -367,4 +383,22 @@ func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId string,
 			return cr.ContainerEventExit, nil
 		}
 	}
+}
+
+// GetLocalIP returns the non loopback local IP of the host.
+// IMPORTANT: this will not work in containerized mode.
+func GetLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback the display it
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
 }
