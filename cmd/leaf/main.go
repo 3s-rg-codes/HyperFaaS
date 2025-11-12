@@ -5,12 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"net/http"
 	_ "net/http/pprof"
 
 	leaf "github.com/3s-rg-codes/HyperFaaS/pkg/leaf"
@@ -25,7 +25,7 @@ import (
 
 func main() {
 	go func() {
-		http.ListenAndServe("0.0.0.0:6060", nil)
+		http.ListenAndServe("0.0.0.0:6060", nil) // nolint:errcheck
 	}()
 	var workerAddrs utils.StringList
 	var metadataEndpoints utils.StringList

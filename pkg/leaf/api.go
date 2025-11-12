@@ -201,7 +201,6 @@ func (s *Server) upsertFunction(meta *metadata.FunctionMetadata) {
 	}
 
 	s.controlPlane.UpsertFunction(meta)
-
 }
 
 func (s *Server) removeFunction(functionID string) {
@@ -229,7 +228,7 @@ func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*co
 		if err != nil {
 			return err
 		}
-		defer conn.Close()
+		defer conn.Close() // nolint:errcheck
 
 		client := function.NewFunctionServiceClient(conn)
 		s.logger.Debug("calling function", "function_id", req.FunctionId, "address", address)
@@ -244,7 +243,6 @@ func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*co
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "call failed: %v", err)
 	}

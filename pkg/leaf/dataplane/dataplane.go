@@ -129,7 +129,6 @@ func (m *DataPlane) GetInstanceCount(functionId string) int {
 }
 
 func (m *DataPlane) getConfiguredMaxConcurrency(functionId string) int32 {
-
 	funcMetadata, err := m.mdClient.GetFunction(context.Background(), functionId)
 	if err != nil {
 		return -1

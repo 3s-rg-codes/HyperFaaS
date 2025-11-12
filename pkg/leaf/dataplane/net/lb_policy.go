@@ -11,7 +11,7 @@ import (
 type lbPolicy func(ctx context.Context, targets []*instanceTracker) (func(), *instanceTracker)
 
 // randomLBPolicy picks a random target instance.
-func randomLBPolicy(_ context.Context, targets []*instanceTracker) (func(), *instanceTracker) {
+func randomLBPolicy(_ context.Context, targets []*instanceTracker) (func(), *instanceTracker) { //nolint:unused
 	if len(targets) == 0 {
 		return noop, nil
 	}

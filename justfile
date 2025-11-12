@@ -58,8 +58,8 @@ update-deps:
     go get -u ./...
     go mod tidy
 
-lint:
-    golangci-lint run
+lint *FLAGS:
+    golangci-lint run {{FLAGS}}
 
 # Start tmux log viewer
 tmux-logs:

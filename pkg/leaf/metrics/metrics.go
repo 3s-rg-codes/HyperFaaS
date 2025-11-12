@@ -84,7 +84,6 @@ func (c *ConcurrencyReporter) HandleRequestIn(functionId string) {
 }
 
 func (c *ConcurrencyReporter) HandleRequestOut(functionId string) {
-
 	c.mu.RLock()
 	stat := c.stats[functionId]
 	if stat == nil {
@@ -123,7 +122,7 @@ func (c *ConcurrencyReporter) report() {
 	defer c.mu.RUnlock()
 
 	for functionId, stat := range c.stats {
-		//c.logger.Debug("reporting metric", "function_id", functionId, "concurrency", stat.inFlight.Load())
+		// c.logger.Debug("reporting metric", "function_id", functionId, "concurrency", stat.inFlight.Load())
 
 		go func(fid string, conc int64) {
 			c.metricChan <- MetricEvent{

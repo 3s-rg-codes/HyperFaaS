@@ -89,7 +89,12 @@ func (c *ControlPlane) Run(ctx context.Context) {
 						c.logger.Warn("no worker available for scaling", "function_id", ev.FunctionId)
 						return
 					}
-					scaler.scaleUp(ctx, wIdx)
+					err := scaler.scaleUp(ctx, wIdx)
+					if err != nil {
+						// TODO do something better about this error.
+						c.logger.Error("failed to scale up", "function_id", ev.FunctionId, "error", err)
+						return
+					}
 				}
 				// not a cold start, just update in memory metrics to compute scaling decisions.
 				scaler.handleMetricEvent(ev.Concurrency)
@@ -271,7 +276,6 @@ func (f *functionAutoScaler) Close() {
 }
 
 func (f *functionAutoScaler) handleMetricEvent(concurrency int64) {
-
 	// maybe consistency is not needed here so we just dont lock?
 	if concurrency > 0 {
 		f.lastRequestTimestamp = time.Now()
@@ -314,7 +318,7 @@ func (f *functionAutoScaler) AutoScale() {
 				}
 				err := f.scaleUp(f.ctx, wIdx)
 				if err != nil {
-					//TODO remove after debugging
+					// TODO remove after debugging
 					panic(err)
 				}
 				continue
@@ -328,14 +332,13 @@ func (f *functionAutoScaler) AutoScale() {
 				}
 				err := f.scaleUp(f.ctx, wIdx)
 				if err != nil {
-					//TODO remove after debugging
+					// TODO remove after debugging
 					panic(err)
 				}
 				continue
 			}
 
 			// TODO: implement scaling down.
-
 		}
 	}
 }

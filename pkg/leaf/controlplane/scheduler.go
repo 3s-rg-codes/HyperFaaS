@@ -1,7 +1,6 @@
 package controlplane
 
 import (
-	"log/slog"
 	"sync"
 )
 
@@ -22,13 +21,6 @@ type WorkerScheduler interface {
 	// It receives a full copy of the worker states.
 	// It should return -1 if none is found.
 	PickForScale(state []WorkerState, maxInstancesPerWorker int) (int, bool)
-}
-
-// WorkerSchedulerFactory returns a scheduler instance for a given function.
-type WorkerSchedulerFactory func(functionID string, workerCount int, logger *slog.Logger) WorkerScheduler
-
-func defaultSchedulerFactory(_ string, workerCount int, _ *slog.Logger) WorkerScheduler {
-	return newBalancedRoundRobin(workerCount)
 }
 
 // balancedRoundRobin is a simple scheduler that distributes calls and scaling requests evenly across all workers.
