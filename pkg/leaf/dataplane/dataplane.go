@@ -110,8 +110,8 @@ func (m *DataPlane) Try(
 	return throttler.Try(ctx, fn)
 }
 
-// DeleteThrottler removes a throttler for a function (e.g., when function is deleted).
-func (m *DataPlane) DeleteThrottler(functionId string) {
+// RemoveThrottler removes a throttler for a function (e.g., when function is deleted).
+func (m *DataPlane) RemoveThrottler(functionId string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.throttlers, functionId)

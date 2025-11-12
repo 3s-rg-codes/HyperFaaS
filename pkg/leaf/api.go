@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,9 +39,6 @@ type Server struct {
 	// the id of this node. used to subscribe to status stream of workers.
 	nodeID string
 
-	mu sync.RWMutex
-	// functionId -> controller to scale and route calls.
-	/* functions      map[string]*functionController */
 	metadataClient *metadata.Client
 
 	dataPlane *dataplane.DataPlane
@@ -209,13 +205,17 @@ func (s *Server) upsertFunction(meta *metadata.FunctionMetadata) {
 }
 
 func (s *Server) removeFunction(functionID string) {
-	//TODO: implement this. IMPORTANT.
-	panic("not implemented")
+	s.dataPlane.RemoveThrottler(functionID)
+	s.controlPlane.RemoveFunction(functionID)
 }
 
 func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
 	if req.FunctionId == "" {
 		return nil, status.Error(codes.InvalidArgument, "function_id is required")
+	}
+
+	if !s.controlPlane.FunctionExists(req.FunctionId) {
+		return nil, status.Errorf(codes.NotFound, "function %s not found in control plane", req.FunctionId)
 	}
 
 	// this is REALLY ugly . In knative they only do HTTP so they dont have a return type.
@@ -262,14 +262,14 @@ func (s *Server) State(req *common.StateRequest, stream leafpb.Leaf_StateServer)
 	ctx := stream.Context()
 
 	for event := range s.functionScaleEvents {
-		s.logger.Debug("received zero scale event", "function_id", event.FunctionId, "zero", event.Zero)
+		s.logger.Debug("received zero scale event", "function_id", event.FunctionId, "zero", event.Have)
 		// exit if context is done
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		err := stream.Send(&common.StateResponse{
 			FunctionId: event.FunctionId,
-			Have:       event.Zero,
+			Have:       event.Have,
 		})
 		if err != nil {
 			s.logger.Error("failed to send state response", "function_id", event.FunctionId, "error", err)

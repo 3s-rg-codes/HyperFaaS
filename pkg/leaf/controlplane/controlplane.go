@@ -17,6 +17,8 @@ import (
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 )
 
+// The maximum queue size for the zero scale events channel.
+// This channel is constantly read by the State stream to know if this leaf manages instances for a function. In theory, it should never be full.
 const ZERO_SCALE_CHANNEL_BUFFER = 1000
 
 // ControlPlane is responsible for scaling and managing instances for multiple functions.
@@ -37,7 +39,7 @@ type ControlPlane struct {
 	// instance scaling events get reported into this channel.
 	instanceChangesChan chan metrics.InstanceChange
 
-	// todo document
+	// used to publish zero scale events to the State stream.
 	functionScaleEvents chan metrics.ZeroScaleEvent
 }
 
@@ -70,7 +72,6 @@ func (c *ControlPlane) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case metricEvent := <-mc:
-			//c.logger.Debug("received metric event", "function_id", metricEvent.FunctionId, "concurrency", metricEvent.Concurrency, "cold_start", metricEvent.ColdStart)
 
 			go func(ev metrics.MetricEvent) {
 				c.mu.RLock()
@@ -95,6 +96,26 @@ func (c *ControlPlane) Run(ctx context.Context) {
 			}(metricEvent)
 		}
 	}
+}
+
+// FunctionExists checks if a function is registered in the control plane.
+func (c *ControlPlane) FunctionExists(functionId string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.functions[functionId]
+	return ok
+}
+
+// RemoveFunction removes a function from the control plane state, calling Close() on it first.
+func (c *ControlPlane) RemoveFunction(functionId string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	scaler, ok := c.functions[functionId]
+	if !ok {
+		return
+	}
+	scaler.Close()
+	delete(c.functions, functionId)
 }
 
 func (c *ControlPlane) HandleWorkerEvent(workerIdx int, event *dataplane.WorkerStatusEvent) {
@@ -205,6 +226,7 @@ func newFunctionAutoScaler(ctx context.Context,
 	zeroScaleChan chan metrics.ZeroScaleEvent,
 	concurrencyReporter *metrics.ConcurrencyReporter,
 ) *functionAutoScaler {
+	// create a new context for this function, that way, we can cancel all operations for this function when the function is deleted.
 	subCtx, cancel := context.WithCancel(ctx)
 
 	maxConcurrency := int(cfg.GetMaxConcurrency())
@@ -241,6 +263,11 @@ func newFunctionAutoScaler(ctx context.Context,
 	go controller.AutoScale()
 
 	return controller
+}
+
+// Close cancels the context of this function, stopping all operations and cleaning up.
+func (f *functionAutoScaler) Close() {
+	f.cancel()
 }
 
 func (f *functionAutoScaler) handleMetricEvent(concurrency int64) {
@@ -367,7 +394,7 @@ func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int) error {
 		f.logger.Debug("emitting zero scale event", "function_id", f.functionID, "zero", true)
 		f.zeroScaleChan <- metrics.ZeroScaleEvent{
 			FunctionId: f.functionID,
-			Zero:       true,
+			Have:       true,
 		}
 	}
 
@@ -407,7 +434,7 @@ func (f *functionAutoScaler) tryScaleToZero() {
 		f.logger.Debug("emitting zero scale event", "function_id", f.functionID, "zero", false)
 		f.zeroScaleChan <- metrics.ZeroScaleEvent{
 			FunctionId: f.functionID,
-			Zero:       false,
+			Have:       false,
 		}
 
 		f.concurrencyReporter.DeleteFunctionStats(f.functionID)
