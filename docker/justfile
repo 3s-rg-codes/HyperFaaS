@@ -81,18 +81,34 @@ clean-logs:
 ############################
 # Profiling
 ############################
-# only works with small setup
-pprof-worker:
-    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
-# only works with small setup
-pprof-leaf:
-    docker exec -it $(docker ps | grep leaf | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine
-# only works with small setup
-memory-worker:
+
+pprof component:
+    docker exec -it $(docker ps | grep {{component}} | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/goroutine?debug=2
+
+memory component:
     docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/heap
-# only works with small setup
-trace-worker:
-    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool trace http://localhost:6060/debug/pprof/trace?seconds=60
-# only works with small setup
-block-worker:
-    docker exec -it $(docker ps | grep worker | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/block
+
+block component:
+    docker exec -it $(docker ps | grep {{component}} | awk '{print $1}') go tool pprof http://localhost:6060/debug/pprof/block
+
+trace component seconds:
+    #!/bin/bash
+    PORT=$(docker port $(docker ps | grep {{component}} | awk '{print $1}') 6060/tcp 2>/dev/null | cut -d: -f2)
+    if [ -z "$PORT" ]; then
+        echo "Error: Could not find port 6060 mapping for {{component}}"
+        exit 1
+    fi
+    echo "Downloading trace from http://localhost:$PORT/debug/pprof/trace?seconds={{seconds}}"
+    HTTP_CODE=$(curl -s -o ./trace-{{component}}.out -w "%{http_code}" "http://localhost:$PORT/debug/pprof/trace?seconds={{seconds}}")
+    if [ "$HTTP_CODE" != "200" ]; then
+        echo "Error: HTTP $HTTP_CODE - Trace download failed"
+        exit 1
+    fi
+    FILE_SIZE=$(stat -f%z ./trace-{{component}}.out 2>/dev/null || stat -c%s ./trace-{{component}}.out 2>/dev/null || echo "0")
+    if [ "$FILE_SIZE" -eq 0 ]; then
+        echo "Error: Trace file is empty"
+        exit 1
+    fi
+    echo "Trace file saved to ./trace-{{component}}.out (size: $FILE_SIZE bytes)"
+    echo "Opening with go tool trace..."
+    go tool trace ./trace-{{component}}.out
