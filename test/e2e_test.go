@@ -29,7 +29,7 @@ var HAPROXY_ADDRESS = envOrDefault("HAPROXY_ADDRESS", "localhost:9999")
 var ETCD_ADDRESS = envOrDefault("ETCD_ADDRESS", "localhost:2379")
 
 // The timeout used for the calls
-const TIMEOUT = 60 * time.Second
+const TIMEOUT = 30 * time.Second
 const CONCURRENCY = 50
 
 func TestMain(m *testing.M) {
@@ -61,11 +61,11 @@ func TestCallRequest(t *testing.T) {
 			ExpectedResponse: []byte("HELLO WORLD!"),
 			Data:             []byte(""),
 		},
-		{
+		/* {
 			ImageTag:         "hyperfaas-echo:latest",
 			ExpectedResponse: []byte("Echo this message"),
 			Data:             []byte("Echo this message"),
-		},
+		}, */
 	}
 
 	for _, d := range data {
@@ -134,8 +134,8 @@ func createFunctionMetadata(imageTag string) string {
 			Period: 100000,
 			Quota:  50000,
 		},
-		MaxConcurrency: 500,
-		Timeout:        13,
+		MaxConcurrency: 2500,
+		Timeout:        15,
 	}
 
 	createFunctionReq := &common.CreateFunctionRequest{

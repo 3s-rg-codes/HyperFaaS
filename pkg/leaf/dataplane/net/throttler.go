@@ -212,16 +212,12 @@ func (t *Throttler) updateCapacity(instanceCount int) {
 }
 
 // acquireInstance returns an instance that has available capacity.
-func (t *Throttler) acquireInstance(ctx context.Context) (func(), *instanceTracker, bool) {
+func (t *Throttler) acquireInstance(ctx context.Context) (func(), *instanceTracker) {
 	t.mux.RLock()
 	defer t.mux.RUnlock()
 
-	if len(t.instanceTrackers) == 0 {
-		return noop, nil, false
-	}
-
 	cb, tracker := t.lbPolicy(ctx, t.instanceTrackers)
-	return cb, tracker, tracker != nil
+	return cb, tracker
 }
 
 // Try waits for capacity and then executes the function, passing the instance address.
@@ -235,8 +231,8 @@ func (t *Throttler) Try(ctx context.Context, fn func(address string) error) erro
 	for reenqueue {
 		reenqueue = false
 		if err := t.breaker.Maybe(ctx, func() {
-			cb, tracker, ok := t.acquireInstance(ctx)
-			if !ok || tracker == nil {
+			cb, tracker := t.acquireInstance(ctx)
+			if tracker == nil {
 				// No instances available, reenqueue
 				reenqueue = true
 				return

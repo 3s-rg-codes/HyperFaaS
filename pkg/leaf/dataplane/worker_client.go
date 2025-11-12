@@ -1,4 +1,4 @@
-package leafv2
+package dataplane
 
 import (
 	"context"
@@ -11,11 +11,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 )
 
-// workerClient is a wrapper around the workerpb.WorkerClient that adds context cancellation and timeout handling.
-type workerClient struct {
+// WorkerClient is a wrapper around the workerpb.WorkerClient that adds context cancellation and timeout handling.
+type WorkerClient struct {
 	// this workers id
 	index   int
 	address string
@@ -36,7 +37,7 @@ type workerClient struct {
 	statusOnce sync.Once
 }
 
-func newWorkerClient(ctx context.Context, idx int, addr string, cfg Config, logger *slog.Logger) (*workerClient, error) {
+func NewWorkerClient(ctx context.Context, idx int, addr string, cfg config.Config, logger *slog.Logger) (*WorkerClient, error) {
 	subCtx, cancel := context.WithCancel(ctx)
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -44,7 +45,7 @@ func newWorkerClient(ctx context.Context, idx int, addr string, cfg Config, logg
 		return nil, err
 	}
 
-	return &workerClient{
+	return &WorkerClient{
 		index:        idx,
 		address:      addr,
 		ctx:          subCtx,
@@ -58,39 +59,31 @@ func newWorkerClient(ctx context.Context, idx int, addr string, cfg Config, logg
 	}, nil
 }
 
-func (w *workerClient) close() error {
-	w.cancel()
-	if w.conn != nil {
-		return w.conn.Close()
-	}
-	return nil
-}
-
-func (w *workerClient) Start(ctx context.Context, req *workerpb.StartRequest) (*workerpb.StartResponse, error) {
+func (w *WorkerClient) Start(ctx context.Context, req *workerpb.StartRequest) (*workerpb.StartResponse, error) {
 	startCtx, cancel := context.WithTimeout(ctx, w.startTimeout)
 	defer cancel()
 	return w.client.Start(startCtx, req)
 }
 
-func (w *workerClient) Stop(ctx context.Context, req *workerpb.StopRequest) (*workerpb.StopResponse, error) {
+func (w *WorkerClient) Stop(ctx context.Context, req *workerpb.StopRequest) (*workerpb.StopResponse, error) {
 	stopCtx, cancel := context.WithTimeout(ctx, w.stopTimeout)
 	defer cancel()
 	return w.client.Stop(stopCtx, req)
 }
 
-func (w *workerClient) Address() string {
+func (w *WorkerClient) Address() string {
 	return w.address
 }
 
 // startStatusStream starts the status stream in a goroutine if it hasn't been started yet.
-func (w *workerClient) startStatusStream(nodeID string, backoff time.Duration, cb func(int, *workerStatusEvent)) {
+func (w *WorkerClient) StartStatusStream(nodeID string, backoff time.Duration, cb func(int, *WorkerStatusEvent)) {
 	w.statusOnce.Do(func() {
 		go w.runStatusStream(nodeID, backoff, cb)
 	})
 }
 
 // runStatusStream reads from the workers status stream in a loop, and calls the callback function with the status events.
-func (w *workerClient) runStatusStream(nodeID string, backoff time.Duration, cb func(int, *workerStatusEvent)) {
+func (w *WorkerClient) runStatusStream(nodeID string, backoff time.Duration, cb func(int, *WorkerStatusEvent)) {
 	if backoff <= 0 {
 		backoff = time.Second
 	}
@@ -126,7 +119,7 @@ func (w *workerClient) runStatusStream(nodeID string, backoff time.Duration, cb 
 				w.logger.Debug("worker status stream ended", "error", recvErr)
 				break
 			}
-			cb(w.index, translateWorkerStatus(update))
+			cb(w.index, TranslateWorkerStatus(update))
 		}
 
 		cancel()
@@ -139,22 +132,22 @@ func (w *workerClient) runStatusStream(nodeID string, backoff time.Duration, cb 
 	}
 }
 
-type workerStatusEvent struct {
-	functionID string
-	instanceID string
-	event      workerpb.Event
-	status     workerpb.Status
+type WorkerStatusEvent struct {
+	FunctionId string
+	InstanceId string
+	Event      workerpb.Event
+	Status     workerpb.Status
 }
 
-// translateWorkerStatus turns a workerpb.StatusUpdate into workerStatusEvent
-func translateWorkerStatus(update *workerpb.StatusUpdate) *workerStatusEvent {
+// TranslateWorkerStatus turns a workerpb.StatusUpdate into workerStatusEvent
+func TranslateWorkerStatus(update *workerpb.StatusUpdate) *WorkerStatusEvent {
 	if update == nil {
 		return nil
 	}
-	return &workerStatusEvent{
-		functionID: update.FunctionId,
-		instanceID: update.InstanceId,
-		event:      update.Event,
-		status:     update.Status,
+	return &WorkerStatusEvent{
+		FunctionId: update.FunctionId,
+		InstanceId: update.InstanceId,
+		Event:      update.Event,
+		Status:     update.Status,
 	}
 }
