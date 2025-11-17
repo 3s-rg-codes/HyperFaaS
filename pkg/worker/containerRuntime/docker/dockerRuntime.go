@@ -313,7 +313,7 @@ func (d *DockerRuntime) resolveContainerAddrs(ctx context.Context, containerID s
 
 	ports, ok := containerJSON.NetworkSettings.Ports["50052/tcp"]
 	if !ok {
-		return "", "", fmt.Errorf("container not exposed on port 50052")
+		return "", "", errors.New("container not exposed on port 50052")
 	}
 
 	// external IP

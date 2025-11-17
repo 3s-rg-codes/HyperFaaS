@@ -17,9 +17,7 @@ import (
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"github.com/goforj/godump"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 )
 
 // set the env vars to override the default values
@@ -29,7 +27,7 @@ var HAPROXY_ADDRESS = envOrDefault("HAPROXY_ADDRESS", "localhost:9999")
 var ETCD_ADDRESS = envOrDefault("ETCD_ADDRESS", "localhost:2379")
 
 // The timeout used for the calls
-const TIMEOUT = 60 * time.Second
+const TIMEOUT = 30 * time.Second
 const CONCURRENCY = 50
 
 func TestMain(m *testing.M) {
@@ -40,7 +38,7 @@ func TestMain(m *testing.M) {
 func TestCreateFunctionRequest(t *testing.T) {
 	functionID := createFunctionMetadata("hyperfaas-hello:latest")
 	if functionID == "" {
-		t.Errorf("Function id is an empty string")
+		t.Fatalf("Function id is an empty string")
 	}
 	t.Logf("Created function with ID: %s", functionID)
 }
@@ -72,7 +70,7 @@ func TestCallRequest(t *testing.T) {
 		t.Run("Single Call", func(t *testing.T) {
 			//t.Skip("Skipping single call test")
 			functionId := createFunctionMetadata(d.ImageTag)
-			testCall(t, haproxyClient, functionId, d.Data, d.ExpectedResponse)
+			testCall(t, haproxyClient, functionId, d.Data, d.ExpectedResponse, false)
 		})
 	}
 
@@ -88,7 +86,7 @@ func TestCallRequest(t *testing.T) {
 			errorsMutex := sync.Mutex{}
 			for range CONCURRENCY {
 				wg.Go(func() {
-					err := testCall(t, haproxyClient, functionId, d.Data, d.ExpectedResponse)
+					err := testCall(t, haproxyClient, functionId, d.Data, d.ExpectedResponse, false)
 					if err != nil {
 						fail.Add(1)
 						errorsMutex.Lock()
@@ -118,6 +116,31 @@ func TestCallRequest(t *testing.T) {
 
 }
 
+// Tests creating, calling and deleting a function and verifying that further calls to it fail.
+func TestDeleteFunction(t *testing.T) {
+
+	haproxyClient := GetHAProxyClient(HAPROXY_ADDRESS)
+
+	functionId := createFunctionMetadata("hyperfaas-hello:latest")
+	if functionId == "" {
+		t.Errorf("Function id is an empty string")
+	}
+	t.Logf("Created function with ID: %s", functionId)
+
+	testCall(t, haproxyClient, functionId, []byte(""), []byte("HELLO WORLD!"), false)
+
+	deleteFunctionMetadata(t, functionId)
+
+	time.Sleep(300 * time.Millisecond)
+
+	// a new call should fail because the function does not exist
+
+	err := testCall(t, haproxyClient, functionId, []byte(""), []byte(""), true)
+	if err == nil {
+		t.Errorf("Expected call to fail, got %v", err)
+	}
+}
+
 func envOrDefault(env string, defaultValue string) string {
 	if value, ok := os.LookupEnv(env); ok {
 		return value
@@ -134,8 +157,8 @@ func createFunctionMetadata(imageTag string) string {
 			Period: 100000,
 			Quota:  50000,
 		},
-		MaxConcurrency: 500,
-		Timeout:        13,
+		MaxConcurrency: 2500,
+		Timeout:        15,
 	}
 
 	createFunctionReq := &common.CreateFunctionRequest{
@@ -158,6 +181,19 @@ func createFunctionMetadata(imageTag string) string {
 	}
 
 	return functionID
+}
+
+func deleteFunctionMetadata(t *testing.T, functionId string) {
+	client, err := metadata.NewClient([]string{ETCD_ADDRESS}, metadata.Options{}, nil)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create metadata client: %v", err))
+	}
+	defer client.Close()
+
+	err = client.DeleteFunction(context.Background(), functionId)
+	if err != nil {
+		t.Errorf("Failed to delete function metadata: %v", err)
+	}
 }
 
 // client interface for gRPC clients
@@ -191,28 +227,29 @@ func (h *haproxyClient) Close() error {
 }
 
 // tests a call to a function using data. Verifies the response is as expected. Receives a leaf or lb client.
-func testCall(t *testing.T, c client, functionId string, data []byte, expectedResponse []byte) error {
-	deadline := time.Now().Add(TIMEOUT)
-	for {
-		ctx, cancel := context.WithTimeout(context.Background(), TIMEOUT)
-		resp, err := c.ScheduleCall(ctx, &common.CallRequest{
-			FunctionId: functionId,
-			Data:       data,
-		})
-		cancel()
-		if err != nil {
-			st, ok := status.FromError(err)
-			if ok && st.Code() == codes.NotFound && time.Now().Before(deadline) {
-				time.Sleep(200 * time.Millisecond)
-				continue
-			}
-			t.Fail()
+func testCall(t *testing.T,
+	c client,
+	functionId string,
+	data []byte,
+	expectedResponse []byte,
+	shouldFail bool,
+) error {
+	ctx, cancel := context.WithTimeout(context.Background(), TIMEOUT)
+	resp, err := c.ScheduleCall(ctx, &common.CallRequest{
+		FunctionId: functionId,
+		Data:       data,
+	})
+	cancel()
+	if err != nil {
+		if shouldFail {
 			return err
 		}
-		if !bytes.Equal(resp.Data, expectedResponse) {
-			t.Errorf("Expected response %s, got %s", expectedResponse, resp.Data)
-			return nil
-		}
+		t.Fail()
+		return err
+	}
+	if !bytes.Equal(resp.Data, expectedResponse) {
+		t.Errorf("Expected response %s, got %s", expectedResponse, resp.Data)
 		return nil
 	}
+	return nil
 }

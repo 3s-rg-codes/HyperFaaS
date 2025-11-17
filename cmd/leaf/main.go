@@ -5,12 +5,16 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	_ "net/http/pprof"
+
 	leaf "github.com/3s-rg-codes/HyperFaaS/pkg/leaf"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
@@ -20,6 +24,9 @@ import (
 )
 
 func main() {
+	go func() {
+		http.ListenAndServe("0.0.0.0:6060", nil) // nolint:errcheck
+	}()
 	var workerAddrs utils.StringList
 	var metadataEndpoints utils.StringList
 
@@ -81,7 +88,7 @@ func main() {
 		}
 	}()
 
-	cfg := leaf.Config{
+	cfg := config.Config{
 		WorkerAddresses:       append([]string(nil), workerAddrs...),
 		ScaleToZeroAfter:      *scaleToZeroAfter,
 		MaxInstancesPerWorker: *maxInstancesPerWorker,
@@ -101,11 +108,6 @@ func main() {
 		logger.Error("failed to build leaf server", "error", err)
 		os.Exit(1)
 	}
-	defer func() {
-		if cerr := server.Close(); cerr != nil {
-			logger.Warn("error while closing server", "error", cerr)
-		}
-	}()
 
 	listener, err := net.Listen("tcp", *address)
 	if err != nil {

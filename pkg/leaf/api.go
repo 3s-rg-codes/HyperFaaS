@@ -5,116 +5,124 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
+	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/controlplane"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/dataplane"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/metrics"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	function "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 )
+
+const STATE_STREAM_BUFFER = 1000
 
 // Server implements the leafpb.LeafServer gRPC.
 type Server struct {
 	leafpb.UnimplementedLeafServer
 
-	cfg    Config
+	cfg    config.Config
 	logger *slog.Logger
 
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	workers []*workerClient
+	workers []*dataplane.WorkerClient
 	// the id of this node. used to subscribe to status stream of workers.
 	nodeID string
 
-	mu sync.RWMutex
-	// functionId -> controller to scale and route calls.
-	functions      map[string]*functionController
-	metadataClient metadataClient
-}
+	metadataClient *metadata.Client
 
-type metadataClient interface {
-	ListFunctions(ctx context.Context) (*metadata.ListResult, error)
-	WatchFunctions(ctx context.Context, revision int64) (<-chan metadata.Event, <-chan error)
+	dataPlane *dataplane.DataPlane
+
+	controlPlane *controlplane.ControlPlane
+
+	// reporter used to trigger scaling decisions.
+	// the direction of communication here is DataPlane / API (ScheduleCall) -> ControlPlane.
+	// Used for example in the scale from zero situation.
+	concurrencyReporter *metrics.ConcurrencyReporter
+
+	// single centralised channel to read zero scale events from all functions.
+	// used for the State stream.
+	functionScaleEvents chan metrics.ZeroScaleEvent
 }
 
 // NewServer initialises a leaf server with the provided configuration and logger.
-func NewServer(ctx context.Context, cfg Config, metadataClient metadataClient, logger *slog.Logger) (*Server, error) {
-	cfg.applyDefaults()
+func NewServer(ctx context.Context, cfg config.Config, metadataClient *metadata.Client, logger *slog.Logger) (*Server, error) {
+	cfg.ApplyDefaults()
 
 	if len(cfg.WorkerAddresses) == 0 {
 		return nil, errors.New("at least one worker address is required")
 	}
 	if logger == nil {
-		return nil, errors.New("logger must not be nil")
+		panic("logger must not be nil")
 	}
 	if metadataClient == nil {
-		return nil, errors.New("metadata client must not be nil")
+		panic("metadata client must not be nil")
 	}
+	metricChan := make(chan metrics.MetricEvent)
+	// channel to notify of changes in the instance count of a function.
+	// the direction of communication here is ControlPlane -> DataPlane.
+	// Used for example when a new instance is started and we need to update the data plane,
+	// so we can route calls to the new instance.
+	instanceChangesChan := make(chan metrics.InstanceChange)
 
+	// where the State stream reads zero scale events from.
+	functionScaleEvents := make(chan metrics.ZeroScaleEvent, STATE_STREAM_BUFFER)
 	serverCtx, cancel := context.WithCancel(ctx)
-	s := &Server{
-		cfg:            cfg,
-		logger:         logger,
-		ctx:            serverCtx,
-		cancel:         cancel,
-		nodeID:         uuid.NewString(),
-		functions:      make(map[string]*functionController),
-		metadataClient: metadataClient,
-	}
 
-	workers := make([]*workerClient, 0, len(cfg.WorkerAddresses))
+	// create worker clients
+	workers := make([]*dataplane.WorkerClient, 0, len(cfg.WorkerAddresses))
 	for idx, addr := range cfg.WorkerAddresses {
-		h, err := newWorkerClient(serverCtx, idx, addr, cfg, logger.With("worker", addr))
+		h, err := dataplane.NewWorkerClient(serverCtx, idx, addr, cfg, logger.With("worker", addr))
 		if err != nil {
-			cancel()
-			s.closeWorkers(workers)
-			return nil, fmt.Errorf("dial worker %s: %w", addr, err)
+			panic(err)
 		}
 		workers = append(workers, h)
 	}
+
+	cr := metrics.NewConcurrencyReporter(logger, metricChan, 1*time.Second)
+	go cr.Run(serverCtx)
+
+	dp := dataplane.NewDataPlane(logger, metadataClient, instanceChangesChan, cr)
+	go dp.Run(serverCtx)
+
+	cp := controlplane.NewControlPlane(serverCtx, cfg, logger, instanceChangesChan, workers, functionScaleEvents, cr)
+	go cp.Run(serverCtx)
+
+	s := &Server{
+		cfg:                 cfg,
+		logger:              logger,
+		ctx:                 serverCtx,
+		cancel:              cancel,
+		nodeID:              uuid.NewString(),
+		metadataClient:      metadataClient,
+		dataPlane:           dp,
+		controlPlane:        cp,
+		concurrencyReporter: cr,
+		functionScaleEvents: functionScaleEvents,
+	}
+
 	s.workers = workers
 
 	if err := s.bootstrapMetadata(); err != nil {
 		cancel()
-		s.closeWorkers(workers)
 		return nil, err
 	}
 
 	for _, w := range s.workers {
-		w.startStatusStream(s.nodeID, cfg.StatusBackoff, s.handleWorkerStatus)
+		w.StartStatusStream(s.nodeID, cfg.StatusBackoff, s.handleWorkerStatus)
 	}
 
 	return s, nil
-}
-
-// Close releases all resources
-func (s *Server) Close() error {
-	s.cancel()
-	s.closeWorkers(s.workers)
-	ids := make([]string, 0)
-	s.mu.RLock()
-	for id := range s.functions {
-		ids = append(ids, id)
-	}
-	s.mu.RUnlock()
-	for _, id := range ids {
-		s.removeFunction(id)
-	}
-	return nil
-}
-
-func (s *Server) closeWorkers(workers []*workerClient) {
-	for _, w := range workers {
-		if w != nil {
-			if err := w.close(); err != nil {
-				s.logger.Warn("closing worker", "worker", w.address, "error", err)
-			}
-		}
-	}
 }
 
 func (s *Server) bootstrapMetadata() error {
@@ -192,62 +200,55 @@ func (s *Server) upsertFunction(meta *metadata.FunctionMetadata) {
 		return
 	}
 
-	s.mu.Lock()
-	ctrl, exists := s.functions[meta.ID]
-	if exists {
-		s.mu.Unlock()
-		ctrl.updateConfig(meta.Config)
-		return
-	}
-	ctrl = newFunctionController(s.ctx, meta.ID, meta.Config, s.workers, s.cfg, s.logger)
-	s.functions[meta.ID] = ctrl
-	s.mu.Unlock()
-
-	s.logger.Info("registered function controller", "functionID", meta.ID)
+	s.controlPlane.UpsertFunction(meta)
 }
 
 func (s *Server) removeFunction(functionID string) {
-	s.mu.Lock()
-	ctrl, exists := s.functions[functionID]
-	if exists {
-		delete(s.functions, functionID)
-	}
-	s.mu.Unlock()
-
-	if !exists {
-		return
-	}
-
-	ctrl.stop()
-	func() {
-		defer func() {
-			_ = recover()
-		}()
-		close(ctrl.scaleChan)
-	}()
-	s.logger.Info("removed function controller", "functionID", functionID)
+	s.dataPlane.RemoveThrottler(functionID)
+	s.controlPlane.RemoveFunction(functionID)
 }
 
-// ScheduleCall forwards a call request to one of the managed workers
 func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-	if req == nil || req.FunctionId == "" {
+	if req.FunctionId == "" {
 		return nil, status.Error(codes.InvalidArgument, "function_id is required")
 	}
 
-	ctrl := s.getFunction(req.FunctionId)
-	if ctrl == nil {
-		return nil, status.Errorf(codes.NotFound, "function %s is not registered", req.FunctionId)
+	if !s.controlPlane.FunctionExists(req.FunctionId) {
+		return nil, status.Errorf(codes.NotFound, "function %s not found in control plane", req.FunctionId)
 	}
 
-	resp, err := ctrl.routeCall(ctx, req)
-	if err != nil {
-		st, ok := status.FromError(err)
-		if ok {
-			return nil, st.Err()
+	// this is REALLY ugly . In knative they only do HTTP so they dont have a return type.
+	// but we actually need the response type so idk how to do it here without allocating
+	// TODO: fix this. IMPORTANT.
+
+	response := &common.CallResponse{}
+	err := s.dataPlane.Try(ctx, req.FunctionId, func(address string) error {
+		// TODO make efficient
+		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return err
 		}
+		defer conn.Close() // nolint:errcheck
+
+		client := function.NewFunctionServiceClient(conn)
+		s.logger.Debug("calling function", "function_id", req.FunctionId, "address", address)
+		resp, err := client.Call(ctx, req)
+
+		s.logger.Debug("received response", "function_id", req.FunctionId, "address", address)
+
+		response = resp
+
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "call failed: %v", err)
 	}
-	return resp, nil
+
+	s.logger.Debug("returning response", "function_id", req.FunctionId)
+	return response, nil
 }
 
 // State streams changes in state of a function_id.
@@ -258,47 +259,28 @@ func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*co
 func (s *Server) State(req *common.StateRequest, stream leafpb.Leaf_StateServer) error {
 	ctx := stream.Context()
 
-	s.mu.RLock()
-	wg := sync.WaitGroup{}
-
-	for _, ctrl := range s.functions {
-		wg.Go(func() {
-			for have := range ctrl.scaleChan {
-				// exit if context is done
-				if ctx.Err() != nil {
-					return
-				}
-				err := stream.Send(&common.StateResponse{
-					FunctionId: ctrl.functionID,
-					Have:       have,
-				})
-				if err != nil {
-					s.logger.Error("failed to send state response", "error", err)
-				}
-			}
+	for event := range s.functionScaleEvents {
+		s.logger.Debug("received zero scale event", "function_id", event.FunctionId, "zero", event.Have)
+		// exit if context is done
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		err := stream.Send(&common.StateResponse{
+			FunctionId: event.FunctionId,
+			Have:       event.Have,
 		})
+		if err != nil {
+			s.logger.Error("failed to send state response", "function_id", event.FunctionId, "error", err)
+			return err
+		}
 	}
-	s.mu.RUnlock()
-
-	wg.Wait()
 
 	return nil
 }
 
-func (s *Server) getFunction(functionID string) *functionController {
-	s.mu.RLock()
-	ctrl := s.functions[functionID]
-	s.mu.RUnlock()
-	return ctrl
-}
-
-func (s *Server) handleWorkerStatus(workerIdx int, update *workerStatusEvent) {
-	if update == nil || update.functionID == "" {
+func (s *Server) handleWorkerStatus(workerIdx int, update *dataplane.WorkerStatusEvent) {
+	if update == nil || update.FunctionId == "" {
 		return
 	}
-	ctrl := s.getFunction(update.functionID)
-	if ctrl == nil {
-		return
-	}
-	ctrl.handleWorkerEvent(workerIdx, update)
+	s.controlPlane.HandleWorkerEvent(workerIdx, update)
 }

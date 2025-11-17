@@ -24,7 +24,7 @@ RUN case "${COMPONENT}" in \
         echo "Unknown component: ${COMPONENT}" && exit 1 ;; \
     esac
 
-FROM alpine:${ALPINE_VERSION}
+FROM golang:${GO_VERSION}-alpine
 
 # Install runtime dependencies based on component
 ARG COMPONENT=worker

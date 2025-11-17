@@ -1,4 +1,4 @@
-package leafv2
+package config
 
 import "time"
 
@@ -24,14 +24,12 @@ type Config struct {
 	CallTimeout time.Duration
 	// StatusBackoff is the retry delay when the status stream read from the workers breaks.
 	StatusBackoff time.Duration
-	// SchedulerFactory builds a worker scheduler per function to decide routing and scaling targets.
-	SchedulerFactory WorkerSchedulerFactory
 }
 
-// applyDefaults configures the config with default values if not set.
-func (c *Config) applyDefaults() {
+// ApplyDefaults configures the config with default values if not set.
+func (c *Config) ApplyDefaults() {
 	if c.ScaleToZeroAfter <= 0 {
-		c.ScaleToZeroAfter = 10 * time.Second
+		c.ScaleToZeroAfter = 20 * time.Second
 	}
 	if c.MaxInstancesPerWorker <= 0 {
 		c.MaxInstancesPerWorker = 4
@@ -50,8 +48,5 @@ func (c *Config) applyDefaults() {
 	}
 	if c.StatusBackoff <= 0 {
 		c.StatusBackoff = 2 * time.Second
-	}
-	if c.SchedulerFactory == nil {
-		c.SchedulerFactory = defaultSchedulerFactory
 	}
 }
