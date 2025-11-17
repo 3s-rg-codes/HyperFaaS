@@ -89,7 +89,7 @@ func (c *ControlPlane) Run(ctx context.Context) {
 						c.logger.Warn("no worker available for scaling", "function_id", ev.FunctionId)
 						return
 					}
-					err := scaler.scaleUp(ctx, wIdx)
+					err := scaler.scaleUp(ctx, wIdx, "cold-start")
 					if err != nil {
 						// TODO do something better about this error.
 						c.logger.Error("failed to scale up", "function_id", ev.FunctionId, "error", err)
@@ -318,7 +318,7 @@ func (f *functionAutoScaler) AutoScale() {
 					f.logger.Warn("no worker available for scaling", "function_id", f.functionID)
 					continue
 				}
-				err := f.scaleUp(f.ctx, wIdx)
+				err := f.scaleUp(f.ctx, wIdx, "non-zero-load-no-instances")
 				if err != nil {
 					// TODO remove after debugging
 					panic(err)
@@ -332,7 +332,7 @@ func (f *functionAutoScaler) AutoScale() {
 					f.logger.Warn("no worker available for scaling", "function_id", f.functionID)
 					continue
 				}
-				err := f.scaleUp(f.ctx, wIdx)
+				err := f.scaleUp(f.ctx, wIdx, "load-greater-than-instances-times-max-concurrency")
 				if err != nil {
 					// TODO remove after debugging
 					panic(err)
@@ -346,7 +346,7 @@ func (f *functionAutoScaler) AutoScale() {
 }
 
 // scaleUp sends a Start call to a worker and updates local state accordingly.
-func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int) error {
+func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int, reason string) error {
 	if workerIdx < 0 || workerIdx >= len(f.workers) {
 		return fmt.Errorf("invalid worker index %d", workerIdx)
 	}
@@ -367,7 +367,7 @@ func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int) error {
 	if err != nil {
 		return err
 	}
-	f.logger.Info("started instance", "worker", worker.Address(), "instance_id", resp.InstanceId)
+	f.logger.Info("started instance", "worker", worker.Address(), "instance_id", resp.InstanceId, "reason", reason)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -490,6 +490,7 @@ func (f *functionAutoScaler) handleWorkerEvent(workerIdx int, event *dataplane.W
 	switch event.Event {
 	// for now all of this is the same ...
 	case workerpb.Event_EVENT_DOWN, workerpb.Event_EVENT_TIMEOUT, workerpb.Event_EVENT_STOP:
+		f.logger.Info("removing instance", "function_id", f.functionID, "worker", workerIdx, "instance_id", event.InstanceId, "reason", event.Event)
 		f.removeInstance(workerIdx, event.InstanceId)
 	}
 }
