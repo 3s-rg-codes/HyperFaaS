@@ -203,6 +203,8 @@ type functionAutoScaler struct {
 	instanceChangesChan chan metrics.InstanceChange
 
 	totalInstances int
+	// how often the idle ticker should check for idle instances and attempt to scale them down
+	idleTickerInterval time.Duration
 
 	// function scale FROM and TO zero get reported into this channel.
 	zeroScaleChan chan metrics.ZeroScaleEvent
@@ -256,6 +258,7 @@ func newFunctionAutoScaler(ctx context.Context,
 		ctx:                       subCtx,
 		cancel:                    cancel,
 		workerStates:              make([]workerState, len(workers)),
+		idleTickerInterval:        globalCfg.ScaleToZeroAfter / 2,
 		instanceChangesChan:       instanceChangesChan,
 		zeroScaleChan:             zeroScaleChan,
 		concurrencyReporter:       concurrencyReporter,
@@ -318,8 +321,8 @@ func (f *functionAutoScaler) AutoScale() {
 				}
 				err := f.scaleUp(f.ctx, wIdx, "non-zero-load-no-instances")
 				if err != nil {
-					// TODO handle this error better.
-					f.logger.Error("failed to scale up", "function_id", f.functionID, "error", err)
+					// TODO remove after debugging
+					panic(err)
 				}
 				continue
 			}
@@ -332,8 +335,8 @@ func (f *functionAutoScaler) AutoScale() {
 				}
 				err := f.scaleUp(f.ctx, wIdx, "load-greater-than-instances-times-max-concurrency")
 				if err != nil {
-					// TODO handle this error better.
-					f.logger.Error("failed to scale up", "function_id", f.functionID, "error", err)
+					// TODO remove after debugging
+					panic(err)
 				}
 				continue
 			}
@@ -361,13 +364,13 @@ func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int, reason 
 
 	subCtx, cancel := context.WithTimeout(ctx, f.startTimeout)
 	defer cancel()
-	f.logger.Debug(" SCALEUP sending start request", "function_id", f.functionID, "worker_idx", workerIdx, "reason", reason)
+
 	resp, err := worker.Start(subCtx, &workerpb.StartRequest{FunctionId: f.functionID})
 	if err != nil {
 		f.logger.Error(" SCALEUP failed to send start request", "function_id", f.functionID, "worker_idx", workerIdx, "reason", reason, "error", err)
 		return err
 	}
-	f.logger.Debug(" SCALEUP started instance successfully", "function_id", f.functionID, "worker_idx", workerIdx, "instance_id", resp.InstanceId, "reason", reason)
+	f.logger.Info("started instance", "worker", worker.Address(), "instance_id", resp.InstanceId)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
