@@ -119,8 +119,10 @@ func (c *ControlPlane) RemoveFunction(functionId string) {
 	if !ok {
 		return
 	}
+	c.concurrencyReporter.DeleteFunctionStats(functionId)
 	scaler.Close()
 	delete(c.functions, functionId)
+
 }
 
 func (c *ControlPlane) HandleWorkerEvent(workerIdx int, event *dataplane.WorkerStatusEvent) {

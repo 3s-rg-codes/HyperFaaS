@@ -178,12 +178,12 @@ func (s *Server) handleMetadataEvent(ev metadata.Event) {
 		s.upsertFunction(ev.Function)
 	case metadata.EventTypeDelete:
 		if ev.FunctionID == "" {
-			s.logger.Warn("metadata delete without function id")
+			s.logger.Error("metadata delete without function id")
 			return
 		}
 		s.removeFunction(ev.FunctionID)
 	default:
-		s.logger.Warn("unknown metadata event", "type", ev.Type)
+		s.logger.Error("unknown metadata event", "type", ev.Type)
 	}
 }
 
@@ -192,11 +192,11 @@ func (s *Server) upsertFunction(meta *metadata.FunctionMetadata) {
 		return
 	}
 	if meta.ID == "" {
-		s.logger.Warn("metadata missing function id")
+		s.logger.Error("metadata missing function id")
 		return
 	}
 	if meta.Config == nil {
-		s.logger.Warn("metadata missing config", "functionID", meta.ID)
+		s.logger.Error("metadata missing config", "functionID", meta.ID)
 		return
 	}
 
