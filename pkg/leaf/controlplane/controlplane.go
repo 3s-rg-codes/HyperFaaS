@@ -202,8 +202,6 @@ type functionAutoScaler struct {
 	instanceChangesChan chan metrics.InstanceChange
 
 	totalInstances int
-	// how often the idle ticker should check for idle instances and attempt to scale them down
-	idleTickerInterval time.Duration
 
 	// function scale FROM and TO zero get reported into this channel.
 	zeroScaleChan chan metrics.ZeroScaleEvent
@@ -257,7 +255,6 @@ func newFunctionAutoScaler(ctx context.Context,
 		ctx:                       subCtx,
 		cancel:                    cancel,
 		workerStates:              make([]workerState, len(workers)),
-		idleTickerInterval:        globalCfg.ScaleToZeroAfter / 2,
 		instanceChangesChan:       instanceChangesChan,
 		zeroScaleChan:             zeroScaleChan,
 		concurrencyReporter:       concurrencyReporter,
@@ -320,8 +317,8 @@ func (f *functionAutoScaler) AutoScale() {
 				}
 				err := f.scaleUp(f.ctx, wIdx, "non-zero-load-no-instances")
 				if err != nil {
-					// TODO remove after debugging
-					panic(err)
+					// TODO handle this error better.
+					f.logger.Error("failed to scale up", "function_id", f.functionID, "error", err)
 				}
 				continue
 			}
@@ -334,8 +331,8 @@ func (f *functionAutoScaler) AutoScale() {
 				}
 				err := f.scaleUp(f.ctx, wIdx, "load-greater-than-instances-times-max-concurrency")
 				if err != nil {
-					// TODO remove after debugging
-					panic(err)
+					// TODO handle this error better.
+					f.logger.Error("failed to scale up", "function_id", f.functionID, "error", err)
 				}
 				continue
 			}
