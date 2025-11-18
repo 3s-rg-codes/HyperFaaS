@@ -146,6 +146,7 @@ func (c *ControlPlane) GetScaleChan(functionId string) chan metrics.ZeroScaleEve
 	return scaler.zeroScaleChan
 }
 
+// UpsertFunction inserts or updates a function in the control plane.
 func (c *ControlPlane) UpsertFunction(meta *metadata.FunctionMetadata) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

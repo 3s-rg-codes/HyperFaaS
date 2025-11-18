@@ -34,6 +34,8 @@ func NewConnPool() *ConnPool {
 }
 
 // GetOrCreate returns a connection for the address if it exists, otherwise creates a new one.
+// For now the locking is global, this is inneficient.
+// We would need to implement a per-address lock.
 func (p *ConnPool) GetOrCreate(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// check while holding read lock
 
