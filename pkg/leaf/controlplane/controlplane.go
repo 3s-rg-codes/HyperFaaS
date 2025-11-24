@@ -345,6 +345,7 @@ func (f *functionAutoScaler) AutoScale() {
 
 // scaleUp sends a Start call to a worker and updates local state accordingly.
 func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int, reason string) error {
+	f.logger.Debug(" SCALEUP attempting to scale up", "function_id", f.functionID, "worker_idx", workerIdx, "reason", reason)
 	if workerIdx < 0 || workerIdx >= len(f.workers) {
 		return fmt.Errorf("invalid worker index %d", workerIdx)
 	}
@@ -360,12 +361,13 @@ func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int, reason 
 
 	subCtx, cancel := context.WithTimeout(ctx, f.startTimeout)
 	defer cancel()
-
+	f.logger.Debug(" SCALEUP sending start request", "function_id", f.functionID, "worker_idx", workerIdx, "reason", reason)
 	resp, err := worker.Start(subCtx, &workerpb.StartRequest{FunctionId: f.functionID})
 	if err != nil {
+		f.logger.Error(" SCALEUP failed to send start request", "function_id", f.functionID, "worker_idx", workerIdx, "reason", reason, "error", err)
 		return err
 	}
-	f.logger.Info("started instance", "worker", worker.Address(), "instance_id", resp.InstanceId, "reason", reason)
+	f.logger.Debug(" SCALEUP started instance successfully", "function_id", f.functionID, "worker_idx", workerIdx, "instance_id", resp.InstanceId, "reason", reason)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -377,12 +379,13 @@ func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int, reason 
 	}
 
 	// emit instance change
-	f.logger.Debug("emitting instance change", "function_id", f.functionID, "address", instanceIP)
+	f.logger.Debug(" SCALEUP emitting instance change", "function_id", f.functionID, "address", instanceIP)
 	f.instanceChangesChan <- metrics.InstanceChange{
 		FunctionId: f.functionID,
 		Address:    instanceIP,
 		Have:       true,
 	}
+	f.logger.Debug(" SCALEUP emitted instance change successfully", "function_id", f.functionID, "address", instanceIP)
 
 	// track instance in local state
 	ws := &f.workerStates[workerIdx]
@@ -394,11 +397,12 @@ func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int, reason 
 	f.totalInstances++
 
 	if f.totalInstances == 1 {
-		f.logger.Debug("emitting zero scale event", "function_id", f.functionID, "zero", true)
+		f.logger.Debug(" SCALEUP emitting zero scale event", "function_id", f.functionID, "zero", true)
 		f.zeroScaleChan <- metrics.ZeroScaleEvent{
 			FunctionId: f.functionID,
 			Have:       true,
 		}
+		f.logger.Debug(" SCALEUP emitted zero scale event successfully", "function_id", f.functionID, "zero", true)
 	}
 
 	return nil
