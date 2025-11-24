@@ -23,7 +23,9 @@ import (
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 )
 
-const STATE_STREAM_BUFFER = 1000
+const STATE_STREAM_BUFFER = 10000
+
+const INSTANCE_CHANGES_CHANNEL_BUFFER = 10000
 
 // Server implements the leafpb.LeafServer gRPC.
 type Server struct {
@@ -73,7 +75,7 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient *metadata.
 	// the direction of communication here is ControlPlane -> DataPlane.
 	// Used for example when a new instance is started and we need to update the data plane,
 	// so we can route calls to the new instance.
-	instanceChangesChan := make(chan metrics.InstanceChange)
+	instanceChangesChan := make(chan metrics.InstanceChange, INSTANCE_CHANGES_CHANNEL_BUFFER)
 
 	// where the State stream reads zero scale events from.
 	functionScaleEvents := make(chan metrics.ZeroScaleEvent, STATE_STREAM_BUFFER)
