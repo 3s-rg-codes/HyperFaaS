@@ -41,6 +41,7 @@ func (p *ConnPool) GetOrCreate(ctx context.Context, address string) (*grpc.Clien
 
 	p.mu.RLock()
 	if conn, ok := p.conns[address]; ok {
+		p.mu.RUnlock()
 		return conn.conn, nil
 	}
 	p.mu.RUnlock()
