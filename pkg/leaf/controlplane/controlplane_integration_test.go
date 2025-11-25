@@ -17,8 +17,10 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/dataplane"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/metrics"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
+
 	"google.golang.org/grpc"
 )
 
@@ -165,7 +167,7 @@ func startMockWorkerServer(t *testing.T) string {
 	}
 
 	server := grpc.NewServer()
-	workerpb.RegisterWorkerServer(server, &mockWorkerServer{})
+	workerpb.RegisterWorkerServer(server, &controller.MockController{})
 
 	go func() {
 		if err := server.Serve(lis); err != nil && err != grpc.ErrServerStopped {
@@ -176,22 +178,4 @@ func startMockWorkerServer(t *testing.T) string {
 	t.Cleanup(server.Stop)
 
 	return lis.Addr().String()
-}
-
-type mockWorkerServer struct {
-	workerpb.UnimplementedWorkerServer
-}
-
-func (m *mockWorkerServer) Start(ctx context.Context, req *workerpb.StartRequest) (*workerpb.StartResponse, error) {
-	time.Sleep(time.Duration(rand.Intn(250)) * time.Millisecond)
-	return &workerpb.StartResponse{
-		InstanceId:         "instance-id",
-		InstanceInternalIp: "127.0.0.1:50052",
-		InstanceExternalIp: "127.0.0.1:50053",
-		InstanceName:       "mock-instance",
-	}, nil
-}
-
-func (m *mockWorkerServer) Stop(ctx context.Context, req *workerpb.StopRequest) (*workerpb.StopResponse, error) {
-	return &workerpb.StopResponse{InstanceId: req.InstanceId}, nil
 }

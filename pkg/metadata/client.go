@@ -22,15 +22,25 @@ var (
 	ErrReqIsNil              = errors.New("metadata: request is nil")
 )
 
-// Client wraps etcd to manage HyperFaaS function metadata.
-type Client struct {
+type Client interface {
+	PutFunction(ctx context.Context, req *common.CreateFunctionRequest) (string, error)
+	PutFunctionWithID(ctx context.Context, id string, req *common.CreateFunctionRequest) error
+	DeleteFunction(ctx context.Context, id string) error
+	GetFunction(ctx context.Context, id string) (*FunctionMetadata, error)
+	ListFunctions(ctx context.Context) (*ListResult, error)
+	WatchFunctions(ctx context.Context, revision int64) (<-chan Event, <-chan error)
+	Close() error
+}
+
+// EtcdClient wraps etcd to manage HyperFaaS function metadata.
+type EtcdClient struct {
 	cli    *clientv3.Client
 	prefix string
 	logger *slog.Logger
 }
 
 // NewClient connects to etcd using the provided endpoints and options.
-func NewClient(endpoints []string, opts Options, logger *slog.Logger) (*Client, error) {
+func NewClient(endpoints []string, opts Options, logger *slog.Logger) (*EtcdClient, error) {
 	if len(endpoints) == 0 {
 		return nil, errors.New("metadata: at least one etcd endpoint is required")
 	}
@@ -59,11 +69,11 @@ func NewClient(endpoints []string, opts Options, logger *slog.Logger) (*Client, 
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
-	return &Client{cli: cli, prefix: normalizePrefix(prefix), logger: logger}, nil
+	return &EtcdClient{cli: cli, prefix: normalizePrefix(prefix), logger: logger}, nil
 }
 
 // Close releases the etcd client.
-func (c *Client) Close() error {
+func (c *EtcdClient) Close() error {
 	if c == nil || c.cli == nil {
 		return nil
 	}
@@ -71,7 +81,7 @@ func (c *Client) Close() error {
 }
 
 // PutFunction stores new function metadata and generates a function ID.
-func (c *Client) PutFunction(ctx context.Context, req *common.CreateFunctionRequest) (string, error) {
+func (c *EtcdClient) PutFunction(ctx context.Context, req *common.CreateFunctionRequest) (string, error) {
 	if req == nil {
 		return "", ErrReqIsNil
 	}
@@ -83,7 +93,7 @@ func (c *Client) PutFunction(ctx context.Context, req *common.CreateFunctionRequ
 }
 
 // PutFunctionWithID stores or updates metadata for a given function ID.
-func (c *Client) PutFunctionWithID(ctx context.Context, id string, req *common.CreateFunctionRequest) error {
+func (c *EtcdClient) PutFunctionWithID(ctx context.Context, id string, req *common.CreateFunctionRequest) error {
 	if id == "" {
 		return ErrFunctionIDIsEmpty
 	}
@@ -101,7 +111,7 @@ func (c *Client) PutFunctionWithID(ctx context.Context, id string, req *common.C
 }
 
 // DeleteFunction removes metadata for the given function ID.
-func (c *Client) DeleteFunction(ctx context.Context, id string) error {
+func (c *EtcdClient) DeleteFunction(ctx context.Context, id string) error {
 	if id == "" {
 		return ErrFunctionIDIsEmpty
 	}
@@ -116,7 +126,7 @@ func (c *Client) DeleteFunction(ctx context.Context, id string) error {
 }
 
 // GetFunction returns the metadata for the given function ID.
-func (c *Client) GetFunction(ctx context.Context, id string) (*FunctionMetadata, error) {
+func (c *EtcdClient) GetFunction(ctx context.Context, id string) (*FunctionMetadata, error) {
 	if id == "" {
 		return nil, ErrFunctionIDIsEmpty
 	}
@@ -138,7 +148,7 @@ func (c *Client) GetFunction(ctx context.Context, id string) (*FunctionMetadata,
 }
 
 // ListFunctions loads all function metadata stored under the configured prefix.
-func (c *Client) ListFunctions(ctx context.Context) (*ListResult, error) {
+func (c *EtcdClient) ListFunctions(ctx context.Context) (*ListResult, error) {
 	resp, err := c.cli.Get(ctx, c.prefix, clientv3.WithPrefix())
 	if err != nil {
 		return nil, err
@@ -159,7 +169,7 @@ func (c *Client) ListFunctions(ctx context.Context) (*ListResult, error) {
 }
 
 // WatchFunctions streams metadata changes starting after the provided revision.
-func (c *Client) WatchFunctions(ctx context.Context, revision int64) (<-chan Event, <-chan error) {
+func (c *EtcdClient) WatchFunctions(ctx context.Context, revision int64) (<-chan Event, <-chan error) {
 	events := make(chan Event, 64)
 	errs := make(chan error, 1)
 
@@ -219,11 +229,11 @@ func (c *Client) WatchFunctions(ctx context.Context, revision int64) (<-chan Eve
 	return events, errs
 }
 
-func (c *Client) key(id string) string {
+func (c *EtcdClient) key(id string) string {
 	return c.prefix + "/" + id
 }
 
-func (c *Client) idFromKey(key string) string {
+func (c *EtcdClient) idFromKey(key string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(key, c.prefix), "/")
 }
 

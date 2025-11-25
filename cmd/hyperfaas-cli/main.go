@@ -534,7 +534,7 @@ func createProxyClient(address string) (leafpb.LeafClient, *grpc.ClientConn, err
 	return createLeafClient(address)
 }
 
-func createMetadataClient(cmd *cli.Command) (*metadata.Client, error) {
+func createMetadataClient(cmd *cli.Command) (*metadata.EtcdClient, error) {
 	endpoints := cmd.StringSlice("etcd-endpoint")
 	if len(endpoints) == 0 {
 		endpoints = []string{"localhost:2379"}
@@ -596,7 +596,7 @@ func buildFunctionRequest(cmd *cli.Command, imageTag string) (*commonpb.CreateFu
 	}, nil
 }
 
-func buildUpdateRequest(cmd *cli.Command, client *metadata.Client, ctx context.Context, functionID string) (*commonpb.CreateFunctionRequest, error) {
+func buildUpdateRequest(cmd *cli.Command, client *metadata.EtcdClient, ctx context.Context, functionID string) (*commonpb.CreateFunctionRequest, error) {
 	meta, err := client.GetFunction(ctx, functionID)
 	if err != nil {
 		return nil, err
