@@ -121,7 +121,6 @@ func (m *DataPlane) CallWithConnPool(
 	functionId string,
 	req *common.CallRequest,
 ) (*common.CallResponse, error) {
-
 	// TODO: In knative they only do HTTP so they dont have a return type.
 	// but we actually need the response type so idk how to do it here without allocating
 	// Investigate if this is a performance or memory bottleneck.

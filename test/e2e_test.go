@@ -49,21 +49,21 @@ func TestCreateFunctionRequest(t *testing.T) {
 func TestCallRequest(t *testing.T) {
 
 	// Create HAProxy client for gRPC calls
-	//haproxyClient := GetHAProxyClient(HAPROXY_ADDRESS)
+	haproxyClient := GetHAProxyClient(HAPROXY_ADDRESS)
 
-	leafClient, conn := GetLeafClient(LEAF_ADDRESS)
-	defer conn.Close()
+	//leafClient, conn := GetLeafClient(LEAF_ADDRESS)
+	//defer conn.Close()
 
 	data := []struct {
 		ImageTag         string
 		ExpectedResponse []byte
 		Data             []byte
 	}{
-		/* {
+		{
 			ImageTag:         "hyperfaas-hello:latest",
 			ExpectedResponse: []byte("HELLO WORLD!"),
 			Data:             []byte(""),
-		}, */
+		},
 		{
 			ImageTag:         "hyperfaas-echo:latest",
 			ExpectedResponse: []byte("Echo this message"),
@@ -75,7 +75,7 @@ func TestCallRequest(t *testing.T) {
 		t.Run("Single Call", func(t *testing.T) {
 			//t.Skip("Skipping single call test")
 			functionId := createFunctionMetadata(d.ImageTag)
-			testCall(t, leafClient, functionId, d.Data, d.ExpectedResponse, false)
+			testCall(t, haproxyClient, functionId, d.Data, d.ExpectedResponse, false)
 		})
 	}
 
@@ -91,7 +91,7 @@ func TestCallRequest(t *testing.T) {
 			errorsMutex := sync.Mutex{}
 			for range CONCURRENCY {
 				wg.Go(func() {
-					err := testCall(t, leafClient, functionId, d.Data, d.ExpectedResponse, false)
+					err := testCall(t, haproxyClient, functionId, d.Data, d.ExpectedResponse, false)
 					if err != nil {
 						fail.Add(1)
 						errorsMutex.Lock()

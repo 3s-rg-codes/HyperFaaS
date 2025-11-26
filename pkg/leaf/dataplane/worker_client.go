@@ -180,8 +180,7 @@ func TranslateWorkerStatus(update *workerpb.StatusUpdate) *WorkerStatusEvent {
 	}
 }
 
-type mockWorkerClient struct {
-}
+type mockWorkerClient struct{}
 
 func newMockWorkerClient() workerpb.WorkerClient {
 	return mockWorkerClient{}

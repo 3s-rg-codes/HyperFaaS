@@ -37,12 +37,6 @@ func (m MockController) Status(_ *workerpb.StatusRequest, stream grpc.ServerStre
 	return stream.Context().Err()
 }
 
-// mustEmbedUnimplementedWorkerServer implements worker.WorkerServer.
-// Subtle: this method shadows the method (UnimplementedWorkerServer).mustEmbedUnimplementedWorkerServer of MockController.UnimplementedWorkerServer.
-func (m MockController) mustEmbedUnimplementedWorkerServer() {
-	panic("unimplemented")
-}
-
 func (m MockController) Start(ctx context.Context, req *workerpb.StartRequest) (*workerpb.StartResponse, error) {
 	time.Sleep(time.Duration(rand.Intn(250)) * time.Millisecond)
 	return &workerpb.StartResponse{
