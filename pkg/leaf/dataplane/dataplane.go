@@ -2,12 +2,15 @@ package dataplane
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/dataplane/net"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/metrics"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 )
 
 type mdclient interface {
@@ -27,6 +30,8 @@ type DataPlane struct {
 
 	// the concurrency reporter write metrics to.
 	concurrencyReporter *metrics.ConcurrencyReporter
+
+	connPool *ConnPool
 }
 
 // NewDataPlane creates a new data plane.
@@ -42,6 +47,7 @@ func NewDataPlane(
 		mdClient:            mdClient,
 		instanceChangesChan: instanceChangesChan,
 		concurrencyReporter: concurrencyReporter,
+		connPool:            NewConnPool(),
 	}
 }
 
@@ -108,6 +114,37 @@ func (m *DataPlane) Try(
 	m.concurrencyReporter.HandleRequestIn(functionId)
 	defer m.concurrencyReporter.HandleRequestOut(functionId)
 	return throttler.Try(ctx, fn)
+}
+
+func (m *DataPlane) CallWithConnPool(
+	ctx context.Context,
+	functionId string,
+	req *common.CallRequest,
+) (*common.CallResponse, error) {
+	// TODO: In knative they only do HTTP so they dont have a return type.
+	// but we actually need the response type so idk how to do it here without allocating
+	// Investigate if this is a performance or memory bottleneck.
+
+	var response *common.CallResponse
+
+	err := m.Try(ctx, functionId, func(address string) error {
+		conn, err := m.connPool.GetOrCreate(ctx, address)
+		if err != nil {
+			return err
+		}
+
+		client := functionpb.NewFunctionServiceClient(conn)
+		resp, err := client.Call(ctx, req)
+		if err != nil {
+			return err
+		}
+		response = resp
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dataplane failed to call function: %v", err)
+	}
+	return response, nil
 }
 
 // RemoveThrottler removes a throttler for a function (e.g., when function is deleted).

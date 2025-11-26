@@ -1,5 +1,3 @@
-version: "3.9"
-
 x-worker-template: &worker-template
   build:
     context: ..

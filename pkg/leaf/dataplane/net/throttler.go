@@ -65,7 +65,7 @@ func NewThrottler(containerConcurrency int, logger *slog.Logger) *Throttler {
 		breaker:              revBreaker,
 		lbPolicy:             lbp,
 		instanceTrackers:     make([]*instanceTracker, 0),
-		logger:               logger,
+		logger:               logger.With("component", "throttler"),
 	}
 }
 

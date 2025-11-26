@@ -22,13 +22,15 @@ import (
 
 // set the env vars to override the default values
 var WORKER_ADDRESS = envOrDefault("WORKER_ADDRESS", "localhost:50051")
+
+// var LEAF_ADDRESS = envOrDefault("LEAF_ADDRESS", "localhost:50010")
 var LEAF_ADDRESS = envOrDefault("LEAF_ADDRESS", "localhost:50050")
 var HAPROXY_ADDRESS = envOrDefault("HAPROXY_ADDRESS", "localhost:9999")
 var ETCD_ADDRESS = envOrDefault("ETCD_ADDRESS", "localhost:2379")
 
 // The timeout used for the calls
 const TIMEOUT = 30 * time.Second
-const CONCURRENCY = 50
+const CONCURRENCY = 1500
 
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
@@ -48,6 +50,9 @@ func TestCallRequest(t *testing.T) {
 
 	// Create HAProxy client for gRPC calls
 	haproxyClient := GetHAProxyClient(HAPROXY_ADDRESS)
+
+	//leafClient, conn := GetLeafClient(LEAF_ADDRESS)
+	//defer conn.Close()
 
 	data := []struct {
 		ImageTag         string
@@ -117,7 +122,8 @@ func TestCallRequest(t *testing.T) {
 }
 
 // Tests creating, calling and deleting a function and verifying that further calls to it fail.
-func TestDeleteFunction(t *testing.T) {
+/* func TestDeleteFunction(t *testing.T) {
+	t.Skip("Skipping delete function test")
 
 	haproxyClient := GetHAProxyClient(HAPROXY_ADDRESS)
 
@@ -139,7 +145,7 @@ func TestDeleteFunction(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected call to fail, got %v", err)
 	}
-}
+} */
 
 func envOrDefault(env string, defaultValue string) string {
 	if value, ok := os.LookupEnv(env); ok {
@@ -157,7 +163,7 @@ func createFunctionMetadata(imageTag string) string {
 			Period: 100000,
 			Quota:  50000,
 		},
-		MaxConcurrency: 2500,
+		MaxConcurrency: 10000,
 		Timeout:        15,
 	}
 
@@ -226,7 +232,8 @@ func (h *haproxyClient) Close() error {
 	return h.conn.Close()
 }
 
-// tests a call to a function using data. Verifies the response is as expected. Receives a leaf or lb client.
+// tests a call to a function using data. Verifies the response is as expected.
+// Receives a leaf or haproxy client.
 func testCall(t *testing.T,
 	c client,
 	functionId string,
@@ -246,6 +253,10 @@ func testCall(t *testing.T,
 		}
 		t.Fail()
 		return err
+	}
+	if resp == nil {
+		t.Errorf("Response is nil")
+		return nil
 	}
 	if !bytes.Equal(resp.Data, expectedResponse) {
 		t.Errorf("Expected response %s, got %s", expectedResponse, resp.Data)

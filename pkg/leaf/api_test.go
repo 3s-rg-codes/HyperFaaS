@@ -1,0 +1,302 @@
+//go:build integration
+
+package leafv2
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"log/slog"
+	"net"
+	"os"
+	"runtime/pprof"
+	"testing"
+	"time"
+
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/controlplane"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/dataplane"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/metrics"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
+	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
+	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+)
+
+const TEST_CONCURRENCY = 10000
+const TEST_TIMEOUT = 10 * time.Second
+
+func TestScheduleCall(t *testing.T) {
+	server, err := setup(t)
+	if err != nil {
+		t.Fatalf("failed to setup test server: %v", err)
+	}
+
+	// register a function in the metadata client
+	id, err := server.metadataClient.PutFunction(context.Background(), &common.CreateFunctionRequest{
+		Image: &common.Image{
+			Tag: "test-image",
+		},
+		Config: &common.Config{
+			Memory:         100 * 1024 * 1024,
+			MaxConcurrency: 100000,
+			Timeout:        10,
+		},
+	})
+
+	time.Sleep(2 * time.Second)
+
+	if err != nil {
+		t.Fatalf("failed to register function: %v", err)
+	}
+
+	// run the mocked function server
+	addr := "127.0.0.1:56789" // this is the one returned in the mocked controller.Start method.
+	reqCtx, reqCancel := context.WithTimeout(t.Context(), TEST_TIMEOUT)
+	t.Cleanup(reqCancel)
+	funcCtx, cancel := context.WithCancel(reqCtx)
+	t.Cleanup(cancel)
+
+	go func() {
+		if err := (mockedRunningInstance{}).Run(funcCtx, addr); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("mock function server exited: %v", err)
+		}
+	}()
+
+	resp, err := server.ScheduleCall(reqCtx, &common.CallRequest{
+		FunctionId: id,
+		Data:       []byte("test-data"),
+	})
+
+	if err != nil {
+		t.Fatalf("failed to schedule call: %v", err)
+	}
+
+	if resp == nil {
+		t.Fatalf("response is nil")
+	}
+}
+
+func TestScheduleCallConcurrent(t *testing.T) {
+	server, err := setup(t)
+	if err != nil {
+		t.Fatalf("failed to setup test server: %v", err)
+	}
+
+	// register a function in the metadata client
+	id, err := server.metadataClient.PutFunction(context.Background(), &common.CreateFunctionRequest{
+		Image: &common.Image{
+			Tag: "test-image",
+		},
+		Config: &common.Config{
+			Memory:         100 * 1024 * 1024,
+			MaxConcurrency: 100000,
+			Timeout:        10,
+		},
+	})
+
+	time.Sleep(2 * time.Second)
+
+	if err != nil {
+		t.Fatalf("failed to register function: %v", err)
+	}
+
+	// run the mocked function server
+	addr := "127.0.0.1:56789" // this is the one returned in the mocked controller.Start method.
+	reqCtx, reqCancel := context.WithTimeout(t.Context(), TEST_TIMEOUT)
+	t.Cleanup(reqCancel)
+	funcCtx, funcCancel := context.WithCancel(reqCtx)
+	t.Cleanup(funcCancel)
+
+	go func() {
+		if err := (mockedRunningInstance{}).Run(funcCtx, addr); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("mock function server exited: %v", err)
+		}
+	}()
+
+	// schedule calls concurrently and fail fast when ctx is exceeded.
+	egrp, callCtx := errgroup.WithContext(reqCtx)
+
+	t.Logf("scheduling %d calls", TEST_CONCURRENCY)
+	for range TEST_CONCURRENCY {
+		egrp.Go(func() error {
+			_, callErr := server.ScheduleCall(callCtx, &common.CallRequest{
+				FunctionId: id,
+				Data:       []byte("test-data"),
+			})
+			return callErr
+		})
+	}
+
+	t.Log("waiting for calls to complete")
+	waitErr := waitGroupOrTimeout(t, reqCtx, egrp)
+	if waitErr != nil {
+		t.Fatalf("failed to schedule call: %v", waitErr)
+	}
+
+	t.Logf("scheduled %d calls", TEST_CONCURRENCY)
+}
+
+func setup(t *testing.T) (*Server, error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cfg := config.Config{
+		WorkerAddresses: []string{"testesttstes"},
+	}
+	cfg.ApplyDefaults()
+	server, err := newTestServer(ctx,
+		cfg,
+		metadata.NewMockClient(),
+		slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(server.cancel)
+	return server, nil
+}
+
+// NewServer initialises a leaf server with the provided configuration and logger,
+// but uses mocked metadata client and mocked worker clients.
+func newTestServer(ctx context.Context, cfg config.Config, metadataClient metadata.Client, logger *slog.Logger) (*Server, error) {
+	cfg.ApplyDefaults()
+
+	if len(cfg.WorkerAddresses) == 0 {
+		return nil, errors.New("at least one worker address is required")
+	}
+	if logger == nil {
+		panic("logger must not be nil")
+	}
+	if metadataClient == nil {
+		panic("metadata client must not be nil")
+	}
+	metricChan := make(chan metrics.MetricEvent, METRIC_CHANNEL_BUFFER)
+	// channel to notify of changes in the instance count of a function.
+	// the direction of communication here is ControlPlane -> DataPlane.
+	// Used for example when a new instance is started and we need to update the data plane,
+	// so we can route calls to the new instance.
+	instanceChangesChan := make(chan metrics.InstanceChange, INSTANCE_CHANGES_CHANNEL_BUFFER)
+
+	// where the State stream reads zero scale events from.
+	functionScaleEvents := make(chan metrics.ZeroScaleEvent, STATE_STREAM_BUFFER)
+	serverCtx, cancel := context.WithCancel(ctx)
+
+	// create worker clients
+	workers := make([]*dataplane.WorkerClient, 0, len(cfg.WorkerAddresses))
+	for idx, addr := range cfg.WorkerAddresses {
+		h, err := dataplane.NewMockWorkerClient(serverCtx, idx, addr, cfg, logger.With("worker", addr))
+		if err != nil {
+			panic(err)
+		}
+		workers = append(workers, h)
+	}
+
+	cr := metrics.NewConcurrencyReporter(logger, metricChan, 1*time.Second)
+	go cr.Run(serverCtx)
+
+	dp := dataplane.NewDataPlane(logger, metadataClient, instanceChangesChan, cr)
+	go dp.Run(serverCtx)
+
+	cp := controlplane.NewControlPlane(serverCtx, cfg, logger, instanceChangesChan, workers, functionScaleEvents, cr)
+	go cp.Run(serverCtx)
+
+	s := &Server{
+		cfg:                 cfg,
+		logger:              logger,
+		ctx:                 serverCtx,
+		cancel:              cancel,
+		nodeID:              uuid.NewString(),
+		metadataClient:      metadataClient,
+		dataPlane:           dp,
+		controlPlane:        cp,
+		concurrencyReporter: cr,
+		functionScaleEvents: functionScaleEvents,
+	}
+
+	s.workers = workers
+
+	if err := s.bootstrapMetadata(); err != nil {
+		cancel()
+		return nil, err
+	}
+
+	for _, w := range s.workers {
+		w.StartStatusStream(s.nodeID, cfg.StatusBackoff, s.handleWorkerStatus)
+	}
+
+	return s, nil
+}
+
+var _ functionpb.FunctionServiceServer = mockedRunningInstance{}
+
+type mockedRunningInstance struct {
+	functionpb.UnimplementedFunctionServiceServer
+}
+
+func (m mockedRunningInstance) Call(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
+	return &common.CallResponse{
+		Data: []byte("test-data"),
+	}, nil
+}
+
+func (m mockedRunningInstance) Run(ctx context.Context, addr string) error {
+	s := grpc.NewServer()
+	functionpb.RegisterFunctionServiceServer(s, m)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		if err := s.Serve(listener); err != nil && err != grpc.ErrServerStopped {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+
+	select {
+	case <-ctx.Done():
+		s.GracefulStop()
+		if err := <-errCh; err != nil && err != grpc.ErrServerStopped {
+			return err
+		}
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
+}
+
+func waitGroupOrTimeout(t *testing.T, ctx context.Context, group *errgroup.Group) error {
+	t.Helper()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- group.Wait()
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		dumpGoroutines(t)
+		return ctx.Err()
+	}
+}
+
+func dumpGoroutines(t *testing.T) {
+	t.Helper()
+	profile := pprof.Lookup("goroutine")
+	if profile == nil {
+		t.Log("goroutine profile unavailable")
+		return
+	}
+	var buf bytes.Buffer
+	if err := profile.WriteTo(&buf, 2); err != nil {
+		t.Logf("failed to dump goroutines: %v", err)
+		return
+	}
+	t.Logf("goroutine dump before failure:\n%s", buf.String())
+}

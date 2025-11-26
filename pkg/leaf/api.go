@@ -8,9 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
@@ -19,11 +17,14 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/metrics"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	function "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 )
 
-const STATE_STREAM_BUFFER = 1000
+const STATE_STREAM_BUFFER = 10000
+
+const INSTANCE_CHANGES_CHANNEL_BUFFER = 10000
+
+const METRIC_CHANNEL_BUFFER = 10000
 
 // Server implements the leafpb.LeafServer gRPC.
 type Server struct {
@@ -39,7 +40,7 @@ type Server struct {
 	// the id of this node. used to subscribe to status stream of workers.
 	nodeID string
 
-	metadataClient *metadata.Client
+	metadataClient metadata.Client
 
 	dataPlane *dataplane.DataPlane
 
@@ -56,7 +57,7 @@ type Server struct {
 }
 
 // NewServer initialises a leaf server with the provided configuration and logger.
-func NewServer(ctx context.Context, cfg config.Config, metadataClient *metadata.Client, logger *slog.Logger) (*Server, error) {
+func NewServer(ctx context.Context, cfg config.Config, metadataClient metadata.Client, logger *slog.Logger) (*Server, error) {
 	cfg.ApplyDefaults()
 
 	if len(cfg.WorkerAddresses) == 0 {
@@ -68,12 +69,12 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient *metadata.
 	if metadataClient == nil {
 		panic("metadata client must not be nil")
 	}
-	metricChan := make(chan metrics.MetricEvent)
+	metricChan := make(chan metrics.MetricEvent, METRIC_CHANNEL_BUFFER)
 	// channel to notify of changes in the instance count of a function.
 	// the direction of communication here is ControlPlane -> DataPlane.
 	// Used for example when a new instance is started and we need to update the data plane,
 	// so we can route calls to the new instance.
-	instanceChangesChan := make(chan metrics.InstanceChange)
+	instanceChangesChan := make(chan metrics.InstanceChange, INSTANCE_CHANGES_CHANNEL_BUFFER)
 
 	// where the State stream reads zero scale events from.
 	functionScaleEvents := make(chan metrics.ZeroScaleEvent, STATE_STREAM_BUFFER)
@@ -131,23 +132,27 @@ func (s *Server) bootstrapMetadata() error {
 		return fmt.Errorf("list function metadata: %w", err)
 	}
 	count := 0
+	var revision int64
 	if list != nil {
 		for _, fn := range list.Functions {
 			s.upsertFunction(fn)
 			count++
 		}
-		go s.watchMetadata(list.Revision)
+		revision = list.Revision
 	} else {
-		go s.watchMetadata(0)
+		revision = 0
 	}
+
+	events, errs := s.metadataClient.WatchFunctions(s.ctx, revision)
+	go s.watchMetadata(events, errs)
+
 	if count > 0 {
 		s.logger.Info("initialised function controllers from metadata", "count", count)
 	}
 	return nil
 }
 
-func (s *Server) watchMetadata(startRevision int64) {
-	events, errs := s.metadataClient.WatchFunctions(s.ctx, startRevision)
+func (s *Server) watchMetadata(events <-chan metadata.Event, errs <-chan error) {
 	eventCh := events
 	errCh := errs
 
@@ -178,12 +183,12 @@ func (s *Server) handleMetadataEvent(ev metadata.Event) {
 		s.upsertFunction(ev.Function)
 	case metadata.EventTypeDelete:
 		if ev.FunctionID == "" {
-			s.logger.Warn("metadata delete without function id")
+			s.logger.Error("metadata delete without function id")
 			return
 		}
 		s.removeFunction(ev.FunctionID)
 	default:
-		s.logger.Warn("unknown metadata event", "type", ev.Type)
+		s.logger.Error("unknown metadata event", "type", ev.Type)
 	}
 }
 
@@ -192,11 +197,11 @@ func (s *Server) upsertFunction(meta *metadata.FunctionMetadata) {
 		return
 	}
 	if meta.ID == "" {
-		s.logger.Warn("metadata missing function id")
+		s.logger.Error("metadata missing function id")
 		return
 	}
 	if meta.Config == nil {
-		s.logger.Warn("metadata missing config", "functionID", meta.ID)
+		s.logger.Error("metadata missing config", "functionID", meta.ID)
 		return
 	}
 
@@ -217,34 +222,13 @@ func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*co
 		return nil, status.Errorf(codes.NotFound, "function %s not found in control plane", req.FunctionId)
 	}
 
-	// this is REALLY ugly . In knative they only do HTTP so they dont have a return type.
-	// but we actually need the response type so idk how to do it here without allocating
-	// TODO: fix this. IMPORTANT.
-
-	response := &common.CallResponse{}
-	err := s.dataPlane.Try(ctx, req.FunctionId, func(address string) error {
-		// TODO make efficient
-		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			return err
-		}
-		defer conn.Close() // nolint:errcheck
-
-		client := function.NewFunctionServiceClient(conn)
-		s.logger.Debug("calling function", "function_id", req.FunctionId, "address", address)
-		resp, err := client.Call(ctx, req)
-
-		s.logger.Debug("received response", "function_id", req.FunctionId, "address", address)
-
-		response = resp
-
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	response, err := s.dataPlane.CallWithConnPool(ctx, req.FunctionId, req)
 	if err != nil {
 		return nil, status.Errorf(codes.Unavailable, "call failed: %v", err)
+	}
+	// response should never be nil, so panic (debugging only) . TODO remove this panic.
+	if response == nil {
+		panic(" dataplane returned a nil response but no error")
 	}
 
 	s.logger.Debug("returning response", "function_id", req.FunctionId)

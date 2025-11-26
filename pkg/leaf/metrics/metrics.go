@@ -49,18 +49,19 @@ type MetricEvent struct {
 func (c *ConcurrencyReporter) HandleRequestIn(functionId string) {
 	c.mu.RLock()
 	stat := c.stats[functionId]
-	c.mu.RUnlock()
 	if stat != nil {
+		c.mu.RUnlock()
 		stat.inFlight.Add(1)
 		return
 	}
+	c.mu.RUnlock()
 
 	c.mu.Lock()
 
 	stat = c.stats[functionId]
 	if stat != nil {
-		c.mu.Unlock()
 		stat.inFlight.Add(1)
+		c.mu.Unlock()
 		return
 	}
 
@@ -87,6 +88,8 @@ func (c *ConcurrencyReporter) HandleRequestOut(functionId string) {
 	c.mu.RLock()
 	stat := c.stats[functionId]
 	if stat == nil {
+		c.logger.Warn("HandleRequestOut called for unknown function", "function_id", functionId)
+		c.mu.RUnlock()
 		return
 	}
 	c.mu.RUnlock()

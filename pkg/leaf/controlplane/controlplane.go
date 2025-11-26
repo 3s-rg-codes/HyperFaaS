@@ -89,7 +89,7 @@ func (c *ControlPlane) Run(ctx context.Context) {
 						c.logger.Warn("no worker available for scaling", "function_id", ev.FunctionId)
 						return
 					}
-					err := scaler.scaleUp(ctx, wIdx)
+					err := scaler.scaleUp(ctx, wIdx, "cold-start")
 					if err != nil {
 						// TODO do something better about this error.
 						c.logger.Error("failed to scale up", "function_id", ev.FunctionId, "error", err)
@@ -119,6 +119,7 @@ func (c *ControlPlane) RemoveFunction(functionId string) {
 	if !ok {
 		return
 	}
+	c.concurrencyReporter.DeleteFunctionStats(functionId)
 	scaler.Close()
 	delete(c.functions, functionId)
 }
@@ -144,6 +145,7 @@ func (c *ControlPlane) GetScaleChan(functionId string) chan metrics.ZeroScaleEve
 	return scaler.zeroScaleChan
 }
 
+// UpsertFunction inserts or updates a function in the control plane.
 func (c *ControlPlane) UpsertFunction(meta *metadata.FunctionMetadata) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -200,8 +202,6 @@ type functionAutoScaler struct {
 	instanceChangesChan chan metrics.InstanceChange
 
 	totalInstances int
-	// how often the idle ticker should check for idle instances and attempt to scale them down
-	idleTickerInterval time.Duration
 
 	// function scale FROM and TO zero get reported into this channel.
 	zeroScaleChan chan metrics.ZeroScaleEvent
@@ -255,7 +255,6 @@ func newFunctionAutoScaler(ctx context.Context,
 		ctx:                       subCtx,
 		cancel:                    cancel,
 		workerStates:              make([]workerState, len(workers)),
-		idleTickerInterval:        globalCfg.ScaleToZeroAfter / 2,
 		instanceChangesChan:       instanceChangesChan,
 		zeroScaleChan:             zeroScaleChan,
 		concurrencyReporter:       concurrencyReporter,
@@ -316,10 +315,10 @@ func (f *functionAutoScaler) AutoScale() {
 					f.logger.Warn("no worker available for scaling", "function_id", f.functionID)
 					continue
 				}
-				err := f.scaleUp(f.ctx, wIdx)
+				err := f.scaleUp(f.ctx, wIdx, "non-zero-load-no-instances")
 				if err != nil {
-					// TODO remove after debugging
-					panic(err)
+					// TODO handle this error better.
+					f.logger.Error("failed to scale up", "function_id", f.functionID, "error", err)
 				}
 				continue
 			}
@@ -330,10 +329,10 @@ func (f *functionAutoScaler) AutoScale() {
 					f.logger.Warn("no worker available for scaling", "function_id", f.functionID)
 					continue
 				}
-				err := f.scaleUp(f.ctx, wIdx)
+				err := f.scaleUp(f.ctx, wIdx, "load-greater-than-instances-times-max-concurrency")
 				if err != nil {
-					// TODO remove after debugging
-					panic(err)
+					// TODO handle this error better.
+					f.logger.Error("failed to scale up", "function_id", f.functionID, "error", err)
 				}
 				continue
 			}
@@ -344,7 +343,8 @@ func (f *functionAutoScaler) AutoScale() {
 }
 
 // scaleUp sends a Start call to a worker and updates local state accordingly.
-func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int) error {
+func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int, reason string) error {
+	f.logger.Debug(" SCALEUP attempting to scale up", "function_id", f.functionID, "worker_idx", workerIdx, "reason", reason)
 	if workerIdx < 0 || workerIdx >= len(f.workers) {
 		return fmt.Errorf("invalid worker index %d", workerIdx)
 	}
@@ -360,12 +360,13 @@ func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int) error {
 
 	subCtx, cancel := context.WithTimeout(ctx, f.startTimeout)
 	defer cancel()
-
+	f.logger.Debug(" SCALEUP sending start request", "function_id", f.functionID, "worker_idx", workerIdx, "reason", reason)
 	resp, err := worker.Start(subCtx, &workerpb.StartRequest{FunctionId: f.functionID})
 	if err != nil {
+		f.logger.Error(" SCALEUP failed to send start request", "function_id", f.functionID, "worker_idx", workerIdx, "reason", reason, "error", err)
 		return err
 	}
-	f.logger.Info("started instance", "worker", worker.Address(), "instance_id", resp.InstanceId)
+	f.logger.Debug(" SCALEUP started instance successfully", "function_id", f.functionID, "worker_idx", workerIdx, "instance_id", resp.InstanceId, "reason", reason)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -377,12 +378,13 @@ func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int) error {
 	}
 
 	// emit instance change
-	f.logger.Debug("emitting instance change", "function_id", f.functionID, "address", instanceIP)
+	f.logger.Debug(" SCALEUP emitting instance change", "function_id", f.functionID, "address", instanceIP)
 	f.instanceChangesChan <- metrics.InstanceChange{
 		FunctionId: f.functionID,
 		Address:    instanceIP,
 		Have:       true,
 	}
+	f.logger.Debug(" SCALEUP emitted instance change successfully", "function_id", f.functionID, "address", instanceIP)
 
 	// track instance in local state
 	ws := &f.workerStates[workerIdx]
@@ -394,11 +396,12 @@ func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int) error {
 	f.totalInstances++
 
 	if f.totalInstances == 1 {
-		f.logger.Debug("emitting zero scale event", "function_id", f.functionID, "zero", true)
+		f.logger.Debug(" SCALEUP emitting zero scale event", "function_id", f.functionID, "zero", true)
 		f.zeroScaleChan <- metrics.ZeroScaleEvent{
 			FunctionId: f.functionID,
 			Have:       true,
 		}
+		f.logger.Debug(" SCALEUP emitted zero scale event successfully", "function_id", f.functionID, "zero", true)
 	}
 
 	return nil
@@ -488,6 +491,7 @@ func (f *functionAutoScaler) handleWorkerEvent(workerIdx int, event *dataplane.W
 	switch event.Event {
 	// for now all of this is the same ...
 	case workerpb.Event_EVENT_DOWN, workerpb.Event_EVENT_TIMEOUT, workerpb.Event_EVENT_STOP:
+		f.logger.Info("removing instance", "function_id", f.functionID, "worker", workerIdx, "instance_id", event.InstanceId, "reason", event.Event)
 		f.removeInstance(workerIdx, event.InstanceId)
 	}
 }

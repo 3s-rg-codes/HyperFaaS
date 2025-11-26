@@ -2,6 +2,7 @@ package dataplane
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -9,11 +10,21 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 )
+
+// WorkerClient provides a common interface for all worker clients.
+/* type WorkerClient interface {
+	Start(ctx context.Context, req *workerpb.StartRequest) (*workerpb.StartResponse, error)
+	Stop(ctx context.Context, req *workerpb.StopRequest) (*workerpb.StopResponse, error)
+	Address() string
+	StartStatusStream(nodeID string, backoff time.Duration, cb func(int, *WorkerStatusEvent))
+} */
 
 // WorkerClient is a wrapper around the workerpb.WorkerClient that adds context cancellation and timeout handling.
 type WorkerClient struct {
@@ -52,6 +63,23 @@ func NewWorkerClient(ctx context.Context, idx int, addr string, cfg config.Confi
 		cancel:       cancel,
 		conn:         conn,
 		client:       workerpb.NewWorkerClient(conn),
+		logger:       logger,
+		callTimeout:  cfg.CallTimeout,
+		startTimeout: cfg.StartTimeout,
+		stopTimeout:  cfg.StopTimeout,
+	}, nil
+}
+
+// for testing
+func NewMockWorkerClient(ctx context.Context, idx int, addr string, cfg config.Config, logger *slog.Logger) (*WorkerClient, error) {
+	subCtx, cancel := context.WithCancel(ctx)
+	return &WorkerClient{
+		index:        idx,
+		address:      addr,
+		ctx:          subCtx,
+		cancel:       cancel,
+		conn:         nil,
+		client:       newMockWorkerClient(),
 		logger:       logger,
 		callTimeout:  cfg.CallTimeout,
 		startTimeout: cfg.StartTimeout,
@@ -150,4 +178,79 @@ func TranslateWorkerStatus(update *workerpb.StatusUpdate) *WorkerStatusEvent {
 		Event:      update.Event,
 		Status:     update.Status,
 	}
+}
+
+type mockWorkerClient struct{}
+
+func newMockWorkerClient() workerpb.WorkerClient {
+	return mockWorkerClient{}
+}
+
+// Metrics implements worker.WorkerClient.
+func (m mockWorkerClient) Metrics(ctx context.Context, in *workerpb.MetricsRequest, opts ...grpc.CallOption) (*workerpb.MetricsUpdate, error) {
+	return &workerpb.MetricsUpdate{
+		UsedRamPercent:    0,
+		CpuPercentPercpus: []float64{0},
+	}, nil
+}
+
+// SignalReady implements worker.WorkerClient.
+func (m mockWorkerClient) SignalReady(ctx context.Context, in *workerpb.SignalReadyRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	return &emptypb.Empty{}, nil
+}
+
+// Start implements worker.WorkerClient.
+func (m mockWorkerClient) Start(ctx context.Context, in *workerpb.StartRequest, opts ...grpc.CallOption) (*workerpb.StartResponse, error) {
+	return &workerpb.StartResponse{
+		InstanceId:         "instance-id",
+		InstanceInternalIp: "127.0.0.1:56789",
+		InstanceExternalIp: "127.0.0.1:56789",
+		InstanceName:       "mock-instance",
+	}, nil
+}
+
+// Status implements worker.WorkerClient.
+func (m mockWorkerClient) Status(ctx context.Context, in *workerpb.StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[workerpb.StatusUpdate], error) {
+	return &mockStatusStream{ctx: ctx}, nil
+}
+
+// Stop implements worker.WorkerClient.
+func (m mockWorkerClient) Stop(ctx context.Context, in *workerpb.StopRequest, opts ...grpc.CallOption) (*workerpb.StopResponse, error) {
+	return &workerpb.StopResponse{
+		InstanceId: "instance-id",
+	}, nil
+}
+
+var _ workerpb.WorkerClient = mockWorkerClient{}
+
+type mockStatusStream struct {
+	ctx context.Context
+}
+
+func (m *mockStatusStream) Header() (metadata.MD, error) {
+	return nil, nil
+}
+
+func (m *mockStatusStream) Trailer() metadata.MD {
+	return nil
+}
+
+func (m *mockStatusStream) CloseSend() error {
+	return nil
+}
+
+func (m *mockStatusStream) Context() context.Context {
+	return m.ctx
+}
+
+func (m *mockStatusStream) SendMsg(interface{}) error {
+	return nil
+}
+
+func (m *mockStatusStream) RecvMsg(interface{}) error {
+	return io.EOF
+}
+
+func (m *mockStatusStream) Recv() (*workerpb.StatusUpdate, error) {
+	return nil, io.EOF
 }
