@@ -2,6 +2,7 @@ package dataplane
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -46,6 +47,28 @@ type WorkerClient struct {
 
 	// to make sure that we only start one status stream per worker
 	statusOnce sync.Once
+}
+
+func NewWorkerClient(ctx context.Context, idx int, addr string, cfg config.Config, logger *slog.Logger) (*WorkerClient, error) {
+	subCtx, cancel := context.WithCancel(ctx)
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	return &WorkerClient{
+		index:        idx,
+		address:      addr,
+		ctx:          subCtx,
+		cancel:       cancel,
+		conn:         conn,
+		client:       workerpb.NewWorkerClient(conn),
+		logger:       logger,
+		callTimeout:  cfg.CallTimeout,
+		startTimeout: cfg.StartTimeout,
+		stopTimeout:  cfg.StopTimeout,
+	}, nil
 }
 
 // for testing
@@ -179,6 +202,11 @@ func (m mockWorkerClient) SignalReady(ctx context.Context, in *workerpb.SignalRe
 
 // Start implements worker.WorkerClient.
 func (m mockWorkerClient) Start(ctx context.Context, in *workerpb.StartRequest, opts ...grpc.CallOption) (*workerpb.StartResponse, error) {
+
+	if in.FunctionId == "fail" {
+		return nil, errors.New("expected error")
+	}
+
 	return &workerpb.StartResponse{
 		InstanceId:         "instance-id",
 		InstanceInternalIp: "127.0.0.1:56789",

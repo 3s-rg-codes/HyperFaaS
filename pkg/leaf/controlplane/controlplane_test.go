@@ -1,3 +1,5 @@
+//go:build unit
+
 package controlplane
 
 import (
@@ -50,7 +52,7 @@ const (
 	MOCK_WORKER_ID   = 0
 	MOCK_FID         = "test"
 	MOCK_FID_FAIL    = "fail"
-	MOCK_INSTANCE_ID = "instance1"
+	MOCK_INSTANCE_ID = "instance-id"
 
 	TEST_CHANNEL_SIZE     = 100
 	TEST_CHANNEL_TIMEOUTS = 1 * time.Second
@@ -486,18 +488,13 @@ func takeFunctionsSnapshot(m map[string]*functionAutoScaler) map[string]int {
 
 func createFakeWorker(ctx context.Context, c config.Config) (*dataplane.WorkerClient, error) {
 
-	mwc := MockWorkerClient{}
-
-	return dataplane.NewWorkerClient(
+	return dataplane.NewMockWorkerClient(
 		ctx,
-		nil,
-		mwc,
-		MOCK_WORKER_ID,
+		0,
 		"addr",
 		c,
 		slog.New(slog.NewTextHandler(os.Stdout, nil)),
 	)
-
 }
 
 // for some tests, a few things need to be set in the nested struct, but fields that do not need to be set are not set here
