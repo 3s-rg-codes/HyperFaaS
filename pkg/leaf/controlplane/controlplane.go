@@ -162,7 +162,9 @@ func (c *ControlPlane) UpsertFunction(meta *metadata.FunctionMetadata) {
 			c.functionScaleEvents,
 			c.concurrencyReporter,
 		)
+		go scaler.AutoScale()
 		c.functions[meta.ID] = scaler
+
 	}
 	scaler.updateConfig(meta.Config)
 }
@@ -264,8 +266,6 @@ func newFunctionAutoScaler(ctx context.Context,
 	for i := range controller.workerStates {
 		controller.workerStates[i].instances = make([]instance, 0, globalCfg.MaxInstancesPerWorker)
 	}
-
-	go controller.AutoScale()
 
 	return controller
 }
@@ -460,7 +460,6 @@ func (f *functionAutoScaler) removeInstance(workerIdx int, instanceID string) {
 	if workerIdx < 0 || workerIdx >= len(f.workerStates) {
 		return
 	}
-
 	ws := &f.workerStates[workerIdx]
 	for i := range ws.instances {
 		if ws.instances[i].id == instanceID {

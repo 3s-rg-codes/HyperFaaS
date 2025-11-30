@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -83,7 +84,23 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient metadata.C
 	// create worker clients
 	workers := make([]*dataplane.WorkerClient, 0, len(cfg.WorkerAddresses))
 	for idx, addr := range cfg.WorkerAddresses {
-		h, err := dataplane.NewWorkerClient(serverCtx, idx, addr, cfg, logger.With("worker", addr))
+
+		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		client := workerpb.NewWorkerClient(conn)
+
+		h, err := dataplane.NewWorkerClient(
+			ctx,
+			conn,
+			client,
+			idx,
+			addr,
+			cfg,
+			logger.With("worker", addr),
+		)
 		if err != nil {
 			panic(err)
 		}
