@@ -122,6 +122,7 @@ func (c *ControlPlane) RemoveFunction(functionId string) {
 	c.concurrencyReporter.DeleteFunctionStats(functionId)
 	scaler.Close()
 	delete(c.functions, functionId)
+
 }
 
 func (c *ControlPlane) HandleWorkerEvent(workerIdx int, event *dataplane.WorkerStatusEvent) {
@@ -161,7 +162,9 @@ func (c *ControlPlane) UpsertFunction(meta *metadata.FunctionMetadata) {
 			c.functionScaleEvents,
 			c.concurrencyReporter,
 		)
+		go scaler.AutoScale()
 		c.functions[meta.ID] = scaler
+
 	}
 	scaler.updateConfig(meta.Config)
 }
@@ -264,8 +267,6 @@ func newFunctionAutoScaler(ctx context.Context,
 		controller.workerStates[i].instances = make([]instance, 0, globalCfg.MaxInstancesPerWorker)
 	}
 
-	go controller.AutoScale()
-
 	return controller
 }
 
@@ -360,13 +361,13 @@ func (f *functionAutoScaler) scaleUp(ctx context.Context, workerIdx int, reason 
 
 	subCtx, cancel := context.WithTimeout(ctx, f.startTimeout)
 	defer cancel()
-	f.logger.Debug(" SCALEUP sending start request", "function_id", f.functionID, "worker_idx", workerIdx, "reason", reason)
+
 	resp, err := worker.Start(subCtx, &workerpb.StartRequest{FunctionId: f.functionID})
 	if err != nil {
 		f.logger.Error(" SCALEUP failed to send start request", "function_id", f.functionID, "worker_idx", workerIdx, "reason", reason, "error", err)
 		return err
 	}
-	f.logger.Debug(" SCALEUP started instance successfully", "function_id", f.functionID, "worker_idx", workerIdx, "instance_id", resp.InstanceId, "reason", reason)
+	f.logger.Info("started instance", "worker", worker.Address(), "instance_id", resp.InstanceId)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -459,7 +460,6 @@ func (f *functionAutoScaler) removeInstance(workerIdx int, instanceID string) {
 	if workerIdx < 0 || workerIdx >= len(f.workerStates) {
 		return
 	}
-
 	ws := &f.workerStates[workerIdx]
 	for i := range ws.instances {
 		if ws.instances[i].id == instanceID {

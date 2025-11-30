@@ -81,6 +81,7 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient metadata.C
 	serverCtx, cancel := context.WithCancel(ctx)
 
 	// create worker clients
+	// create worker clients
 	workers := make([]*dataplane.WorkerClient, 0, len(cfg.WorkerAddresses))
 	for idx, addr := range cfg.WorkerAddresses {
 		h, err := dataplane.NewWorkerClient(serverCtx, idx, addr, cfg, logger.With("worker", addr))
