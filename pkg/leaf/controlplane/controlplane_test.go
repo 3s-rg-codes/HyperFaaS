@@ -4,7 +4,6 @@ package controlplane
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"strconv"
@@ -19,34 +18,7 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
-
-type MockWorkerClient struct{}
-
-func (MockWorkerClient) Start(ctx context.Context, in *worker.StartRequest, opts ...grpc.CallOption) (*worker.StartResponse, error) {
-	if in.FunctionId == "fail" {
-		return &worker.StartResponse{}, errors.New("expected error")
-	}
-	return &worker.StartResponse{InstanceId: MOCK_INSTANCE_ID}, nil
-}
-
-func (MockWorkerClient) Stop(ctx context.Context, in *worker.StopRequest, opts ...grpc.CallOption) (*worker.StopResponse, error) {
-	return &worker.StopResponse{InstanceId: in.InstanceId}, nil
-}
-
-func (MockWorkerClient) Status(ctx context.Context, in *worker.StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[worker.StatusUpdate], error) {
-	return nil, nil
-}
-
-func (MockWorkerClient) Metrics(ctx context.Context, in *worker.MetricsRequest, opts ...grpc.CallOption) (*worker.MetricsUpdate, error) {
-	return nil, nil
-}
-
-func (MockWorkerClient) SignalReady(ctx context.Context, in *worker.SignalReadyRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	return nil, nil
-}
 
 const (
 	MOCK_WORKER_ID   = 0
@@ -59,13 +31,17 @@ const (
 	MAX_F_CONCURRENCY     = 1
 )
 
-func setup() *ControlPlane {
+func setupUnitControlPlane() *ControlPlane {
 
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	c := config.Config{}
 	c.ApplyDefaults()
+
+	// reduce scale to zero timeout to 1 second
+	// default is 20 seconds, too long for tests
+	c.ScaleToZeroAfter = 1 * time.Second
 
 	instanceChangesChan := make(chan metrics.InstanceChange, TEST_CHANNEL_SIZE)
 	metricsChan := make(chan metrics.MetricEvent, TEST_CHANNEL_SIZE)
@@ -99,7 +75,7 @@ func setup() *ControlPlane {
 
 func TestControlPlane_UpsertFunction(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 
 	cp.UpsertFunction(&metadata.FunctionMetadata{ID: MOCK_FID})
 
@@ -110,7 +86,7 @@ func TestControlPlane_UpsertFunction(t *testing.T) {
 
 func TestControlPlane_FunctionExists(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 
 	ok := cp.FunctionExists(MOCK_FID)
 	notOk := cp.FunctionExists("anotherFunctionId")
@@ -122,7 +98,9 @@ func TestControlPlane_FunctionExists(t *testing.T) {
 
 func TestControlPlane_RemoveFunction(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
+
+	// function has been inserted in setup function
 
 	_, ok := cp.functions[MOCK_FID]
 
@@ -138,9 +116,11 @@ func TestControlPlane_RemoveFunction(t *testing.T) {
 
 func TestControlPlane_RemoveFunctionIdempotent(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 
-	for i := 0; i < 5; i++ {
+	// function has been inserted in setup function
+
+	for range 5 {
 
 		cp.RemoveFunction(MOCK_FID)
 		_, ok := cp.functions[MOCK_FID]
@@ -153,7 +133,7 @@ func TestControlPlane_RemoveFunctionIdempotent(t *testing.T) {
 // Checks if the order of actions performed on a function is correct at any point
 func TestControlPlane_FunctionConsistency(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 
 	numEvents := 100
 	numFunctions := 10
@@ -161,10 +141,10 @@ func TestControlPlane_FunctionConsistency(t *testing.T) {
 	functionSnapshots := make([]map[string]int, 0)
 
 	//simulate stream of events like it happens in controlplane from etcd
-	for i := 0; i < numEvents; i++ {
+	for i := range numEvents {
 
 		//perform an event on every function deterministically depending on the counters
-		for j := 0; j < numFunctions; j++ {
+		for j := range numFunctions {
 
 			s := strconv.Itoa(j)
 
@@ -188,9 +168,9 @@ func TestControlPlane_FunctionConsistency(t *testing.T) {
 	}
 
 	//iterate over the snapshots and check if the functions were in the desired state
-	for i := 0; i < numEvents; i++ {
+	for i := range numEvents {
 
-		for j := 0; j < numFunctions; j++ {
+		for j := range numFunctions {
 
 			conc, ok := functionSnapshots[i][strconv.Itoa(j)]
 
@@ -209,7 +189,7 @@ func TestControlPlane_FunctionConsistency(t *testing.T) {
 
 func TestControlPlane_HandleWorkerEvent(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 
 	we := &dataplane.WorkerStatusEvent{
 		Event:      worker.Event_EVENT_DOWN,
@@ -219,7 +199,9 @@ func TestControlPlane_HandleWorkerEvent(t *testing.T) {
 
 	cp.HandleWorkerEvent(MOCK_WORKER_ID, we)
 
-	//two things happen: instance is removed from fas state and event is sent to fas changes channel
+	// two things happen:
+	// - instance is removed from fas state
+	// - event is sent to fas changes channel
 
 	fas := cp.functions[MOCK_FID]
 
@@ -239,7 +221,7 @@ func TestControlPlane_HandleWorkerEvent(t *testing.T) {
 
 func TestControlPlane_Run(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 	wipeInstances(cp)
 	go cp.Run(cp.ctx)
 
@@ -258,7 +240,7 @@ func TestControlPlane_Run(t *testing.T) {
 
 	mc <- e
 
-	//four things should happen:
+	// four things should happen:
 	//	- instance change event is emitted
 	//	- instance is appended for fas and widx
 	// 	- timestamp of last request and fas inFlight counter are updated
@@ -273,19 +255,19 @@ func TestControlPlane_Run(t *testing.T) {
 		t.Error("timeout for instance change event ran out")
 	}
 
-	//assert that expected instance was added
+	// assert that expected instance was added
 	inst := fas.workerStates[MOCK_WORKER_ID].instances[0]
 	assert.Equal(t, MOCK_INSTANCE_ID, inst.id, "unexpected instance was started")
 
-	//assert that timestamp was updated correctly
+	// assert that timestamp was updated correctly
 	newTs := fas.lastRequestTimestamp
-	assert.False(t, newTs == currentTs, "expected 'last used' timestamp to be updated")
+	assert.False(t, newTs.Equal(currentTs), "expected 'last used' timestamp to be updated")
 
-	//assert for flight counter: new = old + 1
+	// assert for flight counter: new = old + 1
 	newFlight := fas.inFlight.Load()
 	assert.Equal(t, currentFlight+1, newFlight, "expected one (1) new instance to be in flight")
 
-	//we have coldstart here: assert that correct coldstart event was sent
+	// we have coldstart here: assert that correct coldstart event was sent
 	select {
 	case ze := <-fas.zeroScaleChan:
 		assert.Equal(t, MOCK_FID, ze.FunctionId, "unexpected functionId for coldstart event")
@@ -298,10 +280,10 @@ func TestControlPlane_Run(t *testing.T) {
 
 func Test_ScaleUpNoWorkers(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 	autoscaler := cp.functions[MOCK_FID]
 
-	//remove workers
+	// remove workers
 	autoscaler.workers = make([]*dataplane.WorkerClient, 0)
 
 	err := autoscaler.scaleUp(cp.ctx, MOCK_WORKER_ID, "reason")
@@ -311,7 +293,7 @@ func Test_ScaleUpNoWorkers(t *testing.T) {
 
 func Test_ScaleUpWorkerError(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 	autoscaler := cp.functions[MOCK_FID_FAIL]
 
 	err := autoscaler.scaleUp(cp.ctx, 0, "reason")
@@ -321,13 +303,13 @@ func Test_ScaleUpWorkerError(t *testing.T) {
 
 func Test_ScaleUp(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 	autoscaler := cp.functions[MOCK_FID]
 	wipeInstances(cp)
 
 	iter := 10
-	//scale up 'iter' times: first should be a coldstart, iterations afterwards shouldn't
-	for i := 0; i < iter; i++ {
+	// first should be a coldstart, iterations afterwards shouldn't
+	for i := range iter {
 		oldWs := autoscaler.workerStates[0]
 		err := autoscaler.scaleUp(cp.ctx, 0, "reason")
 		if i >= autoscaler.maxInstancesPerWorker && err == nil {
@@ -357,7 +339,7 @@ func Test_ScaleUp(t *testing.T) {
 			assert.True(t, ev.Have, "expected scaling from 0 to 1, got 1 to 0")
 		case <-time.After(TEST_CHANNEL_TIMEOUTS):
 			if i == 0 {
-				//fail when first start isnt cold
+				// fail when first start isnt cold
 				t.Error("timeout ran out fr cold start event")
 			}
 		}
@@ -366,7 +348,7 @@ func Test_ScaleUp(t *testing.T) {
 }
 
 func TestFunctionAutoScaler_AutoScaleToZero(t *testing.T) {
-	cp := setup()
+	cp := setupUnitControlPlane()
 	autoscaler := cp.functions[MOCK_FID]
 	wipeInstances(cp)
 
@@ -398,11 +380,11 @@ func TestFunctionAutoScaler_AutoScaleToZero(t *testing.T) {
 
 func TestFunctionAutoScaler_AutoScaleLoadNoInstances(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 	autoscaler := cp.functions[MOCK_FID]
 	wipeInstances(cp)
 
-	//add synthetic requests to that load > 0
+	// add synthetic requests to that load > 0
 	autoscaler.inFlight.Store(1)
 
 	go autoscaler.AutoScale()
@@ -414,7 +396,7 @@ func TestFunctionAutoScaler_AutoScaleLoadNoInstances(t *testing.T) {
 		select {
 		case ev := <-autoscaler.instanceChangesChan:
 			assert.True(t, ev.Have, "unexpected scale down event")
-		case <-time.After(grace): //the scaler takes 1 second before checking the first time, give it extra time
+		case <-time.After(grace): // the scaler takes 1 second before checking the first time, give it extra time
 			t.Error("timeout for instance change event ran out")
 		}
 	})
@@ -423,7 +405,7 @@ func TestFunctionAutoScaler_AutoScaleLoadNoInstances(t *testing.T) {
 		select {
 		case ev := <-autoscaler.zeroScaleChan:
 			assert.True(t, ev.Have, "unexpected scale down event")
-		case <-time.After(grace): //the scaler takes 1 second before checking the first time, give it extra time
+		case <-time.After(grace): // the scaler takes 1 second before checking the first time, give it extra time
 			t.Error("timeout for instance change event ran out")
 		}
 	})
@@ -436,10 +418,10 @@ func TestFunctionAutoScaler_AutoScaleLoadNoInstances(t *testing.T) {
 
 func TestFunctionAutoScaler_AutoScaleNotEnoughInstances(t *testing.T) {
 
-	cp := setup()
+	cp := setupUnitControlPlane()
 	autoscaler := cp.functions[MOCK_FID]
 
-	//we only have one worker so set the load accordingly
+	// we only have one worker so set the load accordingly
 	generatedLoad := (autoscaler.maxInstancesPerWorker) * autoscaler.maxConcurrencyPerInstance
 	autoscaler.inFlight.Store(int64(generatedLoad))
 
@@ -449,7 +431,7 @@ func TestFunctionAutoScaler_AutoScaleNotEnoughInstances(t *testing.T) {
 	wg := sync.WaitGroup{}
 
 	wg.Go(func() {
-		//one instance is created during setup
+		// one instance is created during setup
 		for i := 0; i < autoscaler.maxInstancesPerWorker-1; i++ {
 			select {
 			case ev := <-autoscaler.instanceChangesChan:
@@ -461,7 +443,7 @@ func TestFunctionAutoScaler_AutoScaleNotEnoughInstances(t *testing.T) {
 	})
 
 	wg.Go(func() {
-		for i := 0; i < generatedLoad; i++ {
+		for range generatedLoad {
 			select {
 			case <-autoscaler.zeroScaleChan:
 				t.Error("received unexpected zero scale event")
