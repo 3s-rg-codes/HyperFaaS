@@ -122,7 +122,6 @@ func (c *ControlPlane) RemoveFunction(functionId string) {
 	c.concurrencyReporter.DeleteFunctionStats(functionId)
 	scaler.Close()
 	delete(c.functions, functionId)
-
 }
 
 func (c *ControlPlane) HandleWorkerEvent(workerIdx int, event *dataplane.WorkerStatusEvent) {
@@ -164,7 +163,6 @@ func (c *ControlPlane) UpsertFunction(meta *metadata.FunctionMetadata) {
 		)
 		go scaler.AutoScale()
 		c.functions[meta.ID] = scaler
-
 	}
 	scaler.updateConfig(meta.Config)
 }

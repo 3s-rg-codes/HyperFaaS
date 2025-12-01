@@ -202,7 +202,6 @@ func (m mockWorkerClient) SignalReady(ctx context.Context, in *workerpb.SignalRe
 
 // Start implements worker.WorkerClient.
 func (m mockWorkerClient) Start(ctx context.Context, in *workerpb.StartRequest, opts ...grpc.CallOption) (*workerpb.StartResponse, error) {
-
 	if in.FunctionId == "fail" {
 		return nil, errors.New("expected error")
 	}
