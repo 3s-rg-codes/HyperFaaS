@@ -14,10 +14,7 @@ import (
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	"github.com/goforj/godump"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // set the env vars to override the default values
@@ -121,8 +118,31 @@ func TestCallRequest(t *testing.T) {
 
 }
 
+func TestScaleFromZero(t *testing.T) {
+
+	haproxyClient := GetHAProxyClient(HAPROXY_ADDRESS)
+
+	functionId := createFunctionMetadataWithOptions("hyperfaas-hello:latest",
+		2,
+		100000,
+	)
+	if functionId == "" {
+		t.Errorf("Function id is an empty string")
+	}
+	t.Logf("Created function with ID: %s", functionId)
+
+	testCall(t, haproxyClient, functionId, []byte(""), []byte("HELLO WORLD!"), false)
+
+	time.Sleep(2 * time.Second)
+
+	// function should be scaled to zero
+	// next call should still work
+	testCall(t, haproxyClient, functionId, []byte(""), []byte("HELLO WORLD!"), false)
+
+}
+
 // Tests creating, calling and deleting a function and verifying that further calls to it fail.
-/* func TestDeleteFunction(t *testing.T) {
+func TestDeleteFunction(t *testing.T) {
 	t.Skip("Skipping delete function test")
 
 	haproxyClient := GetHAProxyClient(HAPROXY_ADDRESS)
@@ -145,7 +165,7 @@ func TestCallRequest(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected call to fail, got %v", err)
 	}
-} */
+}
 
 func envOrDefault(env string, defaultValue string) string {
 	if value, ok := os.LookupEnv(env); ok {
@@ -155,7 +175,6 @@ func envOrDefault(env string, defaultValue string) string {
 }
 
 // createFunctionMetadata stores the function definition in etcd so leaves/workers discover it.
-
 func createFunctionMetadata(imageTag string) string {
 	config := &common.Config{
 		Memory: 100 * 1024 * 1024,
@@ -165,6 +184,41 @@ func createFunctionMetadata(imageTag string) string {
 		},
 		MaxConcurrency: 10000,
 		Timeout:        15,
+	}
+
+	createFunctionReq := &common.CreateFunctionRequest{
+		Image:  &common.Image{Tag: imageTag},
+		Config: config,
+	}
+
+	client, err := metadata.NewClient([]string{ETCD_ADDRESS}, metadata.Options{}, nil)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create metadata client: %v", err))
+	}
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	functionID, err := client.PutFunction(ctx, createFunctionReq)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to store function metadata: %v", err))
+	}
+
+	return functionID
+}
+
+// createFunctionMetadataWithOptions stores the function definition in etcd so leaves/workers discover it.
+// It allows to set the function timeout and max concurrency.
+func createFunctionMetadataWithOptions(imageTag string, funcTimeout int32, maxConcurrency int32) string {
+	config := &common.Config{
+		Memory: 100 * 1024 * 1024,
+		Cpu: &common.CPUConfig{
+			Period: 100000,
+			Quota:  50000,
+		},
+		MaxConcurrency: maxConcurrency,
+		Timeout:        funcTimeout,
 	}
 
 	createFunctionReq := &common.CreateFunctionRequest{
@@ -200,36 +254,6 @@ func deleteFunctionMetadata(t *testing.T, functionId string) {
 	if err != nil {
 		t.Errorf("Failed to delete function metadata: %v", err)
 	}
-}
-
-// client interface for gRPC clients
-type client interface {
-	ScheduleCall(context.Context, *common.CallRequest, ...grpc.CallOption) (*common.CallResponse, error)
-}
-
-// GetHAProxyClient creates a gRPC client that connects to HAProxy
-func GetHAProxyClient(address string) client {
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		panic(fmt.Sprintf("Failed to connect to HAProxy: %v", err))
-	}
-	// We need to create a client that implements the ScheduleCall method
-	// Since HAProxy routes to leaves, we can use the leaf client interface
-	return &haproxyClient{conn: conn}
-}
-
-type haproxyClient struct {
-	conn *grpc.ClientConn
-}
-
-func (h *haproxyClient) ScheduleCall(ctx context.Context, req *common.CallRequest, opts ...grpc.CallOption) (*common.CallResponse, error) {
-	// Create a leaf client to make the call through HAProxy
-	leafClient := leafpb.NewLeafClient(h.conn)
-	return leafClient.ScheduleCall(ctx, req, opts...)
-}
-
-func (h *haproxyClient) Close() error {
-	return h.conn.Close()
 }
 
 // tests a call to a function using data. Verifies the response is as expected.
