@@ -217,28 +217,6 @@ func (s *Server) removeFunction(functionID string) {
 	s.controlPlane.RemoveFunction(functionID)
 }
 
-func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-	if req.FunctionId == "" {
-		return nil, status.Error(codes.InvalidArgument, "function_id is required")
-	}
-
-	if !s.controlPlane.FunctionExists(req.FunctionId) {
-		return nil, status.Errorf(codes.NotFound, "function %s not found in control plane", req.FunctionId)
-	}
-
-	response, err := s.dataPlane.CallWithConnPool(ctx, req.FunctionId, req)
-	if err != nil {
-		return nil, status.Errorf(codes.Unavailable, "call failed: %v", err)
-	}
-	// response should never be nil, so panic (debugging only) . TODO remove this panic.
-	if response == nil {
-		panic(" dataplane returned a nil response but no error")
-	}
-
-	s.logger.Debug("returning response", "function_id", req.FunctionId)
-	return response, nil
-}
-
 // State streams changes in state of a function_id.
 // A change in the number of running instances.
 // IMPORTANT: this is meant for only ONE client to be listening to.
