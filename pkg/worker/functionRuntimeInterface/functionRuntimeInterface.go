@@ -6,15 +6,12 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
-	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Request struct {
@@ -44,33 +41,15 @@ type Function struct {
 }
 
 func New(timeout int) *Function {
-	controllerAddress, ok := os.LookupEnv("CONTROLLER_ADDRESS")
-	if !ok {
-		fmt.Printf("Environment variable CONTROLLER_ADDRESS not found")
-	}
-
-	functionId, ok := os.LookupEnv("FUNCTION_ID")
-	if !ok {
-		fmt.Printf("Environment variable FUNCTION_ID not found")
-	}
-
-	timeoutSeconds, ok := os.LookupEnv("TIMEOUT_SECONDS")
-	if !ok {
-		fmt.Printf("Environment variable TIMEOUT_SECONDS not found")
-	}
-	timeoutSecondsInt, err := strconv.Atoi(timeoutSeconds)
-	if err != nil {
-		// fallback 10 seconds
-		timeoutSecondsInt = 10
-	}
+	settings := loadRuntimeSettings()
 
 	return &Function{
-		timeoutSeconds:    int32(timeoutSecondsInt),
-		controllerAddress: controllerAddress,
+		timeoutSeconds:    settings.timeoutSeconds,
+		controllerAddress: settings.controllerAddress,
 		request:           &Request{},
 		response:          &Response{},
 		instanceId:        getID(),
-		functionId:        functionId,
+		functionId:        settings.functionID,
 	}
 }
 
@@ -150,17 +129,5 @@ func getID() string {
 }
 
 func (f *Function) sendReadySignal() {
-	conn, err := grpc.NewClient(f.controllerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		f.logger.Error("Failed to connect to controller", "error", err)
-		os.Exit(1)
-	}
-
-	client := workerPB.NewWorkerClient(conn)
-	_, err = client.SignalReady(context.Background(), &workerPB.SignalReadyRequest{InstanceId: f.instanceId})
-	if err != nil {
-		f.logger.Error("Failed to send ready signal", "error", err)
-		os.Exit(1)
-	}
-	f.logger.Info("Ready signal sent")
+	notifyControllerReady(f.controllerAddress, f.instanceId, f.logger)
 }
