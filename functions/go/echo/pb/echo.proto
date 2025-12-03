@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package examples.echo.v1;
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/functions/go/echo/pb";
+
+service Echo {
+  rpc Echo(EchoRequest) returns (EchoReply) {}
+}
+
+message EchoRequest {
+  bytes data = 1;
+}
+
+message EchoReply {
+  bytes data = 1;
+}
+

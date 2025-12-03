@@ -4,24 +4,26 @@ import (
 	"context"
 	"time"
 
+	"github.com/3s-rg-codes/HyperFaaS/functions/go/sleep/pb"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	"google.golang.org/grpc"
 )
 
-func main() {
-	f := functionRuntimeInterface.New(10)
-
-	f.Ready(handler)
+type sleepServer struct {
+	pb.UnimplementedSleepServer
 }
 
-func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
-	// sleep for 20 seconds
-	time.Sleep(20 * time.Second)
+func (s *sleepServer) Sleep(ctx context.Context, req *pb.SleepRequest) (*pb.SleepReply, error) {
+	duration := time.Duration(req.DurationNanos)
+	time.Sleep(duration)
 
-	resp := &common.CallResponse{
-		Data:  []byte("Finished Sleeping"),
-		Error: nil,
-	}
+	return &pb.SleepReply{Message: "Finished Sleeping"}, nil
+}
 
-	return resp, nil
+func main() {
+	fn := functionRuntimeInterface.NewV2(30)
+
+	fn.Ready(func(reg grpc.ServiceRegistrar) {
+		pb.RegisterSleepServer(reg, &sleepServer{})
+	})
 }
