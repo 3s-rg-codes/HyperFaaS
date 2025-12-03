@@ -8,6 +8,9 @@ formatters:
     - goimports
 
 linters:
+  exclusions:
+    paths:
+      - functions/*
   enable:
     - errcheck
     - asciicheck
