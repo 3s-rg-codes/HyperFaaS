@@ -11,12 +11,10 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-var (
-	clientStreamDescForProxying = &grpc.StreamDesc{
-		ServerStreams: true,
-		ClientStreams: true,
-	}
-)
+var clientStreamDescForProxying = &grpc.StreamDesc{
+	ServerStreams: true,
+	ClientStreams: true,
+}
 
 type releaseAwareConn interface {
 	Release(error)
@@ -94,7 +92,11 @@ func (s *handler) handler(srv interface{}, serverStream grpc.ServerStream) (err 
 			if s2cErr == io.EOF {
 				// this is the happy case where the sender has encountered io.EOF, and won't be sending anymore./
 				// the clientStream>serverStream may continue pumping though.
-				clientStream.CloseSend()
+				if closeErr := clientStream.CloseSend(); closeErr != nil {
+					clientCancel()
+					err = status.Errorf(codes.Internal, "failed closing downstream send: %v", closeErr)
+					return err
+				}
 			} else {
 				// however, we may have gotten a receive error (stream disconnected, a read error etc) in which case we need
 				// to cancel the clientStream to the backend, let all of its goroutines be freed up by the CancelFunc and

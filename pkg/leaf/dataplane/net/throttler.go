@@ -275,7 +275,7 @@ func (t *Throttler) Lease(ctx context.Context) (func(), string, error) {
 		return nil, "", ErrNoInstancesAvailable
 	}
 
-	//var once sync.Once
+	// var once sync.Once
 	return release, address, nil
 }
 

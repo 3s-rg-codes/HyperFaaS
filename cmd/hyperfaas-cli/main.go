@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,14 +17,13 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	commonpb "github.com/3s-rg-codes/HyperFaaS/proto/common"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/proto"
-	"github.com/jhump/protoreflect/desc"
-	"github.com/jhump/protoreflect/desc/protoparse"
-	"github.com/jhump/protoreflect/dynamic"
-	"github.com/jhump/protoreflect/dynamic/grpcdynamic"
+	"github.com/bufbuild/protocompile"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/dynamicpb"
 )
 
 var dataFlag = &cli.StringFlag{
@@ -367,8 +367,8 @@ func main() {
 								return err
 							}
 
-							reqMsg := dynamic.NewMessage(methodDesc.GetInputType())
-							if err := jsonpb.UnmarshalString(dataJSON, reqMsg); err != nil {
+							reqMsg := dynamicpb.NewMessage(methodDesc.Input())
+							if err := protojson.Unmarshal([]byte(dataJSON), reqMsg); err != nil {
 								return fmt.Errorf("failed to parse --data JSON: %w", err)
 							}
 
@@ -377,11 +377,14 @@ func main() {
 								return err
 							}
 
-							out, err := (&jsonpb.Marshaler{Indent: "  "}).MarshalToString(respMsg)
+							out, err := protojson.MarshalOptions{
+								Multiline: true,
+								Indent:    "  ",
+							}.Marshal(respMsg)
 							if err != nil {
 								return fmt.Errorf("failed to marshal response: %w", err)
 							}
-							fmt.Println(out)
+							fmt.Println(string(out))
 							return nil
 						},
 					},
@@ -499,55 +502,127 @@ func GetWorkerMetrics(client workerpb.WorkerClient,
 	return nil
 }
 
-func loadMethodDescriptor(protoFile string, importPaths []string, fullMethod string) (*desc.MethodDescriptor, error) {
+func loadMethodDescriptor(protoFile string, importPaths []string, fullMethod string) (protoreflect.MethodDescriptor, error) {
 	if protoFile == "" {
 		return nil, errors.New("proto file is required")
 	}
 	if fullMethod == "" {
 		return nil, errors.New("method is required")
 	}
-	fullMethod = strings.TrimPrefix(fullMethod, "/")
-	methodParts := strings.Split(fullMethod, "/")
-	if len(methodParts) != 2 {
-		return nil, fmt.Errorf("method must be in the form package.Service/Method, got %q", fullMethod)
-	}
-	serviceName := methodParts[0]
-	methodName := methodParts[1]
 
-	dir := filepath.Dir(protoFile)
-	if dir == "" {
-		dir = "."
-	}
-	filename := filepath.Base(protoFile)
-
-	parser := protoparse.Parser{
-		ImportPaths:           append([]string{dir}, importPaths...),
-		IncludeSourceCodeInfo: true,
-	}
-	fds, err := parser.ParseFiles(filename)
+	serviceName, methodName, err := splitMethodName(fullMethod)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse proto: %w", err)
+		return nil, err
 	}
 
-	for _, fd := range fds {
-		if methodDesc := findMethodDescriptor(fd, serviceName, methodName); methodDesc != nil {
-			return methodDesc, nil
-		}
+	absProtoFile, err := filepath.Abs(protoFile)
+	if err != nil {
+		return nil, fmt.Errorf("resolve proto path: %w", err)
 	}
-	return nil, fmt.Errorf("method %s not found in %s (or its imports)", fullMethod, protoFile)
+
+	searchPaths := normalizeImportPaths(filepath.Dir(absProtoFile), importPaths)
+	if len(searchPaths) == 0 {
+		searchPaths = []string{"."}
+	}
+
+	compiler := protocompile.Compiler{
+		Resolver: protocompile.WithStandardImports(&protocompile.SourceResolver{
+			ImportPaths: searchPaths,
+		}),
+	}
+
+	fileName := filepath.Base(absProtoFile)
+	files, err := compiler.Compile(context.Background(), fileName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile proto: %w", err)
+	}
+
+	targetService := protoreflect.FullName(serviceName)
+	targetMethod := protoreflect.Name(methodName)
+
+	var descriptors []protoreflect.FileDescriptor
+	for _, f := range files {
+		descriptors = append(descriptors, f)
+	}
+
+	methodDesc := lookupMethodDescriptor(descriptors, targetService, targetMethod)
+	if methodDesc == nil {
+		return nil, fmt.Errorf("method %s not found in %s (or its imports)", fullMethod, protoFile)
+	}
+	return methodDesc, nil
 }
 
-func findMethodDescriptor(fd *desc.FileDescriptor, serviceName, methodName string) *desc.MethodDescriptor {
-	if sym := fd.FindSymbol(serviceName); sym != nil {
-		if svc, ok := sym.(*desc.ServiceDescriptor); ok {
-			if method := svc.FindMethodByName(methodName); method != nil {
-				return method
+func splitMethodName(fullMethod string) (string, string, error) {
+	fullMethod = strings.TrimPrefix(fullMethod, "/")
+	parts := strings.Split(fullMethod, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("method must be in the form package.Service/Method, got %q", fullMethod)
+	}
+	return parts[0], parts[1], nil
+}
+
+func normalizeImportPaths(protoDir string, extra []string) []string {
+	pathSet := make(map[string]struct{})
+	add := func(p string) {
+		if p == "" {
+			return
+		}
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		if _, ok := pathSet[p]; !ok {
+			pathSet[p] = struct{}{}
+		}
+	}
+
+	add(protoDir)
+	for _, p := range extra {
+		add(p)
+	}
+	if len(pathSet) == 0 {
+		add(".")
+	}
+	paths := make([]string, 0, len(pathSet))
+	for p := range pathSet {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func lookupMethodDescriptor(files []protoreflect.FileDescriptor, service protoreflect.FullName, method protoreflect.Name) protoreflect.MethodDescriptor {
+	visited := make(map[string]bool)
+	for _, fd := range files {
+		if m := searchMethodInFile(fd, service, method, visited); m != nil {
+			return m
+		}
+	}
+	return nil
+}
+
+func searchMethodInFile(fd protoreflect.FileDescriptor, service protoreflect.FullName, method protoreflect.Name, visited map[string]bool) protoreflect.MethodDescriptor {
+	if fd == nil {
+		return nil
+	}
+	if visited[fd.Path()] {
+		return nil
+	}
+	visited[fd.Path()] = true
+
+	services := fd.Services()
+	for i := 0; i < services.Len(); i++ {
+		svc := services.Get(i)
+		if svc.FullName() == service {
+			if m := svc.Methods().ByName(method); m != nil {
+				return m
 			}
 		}
 	}
-	for _, dep := range fd.GetDependencies() {
-		if method := findMethodDescriptor(dep, serviceName, methodName); method != nil {
-			return method
+
+	imports := fd.Imports()
+	for i := 0; i < imports.Len(); i++ {
+		if m := searchMethodInFile(imports.Get(i).FileDescriptor, service, method, visited); m != nil {
+			return m
 		}
 	}
 	return nil
@@ -557,10 +632,10 @@ func invokeProxyMethod(
 	ctx context.Context,
 	address string,
 	functionID string,
-	methodDesc *desc.MethodDescriptor,
+	methodDesc protoreflect.MethodDescriptor,
 	req proto.Message,
 	timeout time.Duration,
-) (*dynamic.Message, error) {
+) (proto.Message, error) {
 	conn, err := grpc.NewClient(
 		address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -578,20 +653,16 @@ func invokeProxyMethod(
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	stub := grpcdynamic.NewStub(conn)
-	resp, err := stub.InvokeRpc(callCtx, methodDesc, req)
-	if err != nil {
+	serviceDesc, ok := methodDesc.Parent().(protoreflect.ServiceDescriptor)
+	if !ok {
+		return nil, errors.New("method descriptor missing parent service information")
+	}
+	fullMethodName := fmt.Sprintf("/%s/%s", serviceDesc.FullName(), methodDesc.Name())
+	resp := dynamicpb.NewMessage(methodDesc.Output())
+	if err := conn.Invoke(callCtx, fullMethodName, req, resp); err != nil {
 		return nil, fmt.Errorf("rpc call failed: %w", err)
 	}
-
-	if dynMsg, ok := resp.(*dynamic.Message); ok {
-		return dynMsg, nil
-	}
-	out := dynamic.NewMessage(methodDesc.GetOutputType())
-	if err := out.MergeFrom(resp); err != nil {
-		return nil, fmt.Errorf("failed to convert response: %w", err)
-	}
-	return out, nil
+	return resp, nil
 }
 
 func createWorkerClient(address string) (workerpb.WorkerClient, *grpc.ClientConn, error) {

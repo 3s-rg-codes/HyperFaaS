@@ -5,13 +5,13 @@ go 1.25.5
 ignore tests
 
 require (
+	github.com/bufbuild/protocompile v0.14.1
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.6.0
 	github.com/goforj/godump v1.6.0
 	github.com/golang-cz/devslog v0.0.15
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
-	github.com/jhump/protoreflect v1.17.0
 	github.com/negasus/haproxy-spoe-go v1.0.7
 	github.com/shirou/gopsutil/v4 v4.25.11
 	github.com/stretchr/testify v1.11.1
@@ -26,7 +26,6 @@ require (
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/bufbuild/protocompile v0.14.1 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
