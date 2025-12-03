@@ -10,7 +10,7 @@ formatters:
 linters:
   exclusions:
     paths:
-      - functions
+      - '^functions(/|$)'
   enable:
     - errcheck
     - asciicheck
