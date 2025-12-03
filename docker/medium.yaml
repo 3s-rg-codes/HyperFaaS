@@ -112,7 +112,7 @@ services:
     image: hyperfaas-leaf-a
     ports:
       - "50050:50050"
-      - "50053:50053"
+      - "60060:60060"
       - "6060:6060"
     volumes:
       - ./logs:/app/logs
@@ -123,7 +123,8 @@ services:
     command:
       [
         "./app",
-        "-address=0.0.0.0:50050",
+        "-api-address=0.0.0.0:50050",
+        "-grpc-proxy-address=0.0.0.0:60060",
         "-log-level=${LOG_LEVEL:-info}",
         "-log-format=text",
         "-log-file=/app/logs/leaf-A.log",
@@ -156,6 +157,7 @@ services:
     image: hyperfaas-leaf-b
     ports:
       - "50051:50051"
+      - "60061:60061"
       - "6061:6060"
     volumes:
       - ./logs:/app/logs
@@ -166,7 +168,8 @@ services:
     command:
       [
         "./app",
-        "-address=0.0.0.0:50051",
+        "-api-address=0.0.0.0:50051",
+        "-grpc-proxy-address=0.0.0.0:60061",
         "-log-level=${LOG_LEVEL:-info}",
         "-log-format=text",
         "-log-file=/app/logs/leaf-B.log",
@@ -194,8 +197,8 @@ services:
     image: haproxy:3.0
     environment:
       HAPROXY_PORT: 9999
-      CHILD_1: leaf-A:50050
-      CHILD_2: leaf-B:50051
+      CHILD_1: leaf-A:60060
+      CHILD_2: leaf-B:60061
     depends_on:
       routingcontroller:
         condition: service_healthy

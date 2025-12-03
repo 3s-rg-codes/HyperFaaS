@@ -171,7 +171,8 @@ services:
         COMPONENT: leaf
     image: hyperfaas-leaf-1
     ports:
-      - "50010:50010"
+      - "50050:50050"
+      - "60060:60060"
     volumes:
       - ./logs:/app/logs
     networks:
@@ -181,7 +182,8 @@ services:
     command:
       [
         "./app",
-        "-address=0.0.0.0:50010",
+        "-api-address=0.0.0.0:50050",
+        "-grpc-proxy-address=0.0.0.0:60060",
         "-log-level=${LOG_LEVEL:-info}",
         "-log-format=text",
         "-log-file=/app/logs/leaf-1.log",
@@ -192,7 +194,7 @@ services:
         "-etcd-endpoint=etcd:2379"
       ]
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "50010"]
+      test: ["CMD", "nc", "-z", "localhost", "50050"]
       interval: 3s
       timeout: 5s
       retries: 3
@@ -213,7 +215,8 @@ services:
         COMPONENT: leaf
     image: hyperfaas-leaf-2
     ports:
-      - "50011:50011"
+      - "50051:50051"
+      - "60061:60061"
     volumes:
       - ./logs:/app/logs
     networks:
@@ -223,7 +226,8 @@ services:
     command:
       [
         "./app",
-        "-address=0.0.0.0:50011",
+        "-api-address=0.0.0.0:50051",
+        "-grpc-proxy-address=0.0.0.0:60061",
         "-log-level=${LOG_LEVEL:-info}",
         "-log-format=text",
         "-log-file=/app/logs/leaf-2.log",
@@ -234,7 +238,7 @@ services:
         "-etcd-endpoint=etcd:2379"
       ]
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "50011"]
+      test: ["CMD", "nc", "-z", "localhost", "50051"]
       interval: 3s
       timeout: 5s
       retries: 3
@@ -255,7 +259,8 @@ services:
         COMPONENT: leaf
     image: hyperfaas-leaf-3
     ports:
-      - "50012:50012"
+      - "50052:50052"
+      - "60062:60062"
     volumes:
       - ./logs:/app/logs
     networks:
@@ -265,7 +270,8 @@ services:
     command:
       [
         "./app",
-        "-address=0.0.0.0:50012",
+        "-api-address=0.0.0.0:50052",
+        "-grpc-proxy-address=0.0.0.0:60062",
         "-log-level=${LOG_LEVEL:-info}",
         "-log-format=text",
         "-log-file=/app/logs/leaf-3.log",
@@ -276,7 +282,7 @@ services:
         "-etcd-endpoint=etcd:2379"
       ]
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "50012"]
+      test: ["CMD", "nc", "-z", "localhost", "50052"]
       interval: 3s
       timeout: 5s
       retries: 3
@@ -297,7 +303,8 @@ services:
         COMPONENT: leaf
     image: hyperfaas-leaf-4
     ports:
-      - "50013:50013"
+      - "50053:50053"
+      - "60063:60063"
     volumes:
       - ./logs:/app/logs
     networks:
@@ -307,7 +314,8 @@ services:
     command:
       [
         "./app",
-        "-address=0.0.0.0:50013",
+        "-api-address=0.0.0.0:50053",
+        "-grpc-proxy-address=0.0.0.0:60063",
         "-log-level=${LOG_LEVEL:-info}",
         "-log-format=text",
         "-log-file=/app/logs/leaf-4.log",
@@ -318,7 +326,7 @@ services:
         "-etcd-endpoint=etcd:2379"
       ]
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "50013"]
+      test: ["CMD", "nc", "-z", "localhost", "50053"]
       interval: 3s
       timeout: 5s
       retries: 3
@@ -335,8 +343,8 @@ services:
     image: haproxy:3.0
     environment:
       HAPROXY_PORT: 9090
-      CHILD_1: leaf-1:50010
-      CHILD_2: leaf-2:50011
+      CHILD_1: leaf-1:60060
+      CHILD_2: leaf-2:60061
     depends_on:
       routingcontroller-l1-a:
         condition: service_healthy
@@ -375,8 +383,8 @@ services:
         "-log-format=text",
         "-log-file=/app/logs/routingcontroller-l1-a.log",
         "-socket-path=/var/run/hyperfaas/spoe.sock",
-        "-child-addr=leaf-1:50010",
-        "-child-addr=leaf-2:50011",
+        "-child-addr=leaf-1:50050",
+        "-child-addr=leaf-2:50051",
         "-child-types=leaf"
       ]
     volumes:
@@ -402,8 +410,8 @@ services:
     image: haproxy:3.0
     environment:
       HAPROXY_PORT: 9091
-      CHILD_1: leaf-3:50012
-      CHILD_2: leaf-4:50013
+      CHILD_1: leaf-3:60062
+      CHILD_2: leaf-4:60063
     depends_on:
       routingcontroller-l1-b:
         condition: service_healthy
@@ -442,8 +450,8 @@ services:
         "-log-format=text",
         "-log-file=/app/logs/routingcontroller-l1-b.log",
         "-socket-path=/var/run/hyperfaas/spoe.sock",
-        "-child-addr=leaf-3:50012",
-        "-child-addr=leaf-4:50013",
+        "-child-addr=leaf-3:50052",
+        "-child-addr=leaf-4:50053",
         "-child-types=leaf"
       ]
     volumes:

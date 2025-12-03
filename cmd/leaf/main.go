@@ -24,8 +24,6 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-const proxyListenAddress = "0.0.0.0:50053"
-
 func main() {
 	go func() {
 		http.ListenAndServe("0.0.0.0:6060", nil) // nolint:errcheck
@@ -35,13 +33,15 @@ func main() {
 
 	rNodeID := utils.GetRandomNodeID()
 
-	address := flag.String("address", "0.0.0.0:50050", "Leaf listen address")
+	address := flag.String("api-address", "0.0.0.0:50050", "Leaf API listen address")
+	grpcProxyAddress := flag.String("grpc-proxy-address", "0.0.0.0:50053", "Leaf gRPC proxy listen address")
+
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	logFormat := flag.String("log-format", "text", "Log format (text, json, dev)")
 	logFile := flag.String("log-file", "", "Optional log file path")
 	nodeID := flag.String("node-id", rNodeID, "Node ID to be used for logging and metrics for this node.")
-	containerized := flag.Bool("containerized", true, "Whether the leaf is running in a containerized environment")
 
+	containerized := flag.Bool("containerized", true, "Whether the leaf is running in a containerized environment")
 	scaleToZeroAfter := flag.Duration("scale-to-zero-after", 90*time.Second, "Duration of inactivity before scaling to zero")
 	maxInstancesPerWorker := flag.Int("max-instances-per-worker", 4, "Maximum warm instances per worker for a function")
 	dialTimeout := flag.Duration("dial-timeout", 5*time.Second, "Worker dial timeout")
@@ -129,9 +129,9 @@ func main() {
 
 	leafpb.RegisterLeafServer(grpcServer, server)
 
-	proxyListener, err := net.Listen("tcp", proxyListenAddress)
+	proxyListener, err := net.Listen("tcp", *grpcProxyAddress)
 	if err != nil {
-		logger.Error("failed to listen for grpc proxy", "error", err, "address", proxyListenAddress)
+		logger.Error("failed to listen for grpc proxy", "error", err, "address", *grpcProxyAddress)
 		os.Exit(1)
 	}
 

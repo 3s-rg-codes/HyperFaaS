@@ -19,6 +19,7 @@ import (
 
 const (
 	defaultLeafProxyAddress = "localhost:50053"
+	defaultHaproxyAddress   = "localhost:9999"
 	defaultEtcdAddress      = "localhost:2379"
 	greeterImage            = "hyperfaas-grpc-proxy-greeter:latest"
 	requestName             = "ProxyTest"
@@ -28,7 +29,8 @@ const (
 )
 
 func main() {
-	leafAddress := envOrDefault("LEAF_PROXY_ADDRESS", defaultLeafProxyAddress)
+	//leafAddress := envOrDefault("LEAF_PROXY_ADDRESS", defaultLeafProxyAddress)
+	haproxyAddress := envOrDefault("HAPROXY_ADDRESS", defaultHaproxyAddress)
 	etcdAddress := envOrDefault("ETCD_ADDRESS", defaultEtcdAddress)
 
 	ctx := context.Background()
@@ -41,7 +43,7 @@ func main() {
 
 	// Create gRPC client once and reuse it for all calls
 	conn, err := grpc.NewClient(
-		leafAddress,
+		haproxyAddress,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithAuthority(functionID),
 	)
