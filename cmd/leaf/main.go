@@ -15,6 +15,7 @@ import (
 
 	leaf "github.com/3s-rg-codes/HyperFaaS/pkg/leaf"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
+	leafproxy "github.com/3s-rg-codes/HyperFaaS/pkg/leaf/proxy"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
@@ -22,6 +23,8 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
+
+const proxyListenAddress = "0.0.0.0:50053"
 
 func main() {
 	go func() {
@@ -125,6 +128,34 @@ func main() {
 	healthcheck.SetServingStatus("leaf", healthpb.HealthCheckResponse_SERVING)
 
 	leafpb.RegisterLeafServer(grpcServer, server)
+
+	proxyListener, err := net.Listen("tcp", proxyListenAddress)
+	if err != nil {
+		logger.Error("failed to listen for grpc proxy", "error", err, "address", proxyListenAddress)
+		os.Exit(1)
+	}
+
+	proxyServer := grpc.NewServer(
+		leafproxy.RoutingProxyOpt(
+			server.ProxyBackendResolver(),
+			leafproxy.AuthorityFunctionIDExtractor(),
+		),
+	)
+
+	go func() {
+		<-sigCtx.Done()
+		proxyServer.GracefulStop()
+		_ = proxyListener.Close()
+	}()
+
+	go func() {
+		logger.Info("leaf grpc proxy ready", "address", proxyListener.Addr())
+		if serveErr := proxyServer.Serve(proxyListener); serveErr != nil {
+			if sigCtx.Err() == nil {
+				logger.Error("grpc proxy server stopped", "error", serveErr)
+			}
+		}
+	}()
 
 	logger.Info("leaf server ready", "address", listener.Addr())
 

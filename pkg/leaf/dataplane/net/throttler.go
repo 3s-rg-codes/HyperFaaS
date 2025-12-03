@@ -2,10 +2,13 @@ package net
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sort"
 	"sync"
 )
+
+var ErrNoInstancesAvailable = errors.New("dataplane/net: no instances available")
 
 // Throttler manages concurrency limits and load balancing for function instances.
 // It handles requests to functions and ensures they don't exceed container concurrency limits.
@@ -223,7 +226,30 @@ func (t *Throttler) acquireInstance(ctx context.Context) (func(), *instanceTrack
 // Try waits for capacity and then executes the function, passing the instance address.
 // The function should make a GRPC call to the instance.
 func (t *Throttler) Try(ctx context.Context, fn func(address string) error) error {
-	var ret error
+	release, address, err := t.Lease(ctx)
+	if err != nil {
+		return err
+	}
+	var once sync.Once
+	defer func() {
+		once.Do(func() {
+			if release != nil {
+				release()
+			}
+		})
+	}()
+	return fn(address)
+}
+
+// Lease reserves capacity for a function instance and returns a release callback
+// along with the selected instance address. The caller must invoke the returned
+// release function exactly once when the request has finished.
+func (t *Throttler) Lease(ctx context.Context) (func(), string, error) {
+	var (
+		address  string
+		release  func()
+		acquired bool
+	)
 
 	// Retry loop to handle race conditions where capacity changes between
 	// acquiring the outer semaphore and reserving an instance slot.
@@ -237,15 +263,20 @@ func (t *Throttler) Try(ctx context.Context, fn func(address string) error) erro
 				reenqueue = true
 				return
 			}
-			defer cb()
-			// Execute the function with the instance address
-			ret = fn(tracker.address)
+			acquired = true
+			address = tracker.address
+			release = cb
 		}); err != nil {
-			return err
+			return nil, "", err
 		}
 	}
 
-	return ret
+	if !acquired || address == "" {
+		return nil, "", ErrNoInstancesAvailable
+	}
+
+	//var once sync.Once
+	return release, address, nil
 }
 
 // GetInstanceCount returns the current number of instances.

@@ -112,6 +112,7 @@ services:
     image: hyperfaas-leaf-a
     ports:
       - "50050:50050"
+      - "50053:50053"
       - "6060:6060"
     volumes:
       - ./logs:/app/logs

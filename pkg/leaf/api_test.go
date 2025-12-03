@@ -17,12 +17,14 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/controlplane"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/dataplane"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/metrics"
+	leafproxy "github.com/3s-rg-codes/HyperFaaS/pkg/leaf/proxy"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const TEST_CONCURRENCY = 10000
@@ -137,6 +139,82 @@ func TestScheduleCallConcurrent(t *testing.T) {
 	}
 
 	t.Logf("scheduled %d calls", TEST_CONCURRENCY)
+}
+
+func TestProxyCallViaAuthority(t *testing.T) {
+	server, err := setup(t)
+	if err != nil {
+		t.Fatalf("failed to setup test server: %v", err)
+	}
+
+	id, err := server.metadataClient.PutFunction(context.Background(), &common.CreateFunctionRequest{
+		Image: &common.Image{
+			Tag: "test-image",
+		},
+		Config: &common.Config{
+			Memory:         100 * 1024 * 1024,
+			MaxConcurrency: 100000,
+			Timeout:        10,
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to register function: %v", err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	addr := "127.0.0.1:56789"
+	reqCtx, reqCancel := context.WithTimeout(t.Context(), TEST_TIMEOUT)
+	t.Cleanup(reqCancel)
+	funcCtx, cancel := context.WithCancel(reqCtx)
+	t.Cleanup(cancel)
+
+	go func() {
+		if err := (mockedRunningInstance{}).Run(funcCtx, addr); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("mock function server exited: %v", err)
+		}
+	}()
+
+	proxyLis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen for proxy: %v", err)
+	}
+	t.Cleanup(func() { _ = proxyLis.Close() })
+
+	proxyServer := grpc.NewServer(
+		leafproxy.RoutingProxyOpt(
+			server.ProxyBackendResolver(),
+			leafproxy.AuthorityFunctionIDExtractor(),
+		),
+	)
+	t.Cleanup(proxyServer.GracefulStop)
+	go func() {
+		if err := proxyServer.Serve(proxyLis); err != nil && err != grpc.ErrServerStopped {
+			t.Logf("proxy server stopped: %v", err)
+		}
+	}()
+
+	conn, err := grpc.NewClient(
+		proxyLis.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithAuthority(id),
+	)
+	if err != nil {
+		t.Fatalf("failed to dial proxy: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	client := functionpb.NewFunctionServiceClient(conn)
+	resp, err := client.Call(reqCtx, &common.CallRequest{
+		FunctionId: id,
+		Data:       []byte("via-proxy"),
+	})
+	if err != nil {
+		t.Fatalf("proxy Call failed: %v", err)
+	}
+	if resp == nil || string(resp.Data) != "test-data" {
+		t.Fatalf("unexpected proxy response: %v", resp)
+	}
 }
 
 func setup(t *testing.T) (*Server, error) {
