@@ -26,6 +26,12 @@ jobs:
         with:
           go-version: '1.25.5'
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v2
+        with:
+          version: '33.1'
+          cache: true
+
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -39,8 +45,18 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Generate proto files
-        run: just gen-function-protos
+      - name: Install protoc plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+      - name: Generate proto files for functions
+        run: |
+          echo "Generating proto files for functions"
+          find ./functions/go -type f -path "*/pb/*.proto" | while read -r proto_file; do
+            echo "Generating from $proto_file"
+            protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative "$proto_file"
+          done
 
       - name: Run unit tests
         run: go test -v ./...
