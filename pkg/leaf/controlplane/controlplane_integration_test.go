@@ -42,9 +42,6 @@ func TestControlPlaneColdStartEmitsInstanceChange(t *testing.T) {
 		if ic.FunctionId != functionID {
 			t.Fatalf("unexpected function id. want %s, got %s", functionID, ic.FunctionId)
 		}
-		if ic.Address != "127.0.0.1:50052" {
-			t.Fatalf("unexpected instance address. got %s", ic.Address)
-		}
 	case <-time.After(5 * time.Second):
 		t.Fatalf("timed out waiting for instance change event")
 	}

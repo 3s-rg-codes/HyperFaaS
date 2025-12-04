@@ -24,12 +24,13 @@ import (
 
 	"math/rand"
 
+	crashPB "github.com/3s-rg-codes/HyperFaaS/functions/go/crash/pb"
+	helloPB "github.com/3s-rg-codes/HyperFaaS/functions/go/hello/pb"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"github.com/docker/docker/client"
 	"google.golang.org/grpc"
@@ -114,15 +115,9 @@ func pingContainer(ctx context.Context, ip string) error {
 	}
 	defer conn.Close()
 
-	client := functionpb.NewFunctionServiceClient(conn)
-	_, err = client.Call(ctx, &common.CallRequest{
-		Data: []byte("Hello, World!"),
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
+	client := helloPB.NewHelloClient(conn)
+	_, err = client.SayHello(ctx, &helloPB.HelloRequest{})
+	return err
 }
 
 func getRandId() string {
@@ -359,7 +354,16 @@ func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 		// send a request to the container (makes it crash)
 		go func() {
 			time.Sleep(1 * time.Second)
-			pingContainer(context.Background(), c.InternalIP)
+			conn, err := grpc.NewClient(c.InternalIP, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				t.Errorf("Error creating connection: %v", err)
+			}
+			defer conn.Close()
+			client := crashPB.NewCrashClient(conn)
+			_, err = client.Crash(context.Background(), &crashPB.CrashRequest{})
+			if err == nil {
+				t.Errorf("Error crashing container: %v", err)
+			}
 		}()
 
 		event, err := runtime.MonitorContainer(context.Background(), c.Id, fId)
