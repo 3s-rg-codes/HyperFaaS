@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// FunctionV2 allows users to creaate their own gRPC services with their own proto files.
+// FunctionV2 allows users to create their own gRPC services with their own proto files.
 type FunctionV2 struct {
 	timeoutSeconds    int32
 	controllerAddress string
