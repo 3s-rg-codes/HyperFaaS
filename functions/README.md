@@ -7,7 +7,8 @@ As there is no trivial way to build the containers, run/look at the justfile for
 
 # Go Functions
 
-Every subfolder of the `go` directory is a separate function. You can generate the image by running `just build-function-go <function-name>`.
+Every subfolder of the `go` directory is a separate function. 
+You can generate the image by running `just build-function-go <function-name>`, just make sure to generate the .pb.go files first by running `just gen-function-protos`.
 
 ## How it works internally
 

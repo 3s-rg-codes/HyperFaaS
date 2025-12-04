@@ -124,3 +124,22 @@ func (f *FunctionV2) sendReadySignal() {
 	}
 	notifyControllerReady(f.controllerAddress, f.instanceId, f.logger)
 }
+
+func configLog(logFile string) *slog.Logger {
+	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
+	if err != nil {
+		console := slog.New(slog.NewTextHandler(os.Stdout, nil))
+		console.Error("Failed to create log file, using stdout", "error", err)
+		return console
+	}
+
+	return slog.New(slog.NewTextHandler(file, nil))
+}
+
+func getID() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get hostname: %v", err))
+	}
+	return hostname
+}
