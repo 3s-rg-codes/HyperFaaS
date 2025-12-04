@@ -11,6 +11,8 @@ This directory contains all Docker-related files and configurations for HyperFaa
 
 #### Note:
 The convention across all setups is that the outer most haproxy is reachable on port 9999, etcd is reachable on port 2379 always.
+Leaf servers are reachable on port 5005X .
+Leaf grpc proxies are reachable on port 6005X .
 
 ### Dockerfiles
 - **`Dockerfile`** - Main application Dockerfile for building worker, leaf, and routing controller components
@@ -51,5 +53,9 @@ just logs worker
 
 - All Docker build contexts point to the project root (`..`)
 - HAProxy configurations are mounted as volumes
+    in each setup, we pass in the addresses of the leaf proxies via environment variables.
+    for example: CHILD_1: leaf:60060
+- The routing controllers receive the addresses of the leaf API servers, not the proxies.
+    The proxies are only used for request routing.
 - Function logs are stored in Docker volumes
 - Containers communicate using the `hyperfaas-network` docker network

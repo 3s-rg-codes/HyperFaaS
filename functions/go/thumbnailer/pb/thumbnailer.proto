@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package examples.thumbnailer.v1;
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/functions/go/thumbnailer/pb";
+
+service Thumbnailer {
+  rpc Thumbnail(ThumbnailRequest) returns (ThumbnailReply) {}
+}
+
+message ThumbnailRequest {
+  bytes image = 1;
+  int32 width = 2;
+  int32 height = 3;
+}
+
+message ThumbnailReply {
+  bytes image = 1;
+}
+

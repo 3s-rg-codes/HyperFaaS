@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package examples.bfs.v1;
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/functions/go/bfs/pb";
+
+service BFS {
+  rpc ComputeBFS(BFSRequest) returns (BFSReply) {}
+}
+
+message BFSRequest {
+  int32 size = 1;
+  optional int32 seed = 2;
+}
+
+message BFSReply {
+  repeated int64 result = 1;
+  Measurement measurement = 2;
+}
+
+message Measurement {
+  int64 graph_generating_time_microseconds = 1;
+  int64 compute_time_microseconds = 2;
+}
+

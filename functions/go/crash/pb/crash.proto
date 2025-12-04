@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package examples.crash.v1;
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/functions/go/crash/pb";
+
+service Crash {
+  rpc Crash(CrashRequest) returns (CrashReply) {}
+}
+
+message CrashRequest {
+}
+
+message CrashReply {
+  string message = 1;
+}
+

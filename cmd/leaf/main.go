@@ -15,6 +15,7 @@ import (
 
 	leaf "github.com/3s-rg-codes/HyperFaaS/pkg/leaf"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
+	leafproxy "github.com/3s-rg-codes/HyperFaaS/pkg/leaf/proxy"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
@@ -32,13 +33,15 @@ func main() {
 
 	rNodeID := utils.GetRandomNodeID()
 
-	address := flag.String("address", "0.0.0.0:50050", "Leaf listen address")
+	address := flag.String("api-address", "0.0.0.0:50050", "Leaf API listen address")
+	grpcProxyAddress := flag.String("grpc-proxy-address", "0.0.0.0:50053", "Leaf gRPC proxy listen address")
+
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	logFormat := flag.String("log-format", "text", "Log format (text, json, dev)")
 	logFile := flag.String("log-file", "", "Optional log file path")
 	nodeID := flag.String("node-id", rNodeID, "Node ID to be used for logging and metrics for this node.")
-	containerized := flag.Bool("containerized", true, "Whether the leaf is running in a containerized environment")
 
+	containerized := flag.Bool("containerized", true, "Whether the leaf is running in a containerized environment")
 	scaleToZeroAfter := flag.Duration("scale-to-zero-after", 90*time.Second, "Duration of inactivity before scaling to zero")
 	maxInstancesPerWorker := flag.Int("max-instances-per-worker", 4, "Maximum warm instances per worker for a function")
 	dialTimeout := flag.Duration("dial-timeout", 5*time.Second, "Worker dial timeout")
@@ -125,6 +128,34 @@ func main() {
 	healthcheck.SetServingStatus("leaf", healthpb.HealthCheckResponse_SERVING)
 
 	leafpb.RegisterLeafServer(grpcServer, server)
+
+	proxyListener, err := net.Listen("tcp", *grpcProxyAddress)
+	if err != nil {
+		logger.Error("failed to listen for grpc proxy", "error", err, "address", *grpcProxyAddress)
+		os.Exit(1)
+	}
+
+	proxyServer := grpc.NewServer(
+		leafproxy.RoutingProxyOpt(
+			server.ProxyBackendResolver(),
+			leafproxy.AuthorityFunctionIDExtractor(),
+		),
+	)
+
+	go func() {
+		<-sigCtx.Done()
+		proxyServer.GracefulStop()
+		_ = proxyListener.Close()
+	}()
+
+	go func() {
+		logger.Info("leaf grpc proxy ready", "address", proxyListener.Addr())
+		if serveErr := proxyServer.Serve(proxyListener); serveErr != nil {
+			if sigCtx.Err() == nil {
+				logger.Error("grpc proxy server stopped", "error", serveErr)
+			}
+		}
+	}()
 
 	logger.Info("leaf server ready", "address", listener.Addr())
 

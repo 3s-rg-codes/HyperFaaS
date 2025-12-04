@@ -7,21 +7,33 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/urfave/cli/v3"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	commonpb "github.com/3s-rg-codes/HyperFaaS/proto/common"
-	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
+	"github.com/bufbuild/protocompile"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/dynamicpb"
 )
 
 var dataFlag = &cli.StringFlag{
-	Name:    "data",
-	Usage:   "data to be passed to the function",
+	Name: "data",
+	Usage: `data to be passed to the function.
+	JSON object that matches the proto request:
+		- use normal JSON values for numbers/strings/bools,
+		- nested objects for nested messages,
+		- arrays for repeated fields,
+		- and base64-encoded strings for bytes fields.`,
 	Value:   "",
 	Aliases: []string{"d"},
 }
@@ -49,6 +61,30 @@ var metadataDialTimeoutFlag = &cli.DurationFlag{
 	Name:  "metadata-dial-timeout",
 	Usage: "Dial timeout when connecting to etcd",
 	Value: metadata.DefaultDialTimeout,
+}
+
+var protoFileFlag = &cli.StringFlag{
+	Name:     "proto",
+	Usage:    "Path to the proto file defining the service",
+	Required: true,
+}
+
+var protoImportPathFlag = &cli.StringSliceFlag{
+	Name:  "proto-path",
+	Usage: "Additional import paths for proto dependencies (repeatable)",
+	Value: []string{},
+}
+
+var proxyMethodFlag = &cli.StringFlag{
+	Name:     "method",
+	Usage:    "Fully qualified gRPC method, e.g. package.Service/Method",
+	Required: true,
+}
+
+var proxyFunctionFlag = &cli.StringFlag{
+	Name:     "function-id",
+	Usage:    "Function ID to invoke",
+	Required: true,
 }
 
 func main() {
@@ -295,82 +331,60 @@ func main() {
 				},
 			},
 			{
-				Name:    "leaf",
-				Usage:   "talk to the leaf API",
-				Aliases: []string{"lf"},
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:  "address",
-						Value: "localhost:50050",
-					},
-				},
-				Commands: []*cli.Command{
-					{
-						Name:      "call",
-						Usage:     "call a function",
-						ArgsUsage: "function ID",
-						Flags: []cli.Flag{
-							dataFlag,
-						},
-						Action: func(ctx context.Context, cmd *cli.Command) error {
-							funcID := cmd.Args().Get(0)
-							data := []byte(cmd.String("data"))
-							timeout := cmd.Duration("timeout")
-
-							client, _, err := createLeafClient(cmd.String("address"))
-							if err != nil {
-								return err
-							}
-							response, err := ScheduleCall(client, funcID, data, timeout)
-							if err != nil {
-								return err
-							}
-							fmt.Printf("%v\n", string(response))
-							return nil
-						},
-					},
-				},
-			},
-			{
 				Name:  "proxy",
-				Usage: "talk to the HAProxy gateway",
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:  "address",
-						Value: "localhost:50052",
-					},
-				},
+				Usage: "call a function through the gRPC proxy",
 				Commands: []*cli.Command{
 					{
-						Name:      "call",
-						Usage:     "call a function",
-						ArgsUsage: "function ID",
+						Name:  "call",
+						Usage: "invoke a gRPC method on the target function",
 						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:  "address",
+								Value: "localhost:50053",
+								Usage: "leaf gRPC proxy address",
+							},
+							protoFileFlag,
+							protoImportPathFlag,
+							proxyMethodFlag,
+							proxyFunctionFlag,
 							dataFlag,
 						},
 						Action: func(ctx context.Context, cmd *cli.Command) error {
-							funcID := cmd.Args().Get(0)
-							if funcID == "" {
-								return errors.New("function ID is required")
+							funcID := cmd.String("function-id")
+							method := cmd.String("method")
+							protoFile := cmd.String("proto")
+							dataJSON := cmd.String("data")
+							if dataJSON == "" {
+								dataJSON = "{}"
 							}
-							data := []byte(cmd.String("data"))
 							timeout := cmd.Duration("timeout")
+							if timeout <= 0 {
+								timeout = 30 * time.Second
+							}
 
-							client, conn, err := createProxyClient(cmd.String("address"))
+							methodDesc, err := loadMethodDescriptor(protoFile, cmd.StringSlice("proto-path"), method)
 							if err != nil {
 								return err
 							}
-							defer func() {
-								if err := conn.Close(); err != nil {
-									log.Printf("warning: failed to close connection: %v", err)
-								}
-							}()
 
-							response, err := ScheduleCall(client, funcID, data, timeout)
+							reqMsg := dynamicpb.NewMessage(methodDesc.Input())
+							if err := protojson.Unmarshal([]byte(dataJSON), reqMsg); err != nil {
+								return fmt.Errorf("failed to parse --data JSON: %w", err)
+							}
+
+							respMsg, err := invokeProxyMethod(ctx, cmd.String("address"), funcID, methodDesc, reqMsg, timeout)
 							if err != nil {
 								return err
 							}
-							fmt.Printf("%v\n", string(response))
+
+							out, err := protojson.MarshalOptions{
+								Multiline: true,
+								Indent:    "  ",
+							}.Marshal(respMsg)
+							if err != nil {
+								return fmt.Errorf("failed to marshal response: %w", err)
+							}
+							fmt.Println(string(out))
 							return nil
 						},
 					},
@@ -389,32 +403,6 @@ func main() {
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		log.Fatal(err)
 	}
-}
-
-// ScheduleCall schedules a call to a function by talking either to a leaf or gateway (e.g., HAProxy) API. Returns the response data.
-func ScheduleCall(client HyperFaaSClient,
-	funcID string,
-	data []byte,
-	timeout time.Duration,
-) ([]byte, error) {
-	scheduleCallReq := &commonpb.CallRequest{
-		FunctionId: funcID,
-		Data:       data,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	scheduleCallResponse, err := client.ScheduleCall(ctx, scheduleCallReq)
-	if err != nil {
-		fmt.Printf("Error scheduling call: %v", err)
-		return nil, err
-	}
-	if scheduleCallResponse.Error != nil {
-		fmt.Printf("Internal error scheduling call: %v\n", scheduleCallResponse.Error)
-		return nil, errors.New(scheduleCallResponse.Error.Message)
-	}
-	return scheduleCallResponse.Data, nil
 }
 
 // StartFunction starts a function by talking to the worker API. Returns the instance ID.
@@ -514,24 +502,175 @@ func GetWorkerMetrics(client workerpb.WorkerClient,
 	return nil
 }
 
+func loadMethodDescriptor(protoFile string, importPaths []string, fullMethod string) (protoreflect.MethodDescriptor, error) {
+	if protoFile == "" {
+		return nil, errors.New("proto file is required")
+	}
+	if fullMethod == "" {
+		return nil, errors.New("method is required")
+	}
+
+	serviceName, methodName, err := splitMethodName(fullMethod)
+	if err != nil {
+		return nil, err
+	}
+
+	absProtoFile, err := filepath.Abs(protoFile)
+	if err != nil {
+		return nil, fmt.Errorf("resolve proto path: %w", err)
+	}
+
+	searchPaths := normalizeImportPaths(filepath.Dir(absProtoFile), importPaths)
+	if len(searchPaths) == 0 {
+		searchPaths = []string{"."}
+	}
+
+	compiler := protocompile.Compiler{
+		Resolver: protocompile.WithStandardImports(&protocompile.SourceResolver{
+			ImportPaths: searchPaths,
+		}),
+	}
+
+	fileName := filepath.Base(absProtoFile)
+	files, err := compiler.Compile(context.Background(), fileName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile proto: %w", err)
+	}
+
+	targetService := protoreflect.FullName(serviceName)
+	targetMethod := protoreflect.Name(methodName)
+
+	var descriptors []protoreflect.FileDescriptor
+	for _, f := range files {
+		descriptors = append(descriptors, f)
+	}
+
+	methodDesc := lookupMethodDescriptor(descriptors, targetService, targetMethod)
+	if methodDesc == nil {
+		return nil, fmt.Errorf("method %s not found in %s (or its imports)", fullMethod, protoFile)
+	}
+	return methodDesc, nil
+}
+
+func splitMethodName(fullMethod string) (string, string, error) {
+	fullMethod = strings.TrimPrefix(fullMethod, "/")
+	parts := strings.Split(fullMethod, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("method must be in the form package.Service/Method, got %q", fullMethod)
+	}
+	return parts[0], parts[1], nil
+}
+
+func normalizeImportPaths(protoDir string, extra []string) []string {
+	pathSet := make(map[string]struct{})
+	add := func(p string) {
+		if p == "" {
+			return
+		}
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		if _, ok := pathSet[p]; !ok {
+			pathSet[p] = struct{}{}
+		}
+	}
+
+	add(protoDir)
+	for _, p := range extra {
+		add(p)
+	}
+	if len(pathSet) == 0 {
+		add(".")
+	}
+	paths := make([]string, 0, len(pathSet))
+	for p := range pathSet {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func lookupMethodDescriptor(files []protoreflect.FileDescriptor, service protoreflect.FullName, method protoreflect.Name) protoreflect.MethodDescriptor {
+	visited := make(map[string]bool)
+	for _, fd := range files {
+		if m := searchMethodInFile(fd, service, method, visited); m != nil {
+			return m
+		}
+	}
+	return nil
+}
+
+func searchMethodInFile(fd protoreflect.FileDescriptor, service protoreflect.FullName, method protoreflect.Name, visited map[string]bool) protoreflect.MethodDescriptor {
+	if fd == nil {
+		return nil
+	}
+	if visited[fd.Path()] {
+		return nil
+	}
+	visited[fd.Path()] = true
+
+	services := fd.Services()
+	for i := 0; i < services.Len(); i++ {
+		svc := services.Get(i)
+		if svc.FullName() == service {
+			if m := svc.Methods().ByName(method); m != nil {
+				return m
+			}
+		}
+	}
+
+	imports := fd.Imports()
+	for i := 0; i < imports.Len(); i++ {
+		if m := searchMethodInFile(imports.Get(i).FileDescriptor, service, method, visited); m != nil {
+			return m
+		}
+	}
+	return nil
+}
+
+func invokeProxyMethod(
+	ctx context.Context,
+	address string,
+	functionID string,
+	methodDesc protoreflect.MethodDescriptor,
+	req proto.Message,
+	timeout time.Duration,
+) (proto.Message, error) {
+	conn, err := grpc.NewClient(
+		address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithAuthority(functionID),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial proxy: %w", err)
+	}
+	defer func() {
+		if cerr := conn.Close(); cerr != nil {
+			log.Printf("warning: failed to close connection: %v", cerr)
+		}
+	}()
+
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	serviceDesc, ok := methodDesc.Parent().(protoreflect.ServiceDescriptor)
+	if !ok {
+		return nil, errors.New("method descriptor missing parent service information")
+	}
+	fullMethodName := fmt.Sprintf("/%s/%s", serviceDesc.FullName(), methodDesc.Name())
+	resp := dynamicpb.NewMessage(methodDesc.Output())
+	if err := conn.Invoke(callCtx, fullMethodName, req, resp); err != nil {
+		return nil, fmt.Errorf("rpc call failed: %w", err)
+	}
+	return resp, nil
+}
+
 func createWorkerClient(address string) (workerpb.WorkerClient, *grpc.ClientConn, error) {
 	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, nil, err
 	}
 	return workerpb.NewWorkerClient(conn), conn, nil
-}
-
-func createLeafClient(address string) (leafpb.LeafClient, *grpc.ClientConn, error) {
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, nil, err
-	}
-	return leafpb.NewLeafClient(conn), conn, nil
-}
-
-func createProxyClient(address string) (leafpb.LeafClient, *grpc.ClientConn, error) {
-	return createLeafClient(address)
 }
 
 func createMetadataClient(cmd *cli.Command) (*metadata.EtcdClient, error) {
@@ -546,10 +685,6 @@ func createMetadataClient(cmd *cli.Command) (*metadata.EtcdClient, error) {
 	}
 
 	return metadata.NewClient(endpoints, opts, nil)
-}
-
-type HyperFaaSClient interface {
-	ScheduleCall(context.Context, *commonpb.CallRequest, ...grpc.CallOption) (*commonpb.CallResponse, error)
 }
 
 func buildFunctionRequest(cmd *cli.Command, imageTag string) (*commonpb.CreateFunctionRequest, error) {
