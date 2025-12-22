@@ -1,72 +1,52 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
-	"fmt"
 	"math/rand"
 	"time"
 
+	"github.com/3s-rg-codes/HyperFaaS/functions/go/bfs/pb"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"gonum.org/v1/gonum/graph/simple"
+	"google.golang.org/grpc"
 )
 
-type InputData struct {
-	Size int
-	Seed *int // Optional
+type bfsServer struct {
+	pb.UnimplementedBFSServer
 }
 
-type OutputData struct {
-	Result      []int64
-	Measurement struct {
-		GraphGeneratingTimeMicroseconds int64
-		ComputeTimeMicroseconds         int64
-	}
-}
-
-func main() {
-	f := functionRuntimeInterface.New(10)
-	f.Ready(handler)
-}
-
-// inspired by https://github.com/spcl/serverless-benchmarks/blob/master/benchmarks/500.scientific/503.graph-bfs/python/function.py
-
-func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
-	var input InputData
-	if err := gob.NewDecoder(bytes.NewReader(in.Data)).Decode(&input); err != nil {
-		return nil, fmt.Errorf("failed to decode input: %v", err)
+func (s *bfsServer) ComputeBFS(ctx context.Context, req *pb.BFSRequest) (*pb.BFSReply, error) {
+	size := int(req.Size)
+	if size <= 0 {
+		size = 100 // default size
 	}
 
-	if input.Seed != nil {
-		rand.New(rand.NewSource(int64(*input.Seed)))
+	var seed *int
+	if req.Seed != nil {
+		seedVal := int(*req.Seed)
+		seed = &seedVal
+	}
+
+	if seed != nil {
+		rand.New(rand.NewSource(int64(*seed)))
 	} else {
 		rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
 
 	startGraph := time.Now()
-	graph := generateBarabasiAlbert(input.Size, 10)
+	graph := generateBarabasiAlbert(size, 10)
 	graphDuration := time.Since(startGraph).Microseconds()
 
 	startBFS := time.Now()
 	result := bfs(graph, 0)
 	bfsDuration := time.Since(startBFS).Microseconds()
 
-	output := OutputData{
+	return &pb.BFSReply{
 		Result: result,
-	}
-	output.Measurement.GraphGeneratingTimeMicroseconds = graphDuration
-	output.Measurement.ComputeTimeMicroseconds = bfsDuration
-
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(output); err != nil {
-		return nil, fmt.Errorf("failed to encode response: %v", err)
-	}
-
-	return &common.CallResponse{
-		Data:  buf.Bytes(),
-		Error: nil,
+		Measurement: &pb.Measurement{
+			GraphGeneratingTimeMicroseconds: graphDuration,
+			ComputeTimeMicroseconds:         bfsDuration,
+		},
 	}, nil
 }
 
@@ -150,4 +130,12 @@ func bfs(g *simple.UndirectedGraph, start int64) []int64 {
 	}
 
 	return result
+}
+
+func main() {
+	fn := functionRuntimeInterface.NewV2(30)
+
+	fn.Ready(func(reg grpc.ServiceRegistrar) {
+		pb.RegisterBFSServer(reg, &bfsServer{})
+	})
 }

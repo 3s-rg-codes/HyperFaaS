@@ -7,9 +7,6 @@ import "common/common.proto";
 option go_package = "github.com/3s-rg-codes/HyperFaaS/proto/leaf";
 
 service Leaf {
-  // Schedules a function call on a worker.
-  rpc ScheduleCall(common.CallRequest) returns (common.CallResponse);
-
   // State streams changes in state of a function_id.
   // A change in the number of running instances.
   rpc State(common.StateRequest) returns (stream common.StateResponse);

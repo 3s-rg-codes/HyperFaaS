@@ -8,13 +8,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/config"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/controlplane"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/dataplane"
+	dpnet "github.com/3s-rg-codes/HyperFaaS/pkg/leaf/dataplane/net"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/metrics"
+	leafproxy "github.com/3s-rg-codes/HyperFaaS/pkg/leaf/proxy"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
@@ -214,28 +217,6 @@ func (s *Server) removeFunction(functionID string) {
 	s.controlPlane.RemoveFunction(functionID)
 }
 
-func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-	if req.FunctionId == "" {
-		return nil, status.Error(codes.InvalidArgument, "function_id is required")
-	}
-
-	if !s.controlPlane.FunctionExists(req.FunctionId) {
-		return nil, status.Errorf(codes.NotFound, "function %s not found in control plane", req.FunctionId)
-	}
-
-	response, err := s.dataPlane.CallWithConnPool(ctx, req.FunctionId, req)
-	if err != nil {
-		return nil, status.Errorf(codes.Unavailable, "call failed: %v", err)
-	}
-	// response should never be nil, so panic (debugging only) . TODO remove this panic.
-	if response == nil {
-		panic(" dataplane returned a nil response but no error")
-	}
-
-	s.logger.Debug("returning response", "function_id", req.FunctionId)
-	return response, nil
-}
-
 // State streams changes in state of a function_id.
 // A change in the number of running instances.
 // IMPORTANT: this is meant for only ONE client to be listening to.
@@ -268,4 +249,27 @@ func (s *Server) handleWorkerStatus(workerIdx int, update *dataplane.WorkerStatu
 		return
 	}
 	s.controlPlane.HandleWorkerEvent(workerIdx, update)
+}
+
+// ProxyBackendResolver exposes a BackendResolver that can be used by the gRPC proxy listener.
+func (s *Server) ProxyBackendResolver() leafproxy.BackendResolver {
+	return leafproxy.BackendResolverFunc(func(ctx context.Context, functionID string, fullMethodName string) (grpc.ClientConnInterface, error) {
+		if functionID == "" {
+			return nil, status.Error(codes.InvalidArgument, "function id is required for proxy calls")
+		}
+
+		if !s.controlPlane.FunctionExists(functionID) {
+			return nil, status.Errorf(codes.NotFound, "function %s not found in control plane", functionID)
+		}
+		s.logger.Debug("leasing connection for function", "function_id", functionID)
+		conn, release, err := s.dataPlane.LeaseConnection(ctx, functionID)
+		if err != nil {
+			if errors.Is(err, dpnet.ErrNoInstancesAvailable) {
+				return nil, status.Errorf(codes.Unavailable, "function %s has no ready instances", functionID)
+			}
+			return nil, status.Errorf(codes.Unavailable, "failed to route %s: %v", functionID, err)
+		}
+		s.logger.Debug("wrapped connection for function", "function_id", functionID)
+		return leafproxy.WrapClientConn(conn, release), nil
+	})
 }

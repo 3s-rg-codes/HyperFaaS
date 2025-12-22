@@ -3,7 +3,6 @@
 package test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -17,16 +16,6 @@ import (
 	"github.com/goforj/godump"
 )
 
-// set the env vars to override the default values
-var WORKER_ADDRESS = envOrDefault("WORKER_ADDRESS", "localhost:50051")
-
-// var LEAF_ADDRESS = envOrDefault("LEAF_ADDRESS", "localhost:50010")
-var LEAF_ADDRESS = envOrDefault("LEAF_ADDRESS", "localhost:50050")
-var HAPROXY_ADDRESS = envOrDefault("HAPROXY_ADDRESS", "localhost:9999")
-var ETCD_ADDRESS = envOrDefault("ETCD_ADDRESS", "localhost:2379")
-
-// The timeout used for the calls
-const TIMEOUT = 30 * time.Second
 const CONCURRENCY = 1500
 
 func TestMain(m *testing.M) {
@@ -44,43 +33,45 @@ func TestCreateFunctionRequest(t *testing.T) {
 
 // Tests sending a CallRequest through HAProxy
 func TestCallRequest(t *testing.T) {
-
-	// Create HAProxy client for gRPC calls
-	haproxyClient := GetHAProxyClient(HAPROXY_ADDRESS)
-
-	//leafClient, conn := GetLeafClient(LEAF_ADDRESS)
-	//defer conn.Close()
-
 	data := []struct {
-		ImageTag         string
-		ExpectedResponse []byte
-		Data             []byte
+		ImageTag       string
+		testSingleCall func(*testing.T, string) error
 	}{
 		{
-			ImageTag:         "hyperfaas-hello:latest",
-			ExpectedResponse: []byte("HELLO WORLD!"),
-			Data:             []byte(""),
+			ImageTag: "hyperfaas-grpc-proxy-greeter",
+			testSingleCall: func(t *testing.T, functionId string) error {
+				return testCallGreeter(t, functionId, "World", "Hello, World!", false)
+			},
 		},
 		{
-			ImageTag:         "hyperfaas-echo:latest",
-			ExpectedResponse: []byte("Echo this message"),
-			Data:             []byte("Echo this message"),
+			ImageTag: "hyperfaas-hello",
+			testSingleCall: func(t *testing.T, functionId string) error {
+				return testCallHello(t, functionId, "Hello, World!", false)
+			},
+		},
+		{
+			ImageTag: "hyperfaas-echo",
+			testSingleCall: func(t *testing.T, functionId string) error {
+				return testCallEcho(t, functionId, []byte("123"), []byte("123"), false)
+			},
 		},
 	}
 
 	for _, d := range data {
 		t.Run("Single Call", func(t *testing.T) {
-			//t.Skip("Skipping single call test")
 			functionId := createFunctionMetadata(d.ImageTag)
-			testCall(t, haproxyClient, functionId, d.Data, d.ExpectedResponse, false)
+			err := d.testSingleCall(t, functionId)
+			if err != nil {
+				t.Errorf("testSingleCall failed: %v", err)
+			}
 		})
 	}
 
 	for _, d := range data {
 		t.Run("Concurrent Calls", func(t *testing.T) {
-			//t.Skip("Skipping concurrent calls test")
 			functionId := createFunctionMetadata(d.ImageTag)
 			t.Log("Sending Concurrent Calls")
+
 			wg := sync.WaitGroup{}
 			success := atomic.Int32{}
 			fail := atomic.Int32{}
@@ -88,7 +79,7 @@ func TestCallRequest(t *testing.T) {
 			errorsMutex := sync.Mutex{}
 			for range CONCURRENCY {
 				wg.Go(func() {
-					err := testCall(t, haproxyClient, functionId, d.Data, d.ExpectedResponse, false)
+					err := d.testSingleCall(t, functionId)
 					if err != nil {
 						fail.Add(1)
 						errorsMutex.Lock()
@@ -112,15 +103,11 @@ func TestCallRequest(t *testing.T) {
 					}
 				}
 			}
-
 		})
 	}
-
 }
 
 func TestScaleFromZero(t *testing.T) {
-
-	haproxyClient := GetHAProxyClient(HAPROXY_ADDRESS)
 
 	functionId := createFunctionMetadataWithOptions("hyperfaas-hello:latest",
 		2,
@@ -131,13 +118,19 @@ func TestScaleFromZero(t *testing.T) {
 	}
 	t.Logf("Created function with ID: %s", functionId)
 
-	testCall(t, haproxyClient, functionId, []byte(""), []byte("HELLO WORLD!"), false)
+	err := testCallHello(t, functionId, "Hello, World!", false)
+	if err != nil {
+		t.Fatalf("First call failed: %v", err)
+	}
 
 	time.Sleep(2 * time.Second)
 
 	// function should be scaled to zero
 	// next call should still work
-	testCall(t, haproxyClient, functionId, []byte(""), []byte("HELLO WORLD!"), false)
+	err = testCallHello(t, functionId, "Hello, World!", false)
+	if err != nil {
+		t.Fatalf("Second call after scale-to-zero failed: %v", err)
+	}
 
 }
 
@@ -145,15 +138,13 @@ func TestScaleFromZero(t *testing.T) {
 func TestDeleteFunction(t *testing.T) {
 	t.Skip("Skipping delete function test")
 
-	haproxyClient := GetHAProxyClient(HAPROXY_ADDRESS)
-
 	functionId := createFunctionMetadata("hyperfaas-hello:latest")
 	if functionId == "" {
 		t.Errorf("Function id is an empty string")
 	}
 	t.Logf("Created function with ID: %s", functionId)
 
-	testCall(t, haproxyClient, functionId, []byte(""), []byte("HELLO WORLD!"), false)
+	testCallHello(t, functionId, "Hello, World!", false)
 
 	deleteFunctionMetadata(t, functionId)
 
@@ -161,17 +152,10 @@ func TestDeleteFunction(t *testing.T) {
 
 	// a new call should fail because the function does not exist
 
-	err := testCall(t, haproxyClient, functionId, []byte(""), []byte(""), true)
+	err := testCallHello(t, functionId, "Hello, World!", true)
 	if err == nil {
 		t.Errorf("Expected call to fail, got %v", err)
 	}
-}
-
-func envOrDefault(env string, defaultValue string) string {
-	if value, ok := os.LookupEnv(env); ok {
-		return value
-	}
-	return defaultValue
 }
 
 // createFunctionMetadata stores the function definition in etcd so leaves/workers discover it.
@@ -254,37 +238,4 @@ func deleteFunctionMetadata(t *testing.T, functionId string) {
 	if err != nil {
 		t.Errorf("Failed to delete function metadata: %v", err)
 	}
-}
-
-// tests a call to a function using data. Verifies the response is as expected.
-// Receives a leaf or haproxy client.
-func testCall(t *testing.T,
-	c client,
-	functionId string,
-	data []byte,
-	expectedResponse []byte,
-	shouldFail bool,
-) error {
-	ctx, cancel := context.WithTimeout(context.Background(), TIMEOUT)
-	resp, err := c.ScheduleCall(ctx, &common.CallRequest{
-		FunctionId: functionId,
-		Data:       data,
-	})
-	cancel()
-	if err != nil {
-		if shouldFail {
-			return err
-		}
-		t.Fail()
-		return err
-	}
-	if resp == nil {
-		t.Errorf("Response is nil")
-		return nil
-	}
-	if !bytes.Equal(resp.Data, expectedResponse) {
-		t.Errorf("Expected response %s, got %s", expectedResponse, resp.Data)
-		return nil
-	}
-	return nil
 }
