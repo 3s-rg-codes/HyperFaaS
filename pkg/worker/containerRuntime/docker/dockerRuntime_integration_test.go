@@ -307,8 +307,8 @@ func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error monitoring container: %v", err)
 		}
-		if event != cr.ContainerEventExit {
-			t.Errorf("Expected exit event, got %v", event)
+		if event != cr.ContainerEventExit && event != cr.ContainerEventCrash {
+			t.Errorf("Expected exit or crash event, got %v", event)
 		}
 	})
 

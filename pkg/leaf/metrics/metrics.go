@@ -37,6 +37,8 @@ func NewConcurrencyReporter(logger *slog.Logger, metricChan chan MetricEvent, re
 type functionStats struct {
 	// how many requests are currently in flight.
 	inFlight atomic.Int64
+	// unix nano timestamp of the last request.
+	lastRequestUnixNano atomic.Int64
 }
 
 // MetricEvent is a message used to notify components of changes in the concurrency of a function.
@@ -52,7 +54,9 @@ func (c *ConcurrencyReporter) HandleRequestIn(functionId string) {
 	if stat != nil {
 		c.mu.RUnlock()
 		stat.inFlight.Add(1)
+		stat.lastRequestUnixNano.Store(time.Now().UnixNano())
 		return
+
 	}
 	c.mu.RUnlock()
 
@@ -61,14 +65,17 @@ func (c *ConcurrencyReporter) HandleRequestIn(functionId string) {
 	stat = c.stats[functionId]
 	if stat != nil {
 		stat.inFlight.Add(1)
+		stat.lastRequestUnixNano.Store(time.Now().UnixNano())
 		c.mu.Unlock()
 		return
+
 	}
 
 	stat = &functionStats{
 		inFlight: atomic.Int64{},
 	}
 	stat.inFlight.Add(1)
+	stat.lastRequestUnixNano.Store(time.Now().UnixNano())
 
 	c.stats[functionId] = stat
 	c.mu.Unlock()
@@ -94,6 +101,20 @@ func (c *ConcurrencyReporter) HandleRequestOut(functionId string) {
 	}
 	c.mu.RUnlock()
 	stat.inFlight.Add(-1)
+}
+
+func (c *ConcurrencyReporter) LastRequestTimestamp(functionId string) time.Time {
+	c.mu.RLock()
+	stat := c.stats[functionId]
+	c.mu.RUnlock()
+	if stat == nil {
+		return time.Time{}
+	}
+	unixNanos := stat.lastRequestUnixNano.Load()
+	if unixNanos == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, unixNanos)
 }
 
 // For scale to zero, we need to delete the function stats so that the next request will trigger a cold start.
