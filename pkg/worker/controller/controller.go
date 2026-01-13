@@ -234,7 +234,7 @@ func (s *Controller) StartServer(ctx context.Context) {
 	}
 }
 
-// Monitors the container lifecycle and handles the possible scenarios (timeout, crash, oom)
+// Monitors the container lifecycle and handles exit, crash, and oom.
 func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container) {
 	s.logger.Debug("Starting container monitoring", "instanceID", c.Id, "functionID", functionID)
 
@@ -251,9 +251,9 @@ func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container
 	case cr.ContainerEventCrash:
 		s.logger.Debug("Container crashed", "instanceID", c.Id, "error", err)
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Down().Failed())
-	case cr.ContainerEventTimeout, cr.ContainerEventExit:
-		s.logger.Debug("Container timed out gracefully", "instanceID", c.Id)
-		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Timeout().Success())
+	case cr.ContainerEventExit:
+		s.logger.Debug("Container exited", "instanceID", c.Id)
+		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Stop().Success())
 	case cr.ContainerEventOOM:
 		s.logger.Debug("Container ran out of memory", "instanceID", c.Id)
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Down().Failed())

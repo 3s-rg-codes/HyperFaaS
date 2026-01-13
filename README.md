@@ -25,6 +25,7 @@ To get started with HyperFaaS, follow these steps:
 - [Go](https://go.dev/doc/install)
 - [Docker](https://docs.docker.com/get-docker/)
 - [Protoc](https://protobuf.dev/installation/)
+   - Then run `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest`
 - [Just](https://github.com/casey/just?tab=readme-ov-file#installation)
 
 > **Note**

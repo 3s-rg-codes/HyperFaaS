@@ -1,12 +1,10 @@
 package functionRuntimeInterface
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
-	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -14,23 +12,19 @@ import (
 
 // FunctionV2 allows users to create their own gRPC services with their own proto files.
 type FunctionV2 struct {
-	timeoutSeconds    int32
 	controllerAddress string
 	instanceId        string
 	functionId        string
 
 	logger *slog.Logger
 
-	server       *grpc.Server
-	serverOpts   []grpc.ServerOption
-	lastActivity time.Time
-	activityMu   sync.RWMutex
+	server     *grpc.Server
+	serverOpts []grpc.ServerOption
 }
 
-func NewV2(timeout int, opts ...grpc.ServerOption) *FunctionV2 {
+func NewV2(opts ...grpc.ServerOption) *FunctionV2 {
 	settings := loadRuntimeSettings()
 	fn := &FunctionV2{
-		timeoutSeconds:    settings.timeoutSeconds,
 		controllerAddress: settings.controllerAddress,
 		instanceId:        getID(),
 		functionId:        settings.functionID,
@@ -49,7 +43,6 @@ func (f *FunctionV2) Ready(register func(grpc.ServiceRegistrar)) {
 		fmt.Sprintf("/logs/%s-%s.log", time.Now().Format("2006-01-02-15-04-05"), f.instanceId),
 	)
 	f.logger = logger
-	f.updateActivity()
 
 	register(f.server)
 
@@ -59,13 +52,11 @@ func (f *FunctionV2) Ready(register func(grpc.ServiceRegistrar)) {
 		os.Exit(1)
 	}
 
-	go f.monitorTimeout()
-
 	logger.Info("Sending ready signal to controller")
 
 	go f.sendReadySignal()
 
-	logger.Info("User gRPC server starting", "timeout", f.timeoutSeconds)
+	logger.Info("User gRPC server starting")
 
 	if serveErr := f.server.Serve(lis); serveErr != nil {
 		logger.Error("Failed to serve", "error", serveErr)
@@ -74,48 +65,7 @@ func (f *FunctionV2) Ready(register func(grpc.ServiceRegistrar)) {
 }
 
 func (f *FunctionV2) buildServerOptions() []grpc.ServerOption {
-	options := []grpc.ServerOption{
-		// for tracking activity
-		grpc.ChainUnaryInterceptor(f.unaryActivityInterceptor),
-	}
-	return append(options, f.serverOpts...)
-}
-
-func (f *FunctionV2) unaryActivityInterceptor(
-	ctx context.Context,
-	req any,
-	_ *grpc.UnaryServerInfo,
-	handler grpc.UnaryHandler,
-) (any, error) {
-	f.updateActivity()
-	return handler(ctx, req)
-}
-
-func (f *FunctionV2) updateActivity() {
-	f.activityMu.Lock()
-	f.lastActivity = time.Now()
-	f.activityMu.Unlock()
-}
-
-func (f *FunctionV2) monitorTimeout() {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		f.activityMu.RLock()
-		inactive := time.Since(f.lastActivity)
-		f.activityMu.RUnlock()
-
-		if inactive >= time.Duration(f.timeoutSeconds)*time.Second {
-			if f.logger != nil {
-				f.logger.Info("Server timeout reached, shutting down",
-					"timeout", f.timeoutSeconds,
-					"last_activity", inactive)
-			}
-			f.server.GracefulStop()
-			return
-		}
-	}
+	return append([]grpc.ServerOption{}, f.serverOpts...)
 }
 
 func (f *FunctionV2) sendReadySignal() {

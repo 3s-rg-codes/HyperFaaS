@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"sync"
-	"time"
 
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
@@ -59,7 +58,7 @@ func (m *MockRuntime) MonitorContainer(ctx context.Context, instanceId string, f
 		if instance.id == instanceId {
 			// just wait for the context to be done
 			<-instance.ctx.Done()
-			return cr.ContainerEventTimeout, nil
+			return cr.ContainerEventExit, nil
 		}
 	}
 	return cr.ContainerEventExit, fmt.Errorf("instance %s not found", instanceId)
@@ -93,17 +92,13 @@ func (m *MockRuntime) Start(ctx context.Context, functionID string, imageTag str
 	fnCtx, fnCancel := context.WithCancel(ctx)
 	m.mapLock.Lock()
 	i := &instance{
-		ctx:          fnCtx,
-		cancel:       fnCancel,
-		id:           instanceID,
-		timeout:      time.Duration(config.Timeout) * time.Second,
-		lastActivity: time.Now(),
-		handler:      handler,
+		ctx:     fnCtx,
+		cancel:  fnCancel,
+		id:      instanceID,
+		handler: handler,
 	}
 	m.Instances[functionID] = append(m.Instances[functionID], i)
 	m.mapLock.Unlock()
-
-	go i.monitorTimeout()
 
 	return cr.Container{Id: instanceID, Name: imageTag, InternalIP: "MOCK_RUNTIME_NO_IP"}, nil
 }
@@ -128,13 +123,9 @@ func (m *MockRuntime) Stop(ctx context.Context, instanceID string) error {
 }
 
 type instance struct {
-	ctx          context.Context
-	cancel       context.CancelFunc
-	id           string
-	timeout      time.Duration
-	lastActivity time.Time
-	activityMu   sync.RWMutex
-	// used to implement the function custom logic
+	ctx     context.Context
+	cancel  context.CancelFunc
+	id      string
 	handler handler
 }
 
@@ -149,27 +140,4 @@ func NewMockRuntime(logger *slog.Logger, readySignals *controller.ReadySignals) 
 
 type handler interface {
 	HandleCall(ctx context.Context, req *commonpb.CallRequest) (*commonpb.CallResponse, error)
-}
-
-// monitorTimeout monitors the instance's last activity and cancels the context if the instance has timed out
-// implementation is almos identical to the functionRuntimeInterface's monitorTimeout
-func (f *instance) monitorTimeout() {
-	ticker := time.NewTicker(time.Second)
-
-	for range ticker.C {
-		select {
-		// could be called from Stop()
-		case <-f.ctx.Done():
-			return
-		default:
-			f.activityMu.RLock()
-			timeSinceLastActivity := time.Since(f.lastActivity)
-			f.activityMu.RUnlock()
-
-			if timeSinceLastActivity >= f.timeout {
-				f.cancel()
-				return
-			}
-		}
-	}
 }

@@ -22,7 +22,7 @@ func (s *greeterServer) SayHello(ctx context.Context, req *pb.HelloRequest) (*pb
 }
 
 func main() {
-	fn := functionRuntimeInterface.NewV2(30)
+	fn := functionRuntimeInterface.NewV2()
 
 	fn.Ready(func(reg grpc.ServiceRegistrar) {
 		pb.RegisterGreeterServer(reg, &greeterServer{})

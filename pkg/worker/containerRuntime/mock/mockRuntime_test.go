@@ -8,9 +8,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
-	"time"
 
-	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	commonpb "github.com/3s-rg-codes/HyperFaaS/proto/common"
 )
@@ -22,8 +20,7 @@ func newMockRuntimeForTest() *MockRuntime {
 
 func defaultConfig() *commonpb.Config {
 	return &commonpb.Config{
-		Timeout: 2,
-		Memory:  1024 * 1024 * 1024,
+		Memory: 1024 * 1024 * 1024,
 		Cpu: &commonpb.CPUConfig{
 			Period: 100000,
 			Quota:  100000,
@@ -148,33 +145,5 @@ func TestMockRuntime_Stop(t *testing.T) {
 	// Stopping a non-existing instance should error
 	if err := r.Stop(context.Background(), "does-not-exist"); err == nil {
 		t.Errorf("expected error when stopping non-existing instance")
-	}
-}
-
-func TestMockRuntime_MonitorContainer_Timeout(t *testing.T) {
-	r := newMockRuntimeForTest()
-	cfg := &commonpb.Config{
-		Timeout: 1,
-		Memory:  1024 * 1024 * 1024,
-		Cpu: &commonpb.CPUConfig{
-			Period: 100000,
-			Quota:  100000,
-		},
-	}
-
-	fnID := "xd"
-	c, err := r.Start(context.Background(), fnID, "hyperfaas-hello:latest", cfg)
-	if err != nil {
-		t.Errorf("start error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	event, err := r.MonitorContainer(ctx, c.Id, fnID)
-	if err != nil {
-		t.Errorf("monitor error: %v", err)
-	}
-	if event != cr.ContainerEventTimeout {
-		t.Errorf("expected timeout event, got %v", event)
 	}
 }

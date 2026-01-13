@@ -39,6 +39,5 @@ type ContainerEvent int
 const (
 	ContainerEventExit ContainerEvent = iota
 	ContainerEventOOM
-	ContainerEventTimeout
 	ContainerEventCrash
 )

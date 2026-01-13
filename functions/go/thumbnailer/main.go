@@ -43,7 +43,7 @@ func resizeImage(input []byte, w, h int) ([]byte, error) {
 }
 
 func main() {
-	fn := functionRuntimeInterface.NewV2(30)
+	fn := functionRuntimeInterface.NewV2()
 
 	fn.Ready(func(reg grpc.ServiceRegistrar) {
 		pb.RegisterThumbnailerServer(reg, &thumbnailerServer{})

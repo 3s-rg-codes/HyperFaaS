@@ -17,7 +17,7 @@ func (s *echoServer) Echo(ctx context.Context, req *pb.EchoRequest) (*pb.EchoRep
 }
 
 func main() {
-	fn := functionRuntimeInterface.NewV2(30)
+	fn := functionRuntimeInterface.NewV2()
 
 	fn.Ready(func(reg grpc.ServiceRegistrar) {
 		pb.RegisterEchoServer(reg, &echoServer{})

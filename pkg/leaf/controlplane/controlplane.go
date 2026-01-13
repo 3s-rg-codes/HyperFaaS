@@ -242,12 +242,17 @@ func newFunctionAutoScaler(ctx context.Context,
 
 	scheduler := newBalancedRoundRobin(len(workers))
 
+	scaleToZeroAfter := globalCfg.ScaleToZeroAfter
+	if cfg != nil && cfg.GetTimeout() > 0 {
+		scaleToZeroAfter = time.Duration(cfg.GetTimeout()) * time.Second
+	}
+
 	controller := &functionAutoScaler{
 		functionID:                functionID,
 		containerized:             globalCfg.Containerized,
 		maxConcurrencyPerInstance: maxConcurrency,
 		maxInstancesPerWorker:     globalCfg.MaxInstancesPerWorker,
-		scaleToZeroAfter:          globalCfg.ScaleToZeroAfter,
+		scaleToZeroAfter:          scaleToZeroAfter,
 		startTimeout:              globalCfg.StartTimeout,
 		stopTimeout:               globalCfg.StopTimeout,
 		workers:                   workers,
@@ -516,5 +521,9 @@ func (f *functionAutoScaler) updateConfig(cfg *common.Config) {
 	f.maxConcurrencyPerInstance = int(cfg.GetMaxConcurrency())
 	if f.maxConcurrencyPerInstance <= 0 {
 		f.maxConcurrencyPerInstance = 1
+	}
+
+	if cfg.GetTimeout() > 0 {
+		f.scaleToZeroAfter = time.Duration(cfg.GetTimeout()) * time.Second
 	}
 }

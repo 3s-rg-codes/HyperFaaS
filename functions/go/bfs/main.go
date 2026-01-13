@@ -133,7 +133,7 @@ func bfs(g *simple.UndirectedGraph, start int64) []int64 {
 }
 
 func main() {
-	fn := functionRuntimeInterface.NewV2(30)
+	fn := functionRuntimeInterface.NewV2()
 
 	fn.Ready(func(reg grpc.ServiceRegistrar) {
 		pb.RegisterBFSServer(reg, &bfsServer{})

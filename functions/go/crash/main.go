@@ -21,7 +21,7 @@ func (s *crashServer) Crash(ctx context.Context, req *pb.CrashRequest) (*pb.Cras
 }
 
 func main() {
-	fn := functionRuntimeInterface.NewV2(30)
+	fn := functionRuntimeInterface.NewV2()
 
 	fn.Ready(func(reg grpc.ServiceRegistrar) {
 		pb.RegisterCrashServer(reg, &crashServer{})

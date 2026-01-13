@@ -232,29 +232,6 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 		}
 	})
 
-	t.Run("should be able to start a container with a custom timeout", func(t *testing.T) {
-		cfg := &common.Config{
-			Timeout: 2,
-			Memory:  1024 * 1024 * 1024,
-			Cpu: &common.CPUConfig{
-				Period: 100000,
-				Quota:  100000,
-			},
-		}
-		container, err := runtime.Start(
-			context.Background(),
-			getRandId(), "hyperfaas-hello:latest", cfg,
-		)
-		if err != nil {
-			t.Errorf("Error starting container: %v", err)
-		}
-		<-time.After(3 * time.Second)
-		exists := runtime.ContainerExists(context.Background(), container.Id)
-		if exists {
-			t.Errorf("Container still exists after timeout")
-		}
-	})
-
 }
 
 func TestDockerRuntime_Stop_Integration(t *testing.T) {
@@ -312,35 +289,26 @@ func TestDockerRuntime_Stop_Integration(t *testing.T) {
 func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 	runtime := getDockerRuntime()
 
-	// config for fast timeout
-	cfg := &common.Config{
-		Timeout: 2,
-		Memory:  1024 * 1024 * 1024,
-		Cpu: &common.CPUConfig{
-			Period: 100000,
-			Quota:  100000,
-		},
-	}
+	cfg := &DEFAULT_CONFIG
 
-	t.Run("should return a timeout event when the container times out", func(t *testing.T) {
+	t.Run("should return an exit event when container stops", func(t *testing.T) {
 		fId := getRandId()
 		c, err := runtime.Start(context.Background(), fId, "hyperfaas-hello:latest", cfg)
 		if err != nil {
 			t.Errorf("Error starting container: %v", err)
 		}
 
-		// send a request to the container (makes it crash)
 		go func() {
 			time.Sleep(1 * time.Second)
-			pingContainer(context.Background(), c.InternalIP)
+			_ = runtime.Stop(context.Background(), c.Id)
 		}()
 
 		event, err := runtime.MonitorContainer(context.Background(), c.Id, fId)
 		if err != nil {
 			t.Errorf("Error monitoring container: %v", err)
 		}
-		if event != cr.ContainerEventTimeout {
-			t.Errorf("Expected timeout event, got %v", event)
+		if event != cr.ContainerEventExit {
+			t.Errorf("Expected exit event, got %v", event)
 		}
 	})
 

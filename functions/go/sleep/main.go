@@ -21,7 +21,7 @@ func (s *sleepServer) Sleep(ctx context.Context, req *pb.SleepRequest) (*pb.Slee
 }
 
 func main() {
-	fn := functionRuntimeInterface.NewV2(30)
+	fn := functionRuntimeInterface.NewV2()
 
 	fn.Ready(func(reg grpc.ServiceRegistrar) {
 		pb.RegisterSleepServer(reg, &sleepServer{})
