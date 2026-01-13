@@ -153,6 +153,10 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 			t.Errorf("Error starting container: %v", err)
 		}
 
+		t.Cleanup(func() {
+			stopContainer(t, runtime, container.Id)
+		})
+
 		if container.Id == "" {
 			t.Errorf("Container ID is empty")
 		}
@@ -212,6 +216,10 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 			t.Errorf("Error starting container: %v", err)
 		}
 
+		t.Cleanup(func() {
+			stopContainer(t, runtime, container1.Id)
+		})
+
 		container2, err := runtime.Start(
 			context.Background(),
 			getRandId(), "hyperfaas-hello:latest", &DEFAULT_CONFIG,
@@ -219,6 +227,11 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error starting container: %v", err)
 		}
+
+		t.Cleanup(func() {
+			stopContainer(t, runtime, container2.Id)
+		})
+
 		if container1.InternalIP == container2.InternalIP {
 			t.Errorf("Container 1 and container 2 should have different IPs, first: %s, second: %s", container1.InternalIP, container2.InternalIP)
 		}
@@ -298,6 +311,10 @@ func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 			t.Errorf("Error starting container: %v", err)
 		}
 
+		t.Cleanup(func() {
+			stopContainer(t, runtime, c.Id)
+		})
+
 		go func() {
 			time.Sleep(1 * time.Second)
 			_ = runtime.Stop(context.Background(), c.Id)
@@ -318,6 +335,10 @@ func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error starting container: %v", err)
 		}
+
+		t.Cleanup(func() {
+			stopContainer(t, runtime, c.Id)
+		})
 
 		// send a request to the container (makes it crash)
 		go func() {
@@ -345,11 +366,18 @@ func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 	})
 }
 
+func stopContainer(t *testing.T, runtime *DockerRuntime, id string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = runtime.Stop(ctx, id)
+}
+
 // checks if the ip is a valid IP:port address
 func checkIP(t *testing.T, ip string) {
 	host, port, err := net.SplitHostPort(ip)
 	if err != nil {
-		t.Errorf("IP is not a valid IP:port address: %v", ip)
+		t.Errorf("IP is not a valid IP:port address: %v", err)
 	}
 	ipParsed := net.ParseIP(host)
 	if ipParsed == nil || host == "" {
