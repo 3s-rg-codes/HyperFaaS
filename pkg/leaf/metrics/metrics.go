@@ -56,7 +56,6 @@ func (c *ConcurrencyReporter) HandleRequestIn(functionId string) {
 		stat.inFlight.Add(1)
 		stat.lastRequestUnixNano.Store(time.Now().UnixNano())
 		return
-
 	}
 	c.mu.RUnlock()
 
@@ -68,7 +67,6 @@ func (c *ConcurrencyReporter) HandleRequestIn(functionId string) {
 		stat.lastRequestUnixNano.Store(time.Now().UnixNano())
 		c.mu.Unlock()
 		return
-
 	}
 
 	stat = &functionStats{
