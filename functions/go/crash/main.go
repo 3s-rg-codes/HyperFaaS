@@ -4,20 +4,26 @@ import (
 	"context"
 	"time"
 
+	"github.com/3s-rg-codes/HyperFaaS/functions/go/crash/pb"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
+	"google.golang.org/grpc"
 )
 
-func main() {
-	f := functionRuntimeInterface.New(10)
-
-	f.Ready(handler)
+type crashServer struct {
+	pb.UnimplementedCrashServer
 }
 
-// this function crashes the container on purpose
-func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
+func (s *crashServer) Crash(ctx context.Context, req *pb.CrashRequest) (*pb.CrashReply, error) {
 	// sleep for 2 seconds
 	time.Sleep(2 * time.Second)
 	// crash the container
 	panic("crash")
+}
+
+func main() {
+	fn := functionRuntimeInterface.NewV2()
+
+	fn.Ready(func(reg grpc.ServiceRegistrar) {
+		pb.RegisterCrashServer(reg, &crashServer{})
+	})
 }

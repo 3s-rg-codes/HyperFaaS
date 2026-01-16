@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package examples.greeter.v1;
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/functions/go/grpc-proxy-greeter/pb";
+
+service Greeter {
+  rpc SayHello(HelloRequest) returns (HelloReply) {}
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}

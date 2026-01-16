@@ -3,43 +3,26 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/gob"
-	"fmt"
 	"image"
 	"image/jpeg"
 
+	"github.com/3s-rg-codes/HyperFaaS/functions/go/thumbnailer/pb"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/functionRuntimeInterface"
-	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	"golang.org/x/image/draw"
+	"google.golang.org/grpc"
 )
 
-type InputData struct {
-	Image  []byte
-	Width  int
-	Height int
+type thumbnailerServer struct {
+	pb.UnimplementedThumbnailerServer
 }
 
-func main() {
-	f := functionRuntimeInterface.New(10)
-	f.Ready(handler)
-}
-
-// Inspired by https://github.com/spcl/serverless-benchmarks/blob/master/benchmarks/200.multimedia/210.thumbnailer/python/function.py
-func handler(ctx context.Context, in *common.CallRequest) (*common.CallResponse, error) {
-	var input InputData
-	if err := gob.NewDecoder(bytes.NewReader(in.Data)).Decode(&input); err != nil {
-		return nil, fmt.Errorf("failed to decode input: %v", err)
-	}
-
-	resized, err := resizeImage(input.Image, input.Width, input.Height)
+func (s *thumbnailerServer) Thumbnail(ctx context.Context, req *pb.ThumbnailRequest) (*pb.ThumbnailReply, error) {
+	resized, err := resizeImage(req.Image, int(req.Width), int(req.Height))
 	if err != nil {
-		return nil, fmt.Errorf("resize failed: %v", err)
+		return nil, err
 	}
 
-	return &common.CallResponse{
-		Data:  resized,
-		Error: nil,
-	}, nil
+	return &pb.ThumbnailReply{Image: resized}, nil
 }
 
 func resizeImage(input []byte, w, h int) ([]byte, error) {
@@ -57,4 +40,12 @@ func resizeImage(input []byte, w, h int) ([]byte, error) {
 	}
 
 	return out.Bytes(), nil
+}
+
+func main() {
+	fn := functionRuntimeInterface.NewV2()
+
+	fn.Ready(func(reg grpc.ServiceRegistrar) {
+		pb.RegisterThumbnailerServer(reg, &thumbnailerServer{})
+	})
 }

@@ -3,13 +3,11 @@
 package leafv2
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"log/slog"
 	"net"
 	"os"
-	"runtime/pprof"
 	"testing"
 	"time"
 
@@ -17,24 +15,24 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/controlplane"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/dataplane"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/metrics"
+	leafproxy "github.com/3s-rg-codes/HyperFaaS/pkg/leaf/proxy"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	"github.com/google/uuid"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const TEST_CONCURRENCY = 10000
 const TEST_TIMEOUT = 10 * time.Second
 
-func TestScheduleCall(t *testing.T) {
+func TestProxyCallViaAuthority(t *testing.T) {
 	server, err := setup(t)
 	if err != nil {
 		t.Fatalf("failed to setup test server: %v", err)
 	}
 
-	// register a function in the metadata client
 	id, err := server.metadataClient.PutFunction(context.Background(), &common.CreateFunctionRequest{
 		Image: &common.Image{
 			Tag: "test-image",
@@ -45,15 +43,13 @@ func TestScheduleCall(t *testing.T) {
 			Timeout:        10,
 		},
 	})
-
-	time.Sleep(2 * time.Second)
-
 	if err != nil {
 		t.Fatalf("failed to register function: %v", err)
 	}
 
-	// run the mocked function server
-	addr := "127.0.0.1:56789" // this is the one returned in the mocked controller.Start method.
+	time.Sleep(2 * time.Second)
+
+	addr := "127.0.0.1:56789"
 	reqCtx, reqCancel := context.WithTimeout(t.Context(), TEST_TIMEOUT)
 	t.Cleanup(reqCancel)
 	funcCtx, cancel := context.WithCancel(reqCtx)
@@ -65,78 +61,46 @@ func TestScheduleCall(t *testing.T) {
 		}
 	}()
 
-	resp, err := server.ScheduleCall(reqCtx, &common.CallRequest{
-		FunctionId: id,
-		Data:       []byte("test-data"),
-	})
-
+	proxyLis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("failed to schedule call: %v", err)
+		t.Fatalf("failed to listen for proxy: %v", err)
 	}
+	t.Cleanup(func() { _ = proxyLis.Close() })
 
-	if resp == nil {
-		t.Fatalf("response is nil")
-	}
-}
-
-func TestScheduleCallConcurrent(t *testing.T) {
-	server, err := setup(t)
-	if err != nil {
-		t.Fatalf("failed to setup test server: %v", err)
-	}
-
-	// register a function in the metadata client
-	id, err := server.metadataClient.PutFunction(context.Background(), &common.CreateFunctionRequest{
-		Image: &common.Image{
-			Tag: "test-image",
-		},
-		Config: &common.Config{
-			Memory:         100 * 1024 * 1024,
-			MaxConcurrency: 100000,
-			Timeout:        10,
-		},
-	})
-
-	time.Sleep(2 * time.Second)
-
-	if err != nil {
-		t.Fatalf("failed to register function: %v", err)
-	}
-
-	// run the mocked function server
-	addr := "127.0.0.1:56789" // this is the one returned in the mocked controller.Start method.
-	reqCtx, reqCancel := context.WithTimeout(t.Context(), TEST_TIMEOUT)
-	t.Cleanup(reqCancel)
-	funcCtx, funcCancel := context.WithCancel(reqCtx)
-	t.Cleanup(funcCancel)
-
+	proxyServer := grpc.NewServer(
+		leafproxy.RoutingProxyOpt(
+			server.ProxyBackendResolver(),
+			leafproxy.AuthorityFunctionIDExtractor(),
+		),
+	)
+	t.Cleanup(proxyServer.GracefulStop)
 	go func() {
-		if err := (mockedRunningInstance{}).Run(funcCtx, addr); err != nil && !errors.Is(err, context.Canceled) {
-			t.Logf("mock function server exited: %v", err)
+		if err := proxyServer.Serve(proxyLis); err != nil && err != grpc.ErrServerStopped {
+			t.Logf("proxy server stopped: %v", err)
 		}
 	}()
 
-	// schedule calls concurrently and fail fast when ctx is exceeded.
-	egrp, callCtx := errgroup.WithContext(reqCtx)
-
-	t.Logf("scheduling %d calls", TEST_CONCURRENCY)
-	for range TEST_CONCURRENCY {
-		egrp.Go(func() error {
-			_, callErr := server.ScheduleCall(callCtx, &common.CallRequest{
-				FunctionId: id,
-				Data:       []byte("test-data"),
-			})
-			return callErr
-		})
+	conn, err := grpc.NewClient(
+		proxyLis.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithAuthority(id),
+	)
+	if err != nil {
+		t.Fatalf("failed to dial proxy: %v", err)
 	}
+	t.Cleanup(func() { _ = conn.Close() })
 
-	t.Log("waiting for calls to complete")
-	waitErr := waitGroupOrTimeout(t, reqCtx, egrp)
-	if waitErr != nil {
-		t.Fatalf("failed to schedule call: %v", waitErr)
+	client := functionpb.NewFunctionServiceClient(conn)
+	resp, err := client.Call(reqCtx, &common.CallRequest{
+		FunctionId: id,
+		Data:       []byte("via-proxy"),
+	})
+	if err != nil {
+		t.Fatalf("proxy Call failed: %v", err)
 	}
-
-	t.Logf("scheduled %d calls", TEST_CONCURRENCY)
+	if resp == nil || string(resp.Data) != "test-data" {
+		t.Fatalf("unexpected proxy response: %v", resp)
+	}
 }
 
 func setup(t *testing.T) (*Server, error) {
@@ -268,35 +232,4 @@ func (m mockedRunningInstance) Run(ctx context.Context, addr string) error {
 	case err := <-errCh:
 		return err
 	}
-}
-
-func waitGroupOrTimeout(t *testing.T, ctx context.Context, group *errgroup.Group) error {
-	t.Helper()
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- group.Wait()
-	}()
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-		dumpGoroutines(t)
-		return ctx.Err()
-	}
-}
-
-func dumpGoroutines(t *testing.T) {
-	t.Helper()
-	profile := pprof.Lookup("goroutine")
-	if profile == nil {
-		t.Log("goroutine profile unavailable")
-		return
-	}
-	var buf bytes.Buffer
-	if err := profile.WriteTo(&buf, 2); err != nil {
-		t.Logf("failed to dump goroutines: %v", err)
-		return
-	}
-	t.Logf("goroutine dump before failure:\n%s", buf.String())
 }

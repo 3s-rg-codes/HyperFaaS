@@ -235,15 +235,26 @@ func TestControlPlane_Run(t *testing.T) {
 	}
 
 	fas := cp.functions[MOCK_FID]
-	currentTs := fas.lastRequestTimestamp
 	currentFlight := fas.inFlight.Load()
 
 	mc <- e
 
+	deadline := time.After(TEST_CHANNEL_TIMEOUTS + time.Second)
+	for fas.inFlight.Load() == currentFlight {
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for metric update")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	fas.reconcile()
+
 	// four things should happen:
 	//	- instance change event is emitted
 	//	- instance is appended for fas and widx
-	// 	- timestamp of last request and fas inFlight counter are updated
+	// 	- inFlight counter is updated
 	//  (- for coldstarts -> coldstart event is emitted)
 
 	//assert that right event arrives
@@ -251,17 +262,13 @@ func TestControlPlane_Run(t *testing.T) {
 	case ice := <-fas.instanceChangesChan:
 		assert.Equal(t, MOCK_FID, ice.FunctionId, "unexpected 'instance start event' was started")
 		assert.True(t, ice.Have, "expected 'instance started event' to be emitted, got 'instance stopped' event")
-	case <-time.After(1 * time.Second):
+	case <-time.After(TEST_CHANNEL_TIMEOUTS + time.Second):
 		t.Error("timeout for instance change event ran out")
 	}
 
 	// assert that expected instance was added
 	inst := fas.workerStates[MOCK_WORKER_ID].instances[0]
 	assert.Equal(t, MOCK_INSTANCE_ID, inst.id, "unexpected instance was started")
-
-	// assert that timestamp was updated correctly
-	newTs := fas.lastRequestTimestamp
-	assert.False(t, newTs.Equal(currentTs), "expected 'last used' timestamp to be updated")
 
 	// assert for flight counter: new = old + 1
 	newFlight := fas.inFlight.Load()
@@ -272,7 +279,7 @@ func TestControlPlane_Run(t *testing.T) {
 	case ze := <-fas.zeroScaleChan:
 		assert.Equal(t, MOCK_FID, ze.FunctionId, "unexpected functionId for coldstart event")
 		assert.True(t, ze.Have, "expected scaling from 0 to 1, got 1 to 0")
-	case <-time.After(TEST_CHANNEL_TIMEOUTS):
+	case <-time.After(TEST_CHANNEL_TIMEOUTS + time.Second):
 		t.Error("timeout ran out for receiving coldstart event")
 	}
 
@@ -355,13 +362,15 @@ func TestFunctionAutoScaler_AutoScaleToZero(t *testing.T) {
 	go autoscaler.AutoScale()
 
 	start := time.Now()
-	autoscaler.lastRequestTimestamp = start
 
 	err := autoscaler.scaleUp(cp.ctx, 0, "reason")
 	assert.Nil(t, err, "unexpected error scaling up")
 
 	startEv := <-autoscaler.zeroScaleChan
 	assert.True(t, startEv.Have, "expected to receive start event")
+
+	cp.concurrencyReporter.HandleRequestIn(MOCK_FID)
+	cp.concurrencyReporter.HandleRequestOut(MOCK_FID)
 
 	gracePeriod := autoscaler.scaleToZeroAfter + 1500*time.Millisecond
 

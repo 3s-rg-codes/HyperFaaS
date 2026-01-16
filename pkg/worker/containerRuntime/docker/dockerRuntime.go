@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/docker/docker/api/types/mount"
@@ -137,7 +136,7 @@ func (d *DockerRuntime) Start(ctx context.Context, functionID string, imageTag s
 	containerName = forbiddenChars.ReplaceAllString(containerName, "")
 
 	resp, err := d.Cli.ContainerCreate(ctx,
-		d.createContainerConfig(imageTag, functionID, config.Timeout),
+		d.createContainerConfig(imageTag, functionID),
 		d.createHostConfig(config),
 		&network.NetworkingConfig{},
 		nil,
@@ -253,7 +252,7 @@ func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) 
 	return st.Body
 }
 
-func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string, timeoutSeconds int32) *container.Config {
+func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string) *container.Config {
 	var a string
 	port := strings.Split(d.workerAddress, ":")[1]
 	if d.containerized {
@@ -271,8 +270,6 @@ func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string
 			"FUNCTION_ID=" + functionID,
 			// so the container can connect to the worker server and send a ReadySignal
 			"CONTROLLER_ADDRESS=" + a,
-			// after how many seconds without requests the container should timeout
-			"TIMEOUT_SECONDS=" + strconv.Itoa(int(timeoutSeconds)),
 		},
 	}
 }
@@ -342,7 +339,6 @@ func (d *DockerRuntime) resolveContainerAddrs(ctx context.Context, containerID s
 }
 
 // MonitorContainer monitors a container and returns when it exits
-// Returns nil for timeout, error for crash
 func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId string, functionId string) (cr.ContainerEvent, error) {
 	opt := events.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "container", Value: instanceId}),
@@ -355,7 +351,7 @@ func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId string,
 
 			switch event.Action {
 			case events.ActionDie:
-				// Get container exit code to determine if it was timeout or crash
+				// Get container exit code to determine if it was a crash
 				containerJSON, err := d.Cli.ContainerInspect(ctx, instanceId)
 				if err != nil {
 					d.logger.Error("Failed to inspect container", "id", instanceId, "error", err)
@@ -364,14 +360,12 @@ func (d *DockerRuntime) MonitorContainer(ctx context.Context, instanceId string,
 
 				exitCode := containerJSON.State.ExitCode
 				if exitCode == 0 {
-					// Exit code 0 = graceful shutdown = timeout
-					d.logger.Debug("Container timed out gracefully", "id", instanceId, "exitCode", exitCode)
-					return cr.ContainerEventTimeout, nil
-				} else {
-					// Non-zero exit code = crash
-					d.logger.Debug("Container crashed", "id", instanceId, "exitCode", exitCode)
-					return cr.ContainerEventCrash, nil
+					d.logger.Debug("Container exited", "id", instanceId, "exitCode", exitCode)
+					return cr.ContainerEventExit, nil
 				}
+				// Non-zero exit code = crash
+				d.logger.Debug("Container crashed", "id", instanceId, "exitCode", exitCode)
+				return cr.ContainerEventCrash, nil
 			case events.ActionOOM:
 				d.logger.Debug("Container ran out of memory", "id", instanceId)
 				return cr.ContainerEventOOM, nil

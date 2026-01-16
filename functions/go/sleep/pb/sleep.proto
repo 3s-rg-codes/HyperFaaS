@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package examples.sleep.v1;
+
+option go_package = "github.com/3s-rg-codes/HyperFaaS/functions/go/sleep/pb";
+
+service Sleep {
+  rpc Sleep(SleepRequest) returns (SleepReply) {}
+}
+
+message SleepRequest {
+  // Duration in nanoseconds
+  int64 duration_nanos = 1;
+}
+
+message SleepReply {
+  string message = 1;
+}
+

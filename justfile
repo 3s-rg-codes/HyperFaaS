@@ -20,6 +20,16 @@ proto:
     protoc --proto_path=proto "proto/leaf/leaf.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
     protoc --proto_path=proto "proto/common/common.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
     protoc --proto_path=proto "proto/routingcontroller/routingcontroller.proto" --go_out=proto --go_opt=paths=source_relative --go-grpc_out=proto --go-grpc_opt=paths=source_relative
+    @just gen-function-protos
+
+gen-function-protos:
+    #!/bin/bash
+    echo "Generating proto files for functions"
+    find ./functions/go/*/pb -name "*.proto" -type f | while read proto_file; do
+        echo "Generating from $proto_file";
+        protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative "$proto_file";
+    done
+
 
 # build all go functions
 build-functions-go:

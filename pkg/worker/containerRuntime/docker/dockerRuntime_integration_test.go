@@ -24,12 +24,13 @@ import (
 
 	"math/rand"
 
+	crashPB "github.com/3s-rg-codes/HyperFaaS/functions/go/crash/pb"
+	helloPB "github.com/3s-rg-codes/HyperFaaS/functions/go/hello/pb"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/controller"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
-	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 	"github.com/docker/docker/client"
 	"google.golang.org/grpc"
@@ -114,15 +115,9 @@ func pingContainer(ctx context.Context, ip string) error {
 	}
 	defer conn.Close()
 
-	client := functionpb.NewFunctionServiceClient(conn)
-	_, err = client.Call(ctx, &common.CallRequest{
-		Data: []byte("Hello, World!"),
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
+	client := helloPB.NewHelloClient(conn)
+	_, err = client.SayHello(ctx, &helloPB.HelloRequest{})
+	return err
 }
 
 func getRandId() string {
@@ -157,6 +152,10 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error starting container: %v", err)
 		}
+
+		t.Cleanup(func() {
+			stopContainer(t, runtime, container.Id)
+		})
 
 		if container.Id == "" {
 			t.Errorf("Container ID is empty")
@@ -217,6 +216,10 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 			t.Errorf("Error starting container: %v", err)
 		}
 
+		t.Cleanup(func() {
+			stopContainer(t, runtime, container1.Id)
+		})
+
 		container2, err := runtime.Start(
 			context.Background(),
 			getRandId(), "hyperfaas-hello:latest", &DEFAULT_CONFIG,
@@ -224,6 +227,11 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error starting container: %v", err)
 		}
+
+		t.Cleanup(func() {
+			stopContainer(t, runtime, container2.Id)
+		})
+
 		if container1.InternalIP == container2.InternalIP {
 			t.Errorf("Container 1 and container 2 should have different IPs, first: %s, second: %s", container1.InternalIP, container2.InternalIP)
 		}
@@ -234,29 +242,6 @@ func TestDockerRuntime_Start_Integration(t *testing.T) {
 		err = pingContainer(context.Background(), container2.InternalIP)
 		if err != nil {
 			t.Errorf("Error pinging container 2: %v", err)
-		}
-	})
-
-	t.Run("should be able to start a container with a custom timeout", func(t *testing.T) {
-		cfg := &common.Config{
-			Timeout: 2,
-			Memory:  1024 * 1024 * 1024,
-			Cpu: &common.CPUConfig{
-				Period: 100000,
-				Quota:  100000,
-			},
-		}
-		container, err := runtime.Start(
-			context.Background(),
-			getRandId(), "hyperfaas-hello:latest", cfg,
-		)
-		if err != nil {
-			t.Errorf("Error starting container: %v", err)
-		}
-		<-time.After(3 * time.Second)
-		exists := runtime.ContainerExists(context.Background(), container.Id)
-		if exists {
-			t.Errorf("Container still exists after timeout")
 		}
 	})
 
@@ -317,35 +302,30 @@ func TestDockerRuntime_Stop_Integration(t *testing.T) {
 func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 	runtime := getDockerRuntime()
 
-	// config for fast timeout
-	cfg := &common.Config{
-		Timeout: 2,
-		Memory:  1024 * 1024 * 1024,
-		Cpu: &common.CPUConfig{
-			Period: 100000,
-			Quota:  100000,
-		},
-	}
+	cfg := &DEFAULT_CONFIG
 
-	t.Run("should return a timeout event when the container times out", func(t *testing.T) {
+	t.Run("should return an exit event when container stops", func(t *testing.T) {
 		fId := getRandId()
 		c, err := runtime.Start(context.Background(), fId, "hyperfaas-hello:latest", cfg)
 		if err != nil {
 			t.Errorf("Error starting container: %v", err)
 		}
 
-		// send a request to the container (makes it crash)
+		t.Cleanup(func() {
+			stopContainer(t, runtime, c.Id)
+		})
+
 		go func() {
 			time.Sleep(1 * time.Second)
-			pingContainer(context.Background(), c.InternalIP)
+			_ = runtime.Stop(context.Background(), c.Id)
 		}()
 
 		event, err := runtime.MonitorContainer(context.Background(), c.Id, fId)
 		if err != nil {
 			t.Errorf("Error monitoring container: %v", err)
 		}
-		if event != cr.ContainerEventTimeout {
-			t.Errorf("Expected timeout event, got %v", event)
+		if event != cr.ContainerEventExit && event != cr.ContainerEventCrash {
+			t.Errorf("Expected exit or crash event, got %v", event)
 		}
 	})
 
@@ -356,10 +336,23 @@ func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 			t.Errorf("Error starting container: %v", err)
 		}
 
+		t.Cleanup(func() {
+			stopContainer(t, runtime, c.Id)
+		})
+
 		// send a request to the container (makes it crash)
 		go func() {
 			time.Sleep(1 * time.Second)
-			pingContainer(context.Background(), c.InternalIP)
+			conn, err := grpc.NewClient(c.InternalIP, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				t.Errorf("Error creating connection: %v", err)
+			}
+			defer conn.Close()
+			client := crashPB.NewCrashClient(conn)
+			_, err = client.Crash(context.Background(), &crashPB.CrashRequest{})
+			if err == nil {
+				t.Errorf("Error crashing container: %v", err)
+			}
 		}()
 
 		event, err := runtime.MonitorContainer(context.Background(), c.Id, fId)
@@ -373,11 +366,18 @@ func TestDockerRuntime_MonitorContainer_Integration(t *testing.T) {
 	})
 }
 
+func stopContainer(t *testing.T, runtime *DockerRuntime, id string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = runtime.Stop(ctx, id)
+}
+
 // checks if the ip is a valid IP:port address
 func checkIP(t *testing.T, ip string) {
 	host, port, err := net.SplitHostPort(ip)
 	if err != nil {
-		t.Errorf("IP is not a valid IP:port address: %v", ip)
+		t.Errorf("IP is not a valid IP:port address: %v", err)
 	}
 	ipParsed := net.ParseIP(host)
 	if ipParsed == nil || host == "" {

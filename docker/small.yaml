@@ -75,12 +75,14 @@ services:
       - ./logs:/app/logs
     ports:
       - "50050:50050"
+      - "60060:60060"
     #network_mode: host
     networks:
       - hyperfaas-network
     command: [
       "./app",
-      "-address=0.0.0.0:50050",
+      "-api-address=0.0.0.0:50050",
+      "-grpc-proxy-address=0.0.0.0:60060",
       "-log-level=${LOG_LEVEL}",
       "-log-format=text",
       "-log-file=/app/logs/leaf.log",
@@ -109,7 +111,7 @@ services:
     image: haproxy:3.0
     environment:
       HAPROXY_PORT: 9999
-      CHILD_1: leaf:50050
+      CHILD_1: leaf:60060
     depends_on:
       routingcontroller:
         condition: service_started

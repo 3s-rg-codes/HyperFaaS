@@ -11,6 +11,7 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	functionpb "github.com/3s-rg-codes/HyperFaaS/proto/function"
+	"google.golang.org/grpc"
 )
 
 type mdclient interface {
@@ -145,6 +146,34 @@ func (m *DataPlane) CallWithConnPool(
 		return nil, fmt.Errorf("dataplane failed to call function: %v", err)
 	}
 	return response, nil
+}
+
+// LeaseConnection reserves capacity for a function instance, returning a shared gRPC connection
+// and a release function that MUST be called exactly once when the request is complete.
+func (m *DataPlane) LeaseConnection(
+	ctx context.Context,
+	functionId string,
+) (grpc.ClientConnInterface, func(error), error) {
+	throttler := m.GetOrCreateThrottler(functionId)
+	m.concurrencyReporter.HandleRequestIn(functionId)
+	m.logger.Debug("leasing connection for function", "function_id", functionId)
+	release, address, err := throttler.Lease(ctx)
+	if err != nil {
+		m.concurrencyReporter.HandleRequestOut(functionId)
+		return nil, nil, err
+	}
+	m.logger.Debug("got address for function", "function_id", functionId, "address", address)
+	conn, err := m.connPool.GetOrCreate(ctx, address)
+	if err != nil {
+		release()
+		m.concurrencyReporter.HandleRequestOut(functionId)
+		return nil, nil, err
+	}
+	m.logger.Debug("got connection for function", "function_id", functionId, "address", address)
+	return conn, func(error) {
+		release()
+		m.concurrencyReporter.HandleRequestOut(functionId)
+	}, nil
 }
 
 // RemoveThrottler removes a throttler for a function (e.g., when function is deleted).

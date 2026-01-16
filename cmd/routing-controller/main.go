@@ -177,14 +177,9 @@ func (s *server) handler() func(req *request.Request) {
 
 		children, ok := s.c.Get(functionID)
 		if !ok || len(children) == 0 {
-			if len(s.children) == 0 {
-				s.l.Error("no children configured", "function_id", functionID)
-				return
-			}
-			child := s.children[rand.Intn(len(s.children))]
-			s.l.Debug("cache miss, assigning default child", "function_id", functionID, "child", child)
-			s.c.Append(functionID, child)
-			children = []string{child}
+			s.l.Debug("cache miss, deferring to haproxy consistent hashing", "function_id", functionID)
+			req.Actions.SetVar(action.ScopeTransaction, "routed_by", "haproxy-consistent-hash")
+			return
 		}
 
 		child := children[rand.Intn(len(children))]
