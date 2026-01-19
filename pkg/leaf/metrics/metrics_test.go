@@ -23,7 +23,6 @@ const (
 )
 
 func setup() *ConcurrencyReporter {
-
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	metricChan := make(chan MetricEvent, METRIC_CHAN_BUFFER)
 
@@ -33,7 +32,6 @@ func setup() *ConcurrencyReporter {
 }
 
 func TestConcurrencyReporter_HandleRequestInExisting(t *testing.T) {
-
 	cr := setup()
 
 	stat := &functionStats{inFlight: atomic.Int64{}}
@@ -46,11 +44,9 @@ func TestConcurrencyReporter_HandleRequestInExisting(t *testing.T) {
 	}
 
 	assert.Equal(t, int64(ITERATIONS+1), cr.stats[TEST_FUNCTION].inFlight.Load(), "unexpected number of functions are in flight")
-
 }
 
 func TestConcurrencyReporter_HandleRequestInNew(t *testing.T) {
-
 	cr := setup()
 
 	cr.HandleRequestIn(TEST_FUNCTION)
@@ -64,11 +60,9 @@ func TestConcurrencyReporter_HandleRequestInNew(t *testing.T) {
 	case <-time.After(TIMEOUT):
 		t.Error("timeout for metric channel ran out")
 	}
-
 }
 
 func TestConcurrencyReporter_HandleRequestInExistingConcurrency(t *testing.T) {
-
 	cr := setup()
 
 	stat := &functionStats{inFlight: atomic.Int64{}}
@@ -78,12 +72,12 @@ func TestConcurrencyReporter_HandleRequestInExistingConcurrency(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 
-	//ensure concurrency behavior is always the same
+	// ensure concurrency behavior is always the same
 	rand.New(rand.NewSource(RAND_SEED))
 
 	for i := 0; i < ITERATIONS; i++ {
 		wg.Go(func() {
-			//sleep for "random" time
+			// sleep for "random" time
 			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 			cr.HandleRequestIn(TEST_FUNCTION)
 		})
@@ -92,21 +86,19 @@ func TestConcurrencyReporter_HandleRequestInExistingConcurrency(t *testing.T) {
 	wg.Wait()
 
 	assert.Equal(t, int64(ITERATIONS+1), cr.stats[TEST_FUNCTION].inFlight.Load(), "unexpected number of functions are in flight")
-
 }
 
 func TestConcurrencyReporter_HandleRequestInNewConcurrency(t *testing.T) {
-
 	cr := setup()
 
 	wg := sync.WaitGroup{}
 
-	//ensure concurrency behavior is always the same
+	// ensure concurrency behavior is always the same
 	rand.New(rand.NewSource(RAND_SEED))
 
 	for i := 0; i < ITERATIONS; i++ {
 		wg.Go(func() {
-			//sleep for "random" time
+			// sleep for "random" time
 			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 			cr.HandleRequestIn(TEST_FUNCTION + " " + strconv.Itoa(i))
 		})
@@ -115,14 +107,11 @@ func TestConcurrencyReporter_HandleRequestInNewConcurrency(t *testing.T) {
 	wg.Wait()
 
 	for _, v := range cr.stats {
-
 		assert.Equal(t, int64(1), v.inFlight.Load(), "unexpectedly found more than one instance for a function")
-
 	}
 }
 
 func TestConcurrencyReporter_HandleRequestOut(t *testing.T) {
-
 	cr := setup()
 
 	stat := &functionStats{inFlight: atomic.Int64{}}
@@ -133,47 +122,34 @@ func TestConcurrencyReporter_HandleRequestOut(t *testing.T) {
 	cr.HandleRequestOut(TEST_FUNCTION)
 
 	assert.Equal(t, int64(0), cr.stats[TEST_FUNCTION].inFlight.Load(), "expected no instances running but %v were running", cr.stats[TEST_FUNCTION].inFlight.Load())
-
 }
 
 // for a non-existent function outgoing request does nothing
 func TestConcurrencyReporter_HandleRequestOutNonExistent(t *testing.T) {
-
 	cr := setup()
 
 	cr.HandleRequestOut(TEST_FUNCTION)
 
 	assert.True(t, len(cr.stats) == 0, "found unexpected function in stats list")
-
 }
 
 func TestConcurrencyReporter_InAndOut(t *testing.T) {
-
 	cr := setup()
 
-	//ensure concurrency behavior is always the same
+	// ensure concurrency behavior is always the same
 	rand.New(rand.NewSource(RAND_SEED))
 
-	valsX := make([]float64, 0)
-	valsY := make([]float64, 0)
-
 	expected := make(map[string]int64)
-
-	valsC := make([]int, 0)
 
 	c := 0
 	for i := 0; i < ITERATIONS; i++ {
 		x := rand.Float64()
-		valsX = append(valsX, x)
 		y := rand.Float64()
-		valsY = append(valsY, y)
 
-		//if that's the case, create a new function
+		// if that's the case, create a new function
 		if y > 0.5 {
 			c++
 		}
-
-		valsC = append(valsC, c)
 
 		name := TEST_FUNCTION + " " + strconv.Itoa(c)
 
@@ -191,5 +167,4 @@ func TestConcurrencyReporter_InAndOut(t *testing.T) {
 	for k, v := range expected {
 		assert.Equal(t, v, cr.stats[k].inFlight.Load(), "unexpected number of requests for %s", k)
 	}
-
 }
