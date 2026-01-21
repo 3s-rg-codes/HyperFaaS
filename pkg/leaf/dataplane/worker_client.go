@@ -47,6 +47,8 @@ type WorkerClient struct {
 
 	// to make sure that we only start one status stream per worker
 	statusOnce sync.Once
+	// to make sure that we only start one metrics stream per worker
+	metricsOnce sync.Once
 }
 
 func NewWorkerClient(ctx context.Context, idx int, addr string, cfg config.Config, logger *slog.Logger) (*WorkerClient, error) {
@@ -111,6 +113,13 @@ func (w *WorkerClient) StartStatusStream(nodeID string, backoff time.Duration, c
 	})
 }
 
+// startMetricsStream starts the metrics stream in a goroutine if it hasn't been started yet.
+func (w *WorkerClient) StartMetricsStream(nodeID string, backoff time.Duration, cb func(int, *workerpb.MetricsUpdate)) {
+	w.metricsOnce.Do(func() {
+		go w.runMetricsStream(nodeID, backoff, cb)
+	})
+}
+
 // runStatusStream reads from the workers status stream in a loop, and calls the callback function with the status events.
 func (w *WorkerClient) runStatusStream(nodeID string, backoff time.Duration, cb func(int, *WorkerStatusEvent)) {
 	if backoff <= 0 {
@@ -161,6 +170,55 @@ func (w *WorkerClient) runStatusStream(nodeID string, backoff time.Duration, cb 
 	}
 }
 
+func (w *WorkerClient) runMetricsStream(nodeID string, backoff time.Duration, cb func(int, *workerpb.MetricsUpdate)) {
+	if backoff <= 0 {
+		backoff = time.Second
+	}
+	for {
+		select {
+		case <-w.ctx.Done():
+			return
+		default:
+		}
+
+		streamCtx, cancel := context.WithCancel(w.ctx)
+		stream, err := w.client.MetricsStream(streamCtx, &workerpb.MetricsRequest{NodeId: nodeID})
+		if err != nil {
+			cancel()
+			if status.Code(err) != codes.Canceled {
+				w.logger.Warn("worker metrics stream dial failed", "error", err)
+			}
+			select {
+			case <-time.After(backoff):
+			case <-w.ctx.Done():
+				return
+			}
+			continue
+		}
+
+		for {
+			update, recvErr := stream.Recv()
+			if recvErr != nil {
+				cancel()
+				if w.ctx.Err() != nil {
+					return
+				}
+				w.logger.Debug("worker metrics stream ended", "error", recvErr)
+				break
+			}
+			cb(w.index, update)
+		}
+
+		cancel()
+
+		select {
+		case <-time.After(backoff):
+		case <-w.ctx.Done():
+			return
+		}
+	}
+}
+
 type WorkerStatusEvent struct {
 	FunctionId string
 	InstanceId string
@@ -190,8 +248,10 @@ func newMockWorkerClient() workerpb.WorkerClient {
 // Metrics implements worker.WorkerClient.
 func (m mockWorkerClient) Metrics(ctx context.Context, in *workerpb.MetricsRequest, opts ...grpc.CallOption) (*workerpb.MetricsUpdate, error) {
 	return &workerpb.MetricsUpdate{
-		UsedRamPercent:    0,
-		CpuPercentPercpus: []float64{0},
+		CpuUtilizationRaw:        0,
+		CpuUtilizationPercent:    0,
+		MemoryUtilizationRaw:     0,
+		MemoryUtilizationPercent: 0,
 	}, nil
 }
 
@@ -217,6 +277,11 @@ func (m mockWorkerClient) Start(ctx context.Context, in *workerpb.StartRequest, 
 // Status implements worker.WorkerClient.
 func (m mockWorkerClient) Status(ctx context.Context, in *workerpb.StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[workerpb.StatusUpdate], error) {
 	return &mockStatusStream{ctx: ctx}, nil
+}
+
+// MetricsStream implements worker.WorkerClient.
+func (m mockWorkerClient) MetricsStream(ctx context.Context, in *workerpb.MetricsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[workerpb.MetricsUpdate], error) {
+	return &mockMetricsStream{ctx: ctx}, nil
 }
 
 // Stop implements worker.WorkerClient.
@@ -257,5 +322,37 @@ func (m *mockStatusStream) RecvMsg(interface{}) error {
 }
 
 func (m *mockStatusStream) Recv() (*workerpb.StatusUpdate, error) {
+	return nil, io.EOF
+}
+
+type mockMetricsStream struct {
+	ctx context.Context
+}
+
+func (m *mockMetricsStream) Header() (metadata.MD, error) {
+	return nil, nil
+}
+
+func (m *mockMetricsStream) Trailer() metadata.MD {
+	return nil
+}
+
+func (m *mockMetricsStream) CloseSend() error {
+	return nil
+}
+
+func (m *mockMetricsStream) Context() context.Context {
+	return m.ctx
+}
+
+func (m *mockMetricsStream) SendMsg(interface{}) error {
+	return nil
+}
+
+func (m *mockMetricsStream) RecvMsg(interface{}) error {
+	return io.EOF
+}
+
+func (m *mockMetricsStream) Recv() (*workerpb.MetricsUpdate, error) {
 	return nil, io.EOF
 }

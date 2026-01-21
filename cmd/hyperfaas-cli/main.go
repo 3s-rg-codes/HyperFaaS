@@ -497,8 +497,8 @@ func GetWorkerMetrics(client workerpb.WorkerClient,
 		fmt.Printf("Error getting metrics: %v\n", err)
 		return err
 	}
-	fmt.Printf("CPU usage: %v%%\n", r.CpuPercentPercpus)
-	fmt.Printf("RAM usage: %v%%\n", r.UsedRamPercent)
+	fmt.Printf("CPU usage: %v%%\n", r.CpuUtilizationPercent)
+	fmt.Printf("RAM usage: %v%%\n", r.MemoryUtilizationPercent)
 	return nil
 }
 

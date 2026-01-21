@@ -21,6 +21,7 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
+	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
 )
 
 const STATE_STREAM_BUFFER = 10000
@@ -53,6 +54,9 @@ type Server struct {
 	// the direction of communication here is DataPlane / API (ScheduleCall) -> ControlPlane.
 	// Used for example in the scale from zero situation.
 	concurrencyReporter *metrics.ConcurrencyReporter
+
+	resourceMetricsStore     *metrics.ResourceMetricsStore
+	resourceMetricsCollector *metrics.ResourceMetricsCollector
 
 	// single centralised channel to read zero scale events from all functions.
 	// used for the State stream.
@@ -96,6 +100,9 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient metadata.C
 
 	cr := metrics.NewConcurrencyReporter(logger, metricChan, 1*time.Second)
 	go cr.Run(serverCtx)
+	resourceStore := metrics.NewResourceMetricsStore(len(workers))
+	resourceCollector := metrics.NewResourceMetricsCollector(resourceStore, logger, metrics.ResourceMetricsInterval)
+	go resourceCollector.Run(serverCtx)
 
 	dp := dataplane.NewDataPlane(logger, metadataClient, instanceChangesChan, cr)
 	go dp.Run(serverCtx)
@@ -104,16 +111,18 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient metadata.C
 	go cp.Run(serverCtx)
 
 	s := &Server{
-		cfg:                 cfg,
-		logger:              logger,
-		ctx:                 serverCtx,
-		cancel:              cancel,
-		nodeID:              uuid.NewString(),
-		metadataClient:      metadataClient,
-		dataPlane:           dp,
-		controlPlane:        cp,
-		concurrencyReporter: cr,
-		functionScaleEvents: functionScaleEvents,
+		cfg:                      cfg,
+		logger:                   logger,
+		ctx:                      serverCtx,
+		cancel:                   cancel,
+		nodeID:                   uuid.NewString(),
+		metadataClient:           metadataClient,
+		dataPlane:                dp,
+		controlPlane:             cp,
+		concurrencyReporter:      cr,
+		resourceMetricsStore:     resourceStore,
+		resourceMetricsCollector: resourceCollector,
+		functionScaleEvents:      functionScaleEvents,
 	}
 
 	s.workers = workers
@@ -125,6 +134,7 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient metadata.C
 
 	for _, w := range s.workers {
 		w.StartStatusStream(s.nodeID, cfg.StatusBackoff, s.handleWorkerStatus)
+		w.StartMetricsStream(s.nodeID, cfg.StatusBackoff, s.handleWorkerMetrics)
 	}
 
 	return s, nil
@@ -249,6 +259,19 @@ func (s *Server) handleWorkerStatus(workerIdx int, update *dataplane.WorkerStatu
 		return
 	}
 	s.controlPlane.HandleWorkerEvent(workerIdx, update)
+}
+
+func (s *Server) handleWorkerMetrics(workerIdx int, update *workerpb.MetricsUpdate) {
+	if update == nil || s.resourceMetricsCollector == nil {
+		return
+	}
+	metrics := metrics.ServerMetrics{
+		CPUUtilizationRaw:        update.CpuUtilizationRaw,
+		CPUUtilizationPercent:    update.CpuUtilizationPercent,
+		MemoryUtilizationRaw:     update.MemoryUtilizationRaw,
+		MemoryUtilizationPercent: update.MemoryUtilizationPercent,
+	}
+	s.resourceMetricsCollector.Add(workerIdx, metrics)
 }
 
 // ProxyBackendResolver exposes a BackendResolver that can be used by the gRPC proxy listener.

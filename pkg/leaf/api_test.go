@@ -160,6 +160,9 @@ func newTestServer(ctx context.Context, cfg config.Config, metadataClient metada
 
 	cr := metrics.NewConcurrencyReporter(logger, metricChan, 1*time.Second)
 	go cr.Run(serverCtx)
+	resourceStore := metrics.NewResourceMetricsStore(len(workers))
+	resourceCollector := metrics.NewResourceMetricsCollector(resourceStore, logger, metrics.ResourceMetricsInterval)
+	go resourceCollector.Run(serverCtx)
 
 	dp := dataplane.NewDataPlane(logger, metadataClient, instanceChangesChan, cr)
 	go dp.Run(serverCtx)
@@ -168,16 +171,18 @@ func newTestServer(ctx context.Context, cfg config.Config, metadataClient metada
 	go cp.Run(serverCtx)
 
 	s := &Server{
-		cfg:                 cfg,
-		logger:              logger,
-		ctx:                 serverCtx,
-		cancel:              cancel,
-		nodeID:              uuid.NewString(),
-		metadataClient:      metadataClient,
-		dataPlane:           dp,
-		controlPlane:        cp,
-		concurrencyReporter: cr,
-		functionScaleEvents: functionScaleEvents,
+		cfg:                      cfg,
+		logger:                   logger,
+		ctx:                      serverCtx,
+		cancel:                   cancel,
+		nodeID:                   uuid.NewString(),
+		metadataClient:           metadataClient,
+		dataPlane:                dp,
+		controlPlane:             cp,
+		concurrencyReporter:      cr,
+		resourceMetricsStore:     resourceStore,
+		resourceMetricsCollector: resourceCollector,
+		functionScaleEvents:      functionScaleEvents,
 	}
 
 	s.workers = workers
@@ -189,6 +194,7 @@ func newTestServer(ctx context.Context, cfg config.Config, metadataClient metada
 
 	for _, w := range s.workers {
 		w.StartStatusStream(s.nodeID, cfg.StatusBackoff, s.handleWorkerStatus)
+		w.StartMetricsStream(s.nodeID, cfg.StatusBackoff, s.handleWorkerMetrics)
 	}
 
 	return s, nil
