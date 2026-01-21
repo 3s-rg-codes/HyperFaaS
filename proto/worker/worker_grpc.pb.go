@@ -20,11 +20,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Worker_Start_FullMethodName       = "/worker.Worker/Start"
-	Worker_Stop_FullMethodName        = "/worker.Worker/Stop"
-	Worker_Status_FullMethodName      = "/worker.Worker/Status"
-	Worker_Metrics_FullMethodName     = "/worker.Worker/Metrics"
-	Worker_SignalReady_FullMethodName = "/worker.Worker/SignalReady"
+	Worker_Start_FullMethodName         = "/worker.Worker/Start"
+	Worker_Stop_FullMethodName          = "/worker.Worker/Stop"
+	Worker_Status_FullMethodName        = "/worker.Worker/Status"
+	Worker_Metrics_FullMethodName       = "/worker.Worker/Metrics"
+	Worker_MetricsStream_FullMethodName = "/worker.Worker/MetricsStream"
+	Worker_SignalReady_FullMethodName   = "/worker.Worker/SignalReady"
 )
 
 // WorkerClient is the client API for Worker service.
@@ -41,6 +42,8 @@ type WorkerClient interface {
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusUpdate], error)
 	// Returns resource usage metrics.
 	Metrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsUpdate, error)
+	// Streams resource usage metrics.
+	MetricsStream(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MetricsUpdate], error)
 	// Signal that the instance is ready to serve requests.
 	// Instances must call this endpoint upon startup.
 	SignalReady(ctx context.Context, in *SignalReadyRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -103,6 +106,25 @@ func (c *workerClient) Metrics(ctx context.Context, in *MetricsRequest, opts ...
 	return out, nil
 }
 
+func (c *workerClient) MetricsStream(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MetricsUpdate], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Worker_ServiceDesc.Streams[1], Worker_MetricsStream_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[MetricsRequest, MetricsUpdate]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Worker_MetricsStreamClient = grpc.ServerStreamingClient[MetricsUpdate]
+
 func (c *workerClient) SignalReady(ctx context.Context, in *SignalReadyRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
@@ -127,6 +149,8 @@ type WorkerServer interface {
 	Status(*StatusRequest, grpc.ServerStreamingServer[StatusUpdate]) error
 	// Returns resource usage metrics.
 	Metrics(context.Context, *MetricsRequest) (*MetricsUpdate, error)
+	// Streams resource usage metrics.
+	MetricsStream(*MetricsRequest, grpc.ServerStreamingServer[MetricsUpdate]) error
 	// Signal that the instance is ready to serve requests.
 	// Instances must call this endpoint upon startup.
 	SignalReady(context.Context, *SignalReadyRequest) (*emptypb.Empty, error)
@@ -151,6 +175,9 @@ func (UnimplementedWorkerServer) Status(*StatusRequest, grpc.ServerStreamingServ
 }
 func (UnimplementedWorkerServer) Metrics(context.Context, *MetricsRequest) (*MetricsUpdate, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Metrics not implemented")
+}
+func (UnimplementedWorkerServer) MetricsStream(*MetricsRequest, grpc.ServerStreamingServer[MetricsUpdate]) error {
+	return status.Errorf(codes.Unimplemented, "method MetricsStream not implemented")
 }
 func (UnimplementedWorkerServer) SignalReady(context.Context, *SignalReadyRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SignalReady not implemented")
@@ -241,6 +268,17 @@ func _Worker_Metrics_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Worker_MetricsStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(MetricsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(WorkerServer).MetricsStream(m, &grpc.GenericServerStream[MetricsRequest, MetricsUpdate]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Worker_MetricsStreamServer = grpc.ServerStreamingServer[MetricsUpdate]
+
 func _Worker_SignalReady_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SignalReadyRequest)
 	if err := dec(in); err != nil {
@@ -287,6 +325,11 @@ var Worker_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Status",
 			Handler:       _Worker_Status_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "MetricsStream",
+			Handler:       _Worker_MetricsStream_Handler,
 			ServerStreams: true,
 		},
 	},

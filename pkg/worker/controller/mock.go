@@ -19,7 +19,27 @@ type MockController struct {
 // Metrics implements worker.WorkerServer.
 // Subtle: this method shadows the method (UnimplementedWorkerServer).Metrics of MockController.UnimplementedWorkerServer.
 func (m MockController) Metrics(context.Context, *workerpb.MetricsRequest) (*workerpb.MetricsUpdate, error) {
-	panic("unimplemented")
+	return &workerpb.MetricsUpdate{
+		CpuUtilizationRaw:        0,
+		CpuUtilizationPercent:    0,
+		MemoryUtilizationRaw:     0,
+		MemoryUtilizationPercent: 0,
+	}, nil
+}
+
+func (m MockController) MetricsStream(_ *workerpb.MetricsRequest, stream grpc.ServerStreamingServer[workerpb.MetricsUpdate]) error {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case <-ticker.C:
+			if err := stream.Send(&workerpb.MetricsUpdate{}); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // SignalReady implements worker.WorkerServer.

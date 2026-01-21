@@ -14,8 +14,6 @@ import (
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/worker"
-	cpu "github.com/shirou/gopsutil/v4/cpu"
-	mem "github.com/shirou/gopsutil/v4/mem"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
@@ -27,12 +25,14 @@ import (
 
 type Controller struct {
 	workerPB.UnimplementedWorkerServer
-	runtime        cr.ContainerRuntime
-	StatsManager   *stats.StatsManager
-	logger         *slog.Logger
-	address        string
-	metadataClient metadataProvider
-	readySignals   *ReadySignals
+	runtime         cr.ContainerRuntime
+	StatsManager    *stats.StatsManager
+	metricsSampler  *stats.MetricsSampler
+	metricsInterval time.Duration
+	logger          *slog.Logger
+	address         string
+	metadataClient  metadataProvider
+	readySignals    *ReadySignals
 }
 type metadataProvider interface {
 	GetFunction(ctx context.Context, id string) (*metadata.FunctionMetadata, error)
@@ -162,13 +162,69 @@ func (s *Controller) Status(req *workerPB.StatusRequest, stream workerPB.Worker_
 }
 
 func (s *Controller) Metrics(ctx context.Context, req *workerPB.MetricsRequest) (*workerPB.MetricsUpdate, error) {
-	cpu_percentage_percpu, err1 := cpu.Percent(time.Millisecond*10, true)
-	virtual_mem, err2 := mem.VirtualMemory()
-
-	if err1 != nil || err2 != nil {
-		return nil, err1
+	metrics, ok := s.metricsSampler.Latest()
+	if !ok {
+		var err error
+		metrics, err = s.metricsSampler.Sample()
+		if err != nil {
+			s.logger.Error("failed to sample metrics", "error", err)
+			return nil, status.Errorf(codes.Unavailable, "failed to sample metrics: %v", err)
+		}
 	}
-	return &workerPB.MetricsUpdate{CpuPercentPercpus: cpu_percentage_percpu, UsedRamPercent: virtual_mem.UsedPercent}, nil
+
+	return &workerPB.MetricsUpdate{
+		CpuUtilizationRaw:        metrics.CPUUtilizationRaw,
+		CpuUtilizationPercent:    metrics.CPUUtilizationPercent,
+		MemoryUtilizationRaw:     metrics.MemoryUtilizationRaw,
+		MemoryUtilizationPercent: metrics.MemoryUtilizationPercent,
+	}, nil
+}
+
+func (s *Controller) MetricsStream(req *workerPB.MetricsRequest, stream grpc.ServerStreamingServer[workerPB.MetricsUpdate]) error {
+	ctx := stream.Context()
+	interval := s.metricsInterval
+	if interval <= 0 {
+		interval = time.Second
+	}
+	if _, ok := s.metricsSampler.Latest(); !ok {
+		if _, err := s.metricsSampler.Sample(); err != nil {
+			s.logger.Error("failed to sample metrics", "error", err)
+			return status.Errorf(codes.Unavailable, "failed to sample metrics: %v", err)
+		}
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	sendLatest := func() error {
+		metrics, ok := s.metricsSampler.Latest()
+		if !ok {
+			return status.Error(codes.Unavailable, "metrics unavailable")
+		}
+		return stream.Send(&workerPB.MetricsUpdate{
+			CpuUtilizationRaw:        metrics.CPUUtilizationRaw,
+			CpuUtilizationPercent:    metrics.CPUUtilizationPercent,
+			MemoryUtilizationRaw:     metrics.MemoryUtilizationRaw,
+			MemoryUtilizationPercent: metrics.MemoryUtilizationPercent,
+		})
+	}
+
+	if err := sendLatest(); err != nil {
+		s.logger.Error("error streaming metrics", "error", err, "node_id", req.NodeId)
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := sendLatest(); err != nil {
+				s.logger.Error("error streaming metrics", "error", err, "node_id", req.NodeId)
+				return err
+			}
+		}
+	}
 }
 
 func NewController(runtime cr.ContainerRuntime,
@@ -177,14 +233,19 @@ func NewController(runtime cr.ContainerRuntime,
 	address string,
 	metadataClient metadataProvider,
 	readySignals *ReadySignals,
+	containerized bool,
+	metricsInterval time.Duration,
 ) *Controller {
+	metricsSampler := stats.NewMetricsSampler(containerized, logger.With("component", "metrics_sampler"))
 	return &Controller{
-		runtime:        runtime,
-		StatsManager:   statsManager,
-		logger:         logger,
-		address:        address,
-		metadataClient: metadataClient,
-		readySignals:   readySignals,
+		runtime:         runtime,
+		StatsManager:    statsManager,
+		metricsSampler:  metricsSampler,
+		metricsInterval: metricsInterval,
+		logger:          logger,
+		address:         address,
+		metadataClient:  metadataClient,
+		readySignals:    readySignals,
 	}
 }
 
@@ -198,7 +259,7 @@ func (s *Controller) StartServer(ctx context.Context) {
 	// defer cancel()
 
 	// Start the stats manager
-
+	go s.metricsSampler.Run(ctx, s.metricsInterval)
 	go func() {
 		s.StatsManager.StartStreamingToListeners(ctx)
 	}()

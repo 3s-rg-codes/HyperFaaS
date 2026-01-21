@@ -45,8 +45,10 @@ message MetricsRequest {
 }
 
 message MetricsUpdate{
-  double used_ram_percent = 1;
-  repeated double cpu_percent_percpus = 2;
+  double cpu_utilization_raw = 1;
+  float cpu_utilization_percent = 2;
+  double memory_utilization_raw = 3;
+  float memory_utilization_percent = 4;
 }
 
 message StartResponse {
@@ -84,6 +86,8 @@ service Worker {
   rpc Status (StatusRequest) returns (stream StatusUpdate);
   // Returns resource usage metrics.
   rpc Metrics (MetricsRequest) returns (MetricsUpdate);
+  // Streams resource usage metrics.
+  rpc MetricsStream (MetricsRequest) returns (stream MetricsUpdate);
   // Signal that the instance is ready to serve requests. 
   // Instances must call this endpoint upon startup.
   rpc SignalReady (SignalReadyRequest) returns (google.protobuf.Empty);

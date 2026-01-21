@@ -347,11 +347,13 @@ func (x *MetricsRequest) GetNodeId() string {
 }
 
 type MetricsUpdate struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	UsedRamPercent    float64                `protobuf:"fixed64,1,opt,name=used_ram_percent,json=usedRamPercent,proto3" json:"used_ram_percent,omitempty"`
-	CpuPercentPercpus []float64              `protobuf:"fixed64,2,rep,packed,name=cpu_percent_percpus,json=cpuPercentPercpus,proto3" json:"cpu_percent_percpus,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	CpuUtilizationRaw        float64                `protobuf:"fixed64,1,opt,name=cpu_utilization_raw,json=cpuUtilizationRaw,proto3" json:"cpu_utilization_raw,omitempty"`
+	CpuUtilizationPercent    float32                `protobuf:"fixed32,2,opt,name=cpu_utilization_percent,json=cpuUtilizationPercent,proto3" json:"cpu_utilization_percent,omitempty"`
+	MemoryUtilizationRaw     float64                `protobuf:"fixed64,3,opt,name=memory_utilization_raw,json=memoryUtilizationRaw,proto3" json:"memory_utilization_raw,omitempty"`
+	MemoryUtilizationPercent float32                `protobuf:"fixed32,4,opt,name=memory_utilization_percent,json=memoryUtilizationPercent,proto3" json:"memory_utilization_percent,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *MetricsUpdate) Reset() {
@@ -384,18 +386,32 @@ func (*MetricsUpdate) Descriptor() ([]byte, []int) {
 	return file_worker_worker_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *MetricsUpdate) GetUsedRamPercent() float64 {
+func (x *MetricsUpdate) GetCpuUtilizationRaw() float64 {
 	if x != nil {
-		return x.UsedRamPercent
+		return x.CpuUtilizationRaw
 	}
 	return 0
 }
 
-func (x *MetricsUpdate) GetCpuPercentPercpus() []float64 {
+func (x *MetricsUpdate) GetCpuUtilizationPercent() float32 {
 	if x != nil {
-		return x.CpuPercentPercpus
+		return x.CpuUtilizationPercent
 	}
-	return nil
+	return 0
+}
+
+func (x *MetricsUpdate) GetMemoryUtilizationRaw() float64 {
+	if x != nil {
+		return x.MemoryUtilizationRaw
+	}
+	return 0
+}
+
+func (x *MetricsUpdate) GetMemoryUtilizationPercent() float32 {
+	if x != nil {
+		return x.MemoryUtilizationPercent
+	}
+	return 0
 }
 
 type StartResponse struct {
@@ -659,10 +675,12 @@ const file_worker_worker_proto_rawDesc = "" +
 	"\rStatusRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\")\n" +
 	"\x0eMetricsRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"i\n" +
-	"\rMetricsUpdate\x12(\n" +
-	"\x10used_ram_percent\x18\x01 \x01(\x01R\x0eusedRamPercent\x12.\n" +
-	"\x13cpu_percent_percpus\x18\x02 \x03(\x01R\x11cpuPercentPercpus\"\xb9\x01\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\xeb\x01\n" +
+	"\rMetricsUpdate\x12.\n" +
+	"\x13cpu_utilization_raw\x18\x01 \x01(\x01R\x11cpuUtilizationRaw\x126\n" +
+	"\x17cpu_utilization_percent\x18\x02 \x01(\x02R\x15cpuUtilizationPercent\x124\n" +
+	"\x16memory_utilization_raw\x18\x03 \x01(\x01R\x14memoryUtilizationRaw\x12<\n" +
+	"\x1amemory_utilization_percent\x18\x04 \x01(\x02R\x18memoryUtilizationPercent\"\xb9\x01\n" +
 	"\rStartResponse\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x120\n" +
@@ -696,12 +714,13 @@ const file_worker_worker_proto_rawDesc = "" +
 	"\rEVENT_RUNNING\x10\x06*;\n" +
 	"\x06Status\x12\x1e\n" +
 	"\x1aSTATUS_SUCCESS_UNSPECIFIED\x10\x00\x12\x11\n" +
-	"\rSTATUS_FAILED\x10\x012\xa7\x02\n" +
+	"\rSTATUS_FAILED\x10\x012\xe9\x02\n" +
 	"\x06Worker\x124\n" +
 	"\x05Start\x12\x14.worker.StartRequest\x1a\x15.worker.StartResponse\x121\n" +
 	"\x04Stop\x12\x13.worker.StopRequest\x1a\x14.worker.StopResponse\x127\n" +
 	"\x06Status\x12\x15.worker.StatusRequest\x1a\x14.worker.StatusUpdate0\x01\x128\n" +
-	"\aMetrics\x12\x16.worker.MetricsRequest\x1a\x15.worker.MetricsUpdate\x12A\n" +
+	"\aMetrics\x12\x16.worker.MetricsRequest\x1a\x15.worker.MetricsUpdate\x12@\n" +
+	"\rMetricsStream\x12\x16.worker.MetricsRequest\x1a\x15.worker.MetricsUpdate0\x01\x12A\n" +
 	"\vSignalReady\x12\x1a.worker.SignalReadyRequest\x1a\x16.google.protobuf.EmptyB/Z-github.com/3s-rg-codes/HyperFaaS/proto/workerb\x06proto3"
 
 var (
@@ -743,14 +762,16 @@ var file_worker_worker_proto_depIdxs = []int32{
 	9,  // 5: worker.Worker.Stop:input_type -> worker.StopRequest
 	4,  // 6: worker.Worker.Status:input_type -> worker.StatusRequest
 	5,  // 7: worker.Worker.Metrics:input_type -> worker.MetricsRequest
-	11, // 8: worker.Worker.SignalReady:input_type -> worker.SignalReadyRequest
-	7,  // 9: worker.Worker.Start:output_type -> worker.StartResponse
-	10, // 10: worker.Worker.Stop:output_type -> worker.StopResponse
-	3,  // 11: worker.Worker.Status:output_type -> worker.StatusUpdate
-	6,  // 12: worker.Worker.Metrics:output_type -> worker.MetricsUpdate
-	13, // 13: worker.Worker.SignalReady:output_type -> google.protobuf.Empty
-	9,  // [9:14] is the sub-list for method output_type
-	4,  // [4:9] is the sub-list for method input_type
+	5,  // 8: worker.Worker.MetricsStream:input_type -> worker.MetricsRequest
+	11, // 9: worker.Worker.SignalReady:input_type -> worker.SignalReadyRequest
+	7,  // 10: worker.Worker.Start:output_type -> worker.StartResponse
+	10, // 11: worker.Worker.Stop:output_type -> worker.StopResponse
+	3,  // 12: worker.Worker.Status:output_type -> worker.StatusUpdate
+	6,  // 13: worker.Worker.Metrics:output_type -> worker.MetricsUpdate
+	6,  // 14: worker.Worker.MetricsStream:output_type -> worker.MetricsUpdate
+	13, // 15: worker.Worker.SignalReady:output_type -> google.protobuf.Empty
+	10, // [10:16] is the sub-list for method output_type
+	4,  // [4:10] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
 	4,  // [4:4] is the sub-list for extension extendee
 	0,  // [0:4] is the sub-list for field type_name

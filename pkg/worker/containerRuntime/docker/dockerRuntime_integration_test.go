@@ -71,7 +71,9 @@ func startWorkerServer() (chan bool, context.CancelFunc) {
 				logger,
 				WORKER_LISTENER_ADDRESS,
 				fakeMetadata{},
-				controller.NewReadySignals(false))
+				controller.NewReadySignals(false),
+				false,
+				time.Second)
 			c.StartServer(ctx)
 		})
 	}()
