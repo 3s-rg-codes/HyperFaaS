@@ -2,6 +2,7 @@ package mock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -42,7 +43,7 @@ func (m *MockRuntime) ContainerStats(ctx context.Context, containerID string) (<
 	statsCh := make(chan cr.ContainerStats)
 	errCh := make(chan error, 1)
 	close(statsCh)
-	errCh <- fmt.Errorf("container stats not supported in mock runtime")
+	errCh <- errors.New("container stats not supported in mock runtime")
 	close(errCh)
 	return statsCh, errCh
 }

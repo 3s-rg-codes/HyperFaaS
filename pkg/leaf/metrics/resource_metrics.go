@@ -170,7 +170,7 @@ func (c *ResourceMetricsCollector) flushPending(pending []pendingMetric) {
 			continue
 		}
 		if !best.Ok || metrics.CPUUtilizationPercent < best.Metrics.CPUUtilizationPercent {
-			//c.logger.Info("new best worker", "worker", idx, "cpu_percent", metrics.CPUUtilizationPercent, "memory_percent", metrics.MemoryUtilizationPercent)
+			// c.logger.Info("new best worker", "worker", idx, "cpu_percent", metrics.CPUUtilizationPercent, "memory_percent", metrics.MemoryUtilizationPercent)
 			best = BestWorkerSnapshot{Index: idx, Metrics: metrics, Ok: true}
 		}
 	}

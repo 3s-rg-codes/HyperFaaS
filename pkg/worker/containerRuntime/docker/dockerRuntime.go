@@ -261,7 +261,11 @@ func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) 
 	}
 
 	go func() {
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				return
+			}
+		}()
 		defer close(statsCh)
 		defer close(errCh)
 
