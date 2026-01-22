@@ -19,6 +19,7 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/metrics"
 	leafproxy "github.com/3s-rg-codes/HyperFaaS/pkg/leaf/proxy"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
+	mtrcs "github.com/3s-rg-codes/HyperFaaS/pkg/metrics"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 	workerpb "github.com/3s-rg-codes/HyperFaaS/proto/worker"
@@ -265,7 +266,7 @@ func (s *Server) handleWorkerMetrics(workerIdx int, update *workerpb.MetricsUpda
 	if update == nil || s.resourceMetricsCollector == nil {
 		return
 	}
-	metrics := metrics.ServerMetrics{
+	metrics := mtrcs.ResourceMetrics{
 		CPUUtilizationRaw:        update.CpuUtilizationRaw,
 		CPUUtilizationPercent:    update.CpuUtilizationPercent,
 		MemoryUtilizationRaw:     update.MemoryUtilizationRaw,

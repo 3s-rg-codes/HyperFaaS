@@ -11,16 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	mtrcs "github.com/3s-rg-codes/HyperFaaS/pkg/metrics"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 )
-
-type ResourceMetrics struct {
-	CPUUtilizationRaw        float64
-	CPUUtilizationPercent    float32
-	MemoryUtilizationRaw     float64
-	MemoryUtilizationPercent float32
-}
 
 type MetricsSampler struct {
 	containerized bool
@@ -68,28 +62,28 @@ func (s *MetricsSampler) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-func (s *MetricsSampler) Latest() (ResourceMetrics, bool) {
+func (s *MetricsSampler) Latest() (mtrcs.ResourceMetrics, bool) {
 	value := s.snapshot.Load()
 	if value == nil {
-		return ResourceMetrics{}, false
+		return mtrcs.ResourceMetrics{}, false
 	}
-	metrics, ok := value.(ResourceMetrics)
+	metrics, ok := value.(mtrcs.ResourceMetrics)
 	return metrics, ok
 }
 
 // Sample collects metrics and stores them as the latest snapshot.
-func (s *MetricsSampler) Sample() (ResourceMetrics, error) {
+func (s *MetricsSampler) Sample() (mtrcs.ResourceMetrics, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	metrics, err := s.sampleLocked()
 	if err != nil {
-		return ResourceMetrics{}, err
+		return mtrcs.ResourceMetrics{}, err
 	}
 	s.snapshot.Store(metrics)
 	return metrics, nil
 }
 
-func (s *MetricsSampler) sampleLocked() (ResourceMetrics, error) {
+func (s *MetricsSampler) sampleLocked() (mtrcs.ResourceMetrics, error) {
 	if s.containerized {
 		return s.sampleContainerized()
 	}
@@ -97,23 +91,23 @@ func (s *MetricsSampler) sampleLocked() (ResourceMetrics, error) {
 	return s.sampleHost()
 }
 
-func (s *MetricsSampler) sampleHost() (ResourceMetrics, error) {
+func (s *MetricsSampler) sampleHost() (mtrcs.ResourceMetrics, error) {
 	times, err := cpu.Times(false)
 	if err != nil {
-		return ResourceMetrics{}, err
+		return mtrcs.ResourceMetrics{}, err
 	}
 	if len(times) == 0 {
-		return ResourceMetrics{}, nil
+		return mtrcs.ResourceMetrics{}, nil
 	}
 	memStat, err := mem.VirtualMemory()
 	if err != nil {
-		return ResourceMetrics{}, err
+		return mtrcs.ResourceMetrics{}, err
 	}
 
 	total := totalCPUTimes(&times[0])
 	idle := times[0].Idle + times[0].Iowait
 
-	metrics := ResourceMetrics{}
+	metrics := mtrcs.ResourceMetrics{}
 	if memStat != nil {
 		metrics.MemoryUtilizationRaw = float64(memStat.Used)
 		metrics.MemoryUtilizationPercent = float32(memStat.UsedPercent)
@@ -136,25 +130,25 @@ func (s *MetricsSampler) sampleHost() (ResourceMetrics, error) {
 	return metrics, nil
 }
 
-func (s *MetricsSampler) sampleContainerized() (ResourceMetrics, error) {
+func (s *MetricsSampler) sampleContainerized() (mtrcs.ResourceMetrics, error) {
 	usage, err := readCgroupV2CPUUsage()
 	if err != nil {
-		return ResourceMetrics{}, err
+		return mtrcs.ResourceMetrics{}, err
 	}
 	memUsage, memLimit, err := readCgroupV2Memory()
 	if err != nil {
-		return ResourceMetrics{}, err
+		return mtrcs.ResourceMetrics{}, err
 	}
 	quotaCores, err := readCgroupV2CPUQuotaCores()
 	if err != nil || quotaCores <= 0 {
 		quotaCores, err = readCgroupV2CPUSetCores()
 		if err != nil {
-			return ResourceMetrics{}, err
+			return mtrcs.ResourceMetrics{}, err
 		}
 	}
 
 	now := time.Now()
-	metrics := ResourceMetrics{}
+	metrics := mtrcs.ResourceMetrics{}
 	metrics.MemoryUtilizationRaw = float64(memUsage)
 	if memLimit > 0 && !isUnlimitedMem(memLimit) {
 		metrics.MemoryUtilizationPercent = float32(float64(memUsage) / float64(memLimit) * 100)

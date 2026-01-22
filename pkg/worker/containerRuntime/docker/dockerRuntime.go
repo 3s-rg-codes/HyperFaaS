@@ -2,6 +2,7 @@ package dockerRuntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -247,9 +248,47 @@ func (d *DockerRuntime) ContainerExists(ctx context.Context, instanceID string) 
 	return false
 }
 
-func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) io.ReadCloser { // TODO: we need to find a return type that is compatible with all container runtimes and makes sense
-	st, _ := d.Cli.ContainerStats(ctx, containerID, false)
-	return st.Body
+func (d *DockerRuntime) ContainerStats(ctx context.Context, containerID string) (<-chan cr.ContainerStats, <-chan error) {
+	statsCh := make(chan cr.ContainerStats)
+	errCh := make(chan error, 1)
+
+	resp, err := d.Cli.ContainerStats(ctx, containerID, true)
+	if err != nil {
+		errCh <- err
+		close(statsCh)
+		close(errCh)
+		return statsCh, errCh
+	}
+
+	go func() {
+		defer resp.Body.Close()
+		defer close(statsCh)
+		defer close(errCh)
+
+		decoder := json.NewDecoder(resp.Body)
+		for {
+			var payload container.StatsResponse
+			if err := decoder.Decode(&payload); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				errCh <- err
+				return
+			}
+
+			stat := cr.ContainerStats{
+				CPUUsageTotal: payload.CPUStats.CPUUsage.TotalUsage,
+				MemoryUsage:   payload.MemoryStats.Usage,
+			}
+			select {
+			case statsCh <- stat:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return statsCh, errCh
 }
 
 func (d *DockerRuntime) createContainerConfig(imageTag string, functionID string) *container.Config {

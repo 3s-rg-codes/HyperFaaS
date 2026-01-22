@@ -73,7 +73,9 @@ func startWorkerServer() (chan bool, context.CancelFunc) {
 				fakeMetadata{},
 				controller.NewReadySignals(false),
 				false,
-				time.Second)
+				time.Second,
+				2,
+				4*1024*1024*1024)
 			c.StartServer(ctx)
 		})
 	}()

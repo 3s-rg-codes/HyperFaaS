@@ -2,7 +2,6 @@ package containerRuntime
 
 import (
 	"context"
-	"io"
 
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 )
@@ -12,6 +11,11 @@ type Container struct {
 	InternalIP string
 	ExternalIP string
 	Name       string
+}
+
+type ContainerStats struct {
+	CPUUsageTotal uint64
+	MemoryUsage   uint64
 }
 
 // ContainerRuntime is an interface for starting and stopping containers.
@@ -31,7 +35,7 @@ type ContainerRuntime interface {
 	ContainerExists(ctx context.Context, instanceID string) bool
 
 	// ContainerStats returns the stats for the container with the provided id
-	ContainerStats(ctx context.Context, containerID string) io.ReadCloser
+	ContainerStats(ctx context.Context, containerID string) (<-chan ContainerStats, <-chan error)
 }
 
 type ContainerEvent int

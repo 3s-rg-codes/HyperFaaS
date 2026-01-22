@@ -6,18 +6,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-)
 
-type ServerMetrics struct {
-	// number of nanoseconds the CPU was used for the last interval.
-	CPUUtilizationRaw float64
-	// percentage of total system CPU used for the last interval.
-	CPUUtilizationPercent float32
-	// raw bytes of memory used for the last interval.
-	MemoryUtilizationRaw float64
-	// percentage of total system memory used for the last interval.
-	MemoryUtilizationPercent float32
-}
+	mtrcs "github.com/3s-rg-codes/HyperFaaS/pkg/metrics"
+)
 
 const (
 	ResourceMetricsWindow   = 60
@@ -27,13 +18,13 @@ const (
 
 type BestWorkerSnapshot struct {
 	Index   int
-	Metrics ServerMetrics
+	Metrics mtrcs.ResourceMetrics
 	Ok      bool
 }
 
 type ResourceMetricEvent struct {
 	WorkerIdx int
-	Metrics   ServerMetrics
+	Metrics   mtrcs.ResourceMetrics
 }
 
 type ResourceMetricsStore struct {
@@ -60,7 +51,7 @@ func (s *ResourceMetricsStore) WorkerCount() int {
 	return len(s.workers)
 }
 
-func (s *ResourceMetricsStore) Update(workerIdx int, metrics ServerMetrics) {
+func (s *ResourceMetricsStore) Update(workerIdx int, metrics mtrcs.ResourceMetrics) {
 	if workerIdx < 0 || workerIdx >= len(s.workers) {
 		return
 	}
@@ -71,19 +62,19 @@ func (s *ResourceMetricsStore) Update(workerIdx int, metrics ServerMetrics) {
 	s.latest[workerIdx].Store(metrics)
 }
 
-func (s *ResourceMetricsStore) Latest(workerIdx int) (ServerMetrics, bool) {
+func (s *ResourceMetricsStore) Latest(workerIdx int) (mtrcs.ResourceMetrics, bool) {
 	if workerIdx < 0 || workerIdx >= len(s.latest) {
-		return ServerMetrics{}, false
+		return mtrcs.ResourceMetrics{}, false
 	}
 	value := s.latest[workerIdx].Load()
 	if value == nil {
-		return ServerMetrics{}, false
+		return mtrcs.ResourceMetrics{}, false
 	}
-	metrics, ok := value.(ServerMetrics)
+	metrics, ok := value.(mtrcs.ResourceMetrics)
 	return metrics, ok
 }
 
-func (s *ResourceMetricsStore) History(workerIdx int, dst []ServerMetrics) int {
+func (s *ResourceMetricsStore) History(workerIdx int, dst []mtrcs.ResourceMetrics) int {
 	if workerIdx < 0 || workerIdx >= len(s.workers) {
 		return 0
 	}
@@ -116,7 +107,7 @@ type ResourceMetricsCollector struct {
 
 type pendingMetric struct {
 	set     bool
-	metrics ServerMetrics
+	metrics mtrcs.ResourceMetrics
 }
 
 func NewResourceMetricsCollector(store *ResourceMetricsStore, logger *slog.Logger, interval time.Duration) *ResourceMetricsCollector {
@@ -134,7 +125,7 @@ func NewResourceMetricsCollector(store *ResourceMetricsStore, logger *slog.Logge
 	}
 }
 
-func (c *ResourceMetricsCollector) Add(workerIdx int, metrics ServerMetrics) {
+func (c *ResourceMetricsCollector) Add(workerIdx int, metrics mtrcs.ResourceMetrics) {
 	select {
 	case c.updates <- ResourceMetricEvent{WorkerIdx: workerIdx, Metrics: metrics}:
 	default:
@@ -179,7 +170,7 @@ func (c *ResourceMetricsCollector) flushPending(pending []pendingMetric) {
 			continue
 		}
 		if !best.Ok || metrics.CPUUtilizationPercent < best.Metrics.CPUUtilizationPercent {
-			c.logger.Info("new best worker", "worker", idx, "cpu_percent", metrics.CPUUtilizationPercent, "memory_percent", metrics.MemoryUtilizationPercent)
+			//c.logger.Info("new best worker", "worker", idx, "cpu_percent", metrics.CPUUtilizationPercent, "memory_percent", metrics.MemoryUtilizationPercent)
 			best = BestWorkerSnapshot{Index: idx, Metrics: metrics, Ok: true}
 		}
 	}
@@ -197,7 +188,7 @@ type workerMetricsRing struct {
 	memPct [ResourceMetricsWindow]float32
 }
 
-func (w *workerMetricsRing) append(metrics ServerMetrics) {
+func (w *workerMetricsRing) append(metrics mtrcs.ResourceMetrics) {
 	w.cpuRaw[w.head] = metrics.CPUUtilizationRaw
 	w.cpuPct[w.head] = metrics.CPUUtilizationPercent
 	w.memRaw[w.head] = metrics.MemoryUtilizationRaw
@@ -208,7 +199,7 @@ func (w *workerMetricsRing) append(metrics ServerMetrics) {
 	}
 }
 
-func (w *workerMetricsRing) history(dst []ServerMetrics) int {
+func (w *workerMetricsRing) history(dst []mtrcs.ResourceMetrics) int {
 	if w.count == 0 || len(dst) == 0 {
 		return 0
 	}
@@ -222,7 +213,7 @@ func (w *workerMetricsRing) history(dst []ServerMetrics) int {
 	}
 	for i := 0; i < n; i++ {
 		idx := (start + i) % ResourceMetricsWindow
-		dst[i] = ServerMetrics{
+		dst[i] = mtrcs.ResourceMetrics{
 			CPUUtilizationRaw:        w.cpuRaw[idx],
 			CPUUtilizationPercent:    w.cpuPct[idx],
 			MemoryUtilizationRaw:     w.memRaw[idx],

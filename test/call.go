@@ -65,7 +65,8 @@ func testCallGeneric[Req any, Resp any](t *testing.T,
 		if shouldFail {
 			return err
 		}
-		t.Errorf("Call failed: %v", err)
+		//t.Errorf("Call failed: %v", err)
+		t.Error()
 		return err
 	}
 

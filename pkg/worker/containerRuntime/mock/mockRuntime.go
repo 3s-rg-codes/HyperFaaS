@@ -3,7 +3,6 @@ package mock
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 
@@ -39,10 +38,13 @@ func (m *MockRuntime) ContainerExists(ctx context.Context, instanceID string) bo
 }
 
 // ContainerStats doesnt make sense for mock runtime
-func (m *MockRuntime) ContainerStats(ctx context.Context, containerID string) io.ReadCloser {
-	// maybe doesn't make sense for mock runtime ..?
-	// TODO
-	panic("not implemented")
+func (m *MockRuntime) ContainerStats(ctx context.Context, containerID string) (<-chan cr.ContainerStats, <-chan error) {
+	statsCh := make(chan cr.ContainerStats)
+	errCh := make(chan error, 1)
+	close(statsCh)
+	errCh <- fmt.Errorf("container stats not supported in mock runtime")
+	close(errCh)
+	return statsCh, errCh
 }
 
 // MonitorContainer implements containerRuntime.ContainerRuntime.

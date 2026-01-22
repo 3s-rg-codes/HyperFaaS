@@ -8,15 +8,17 @@ import (
 	"log/slog"
 	"testing"
 	"time"
+
+	mtrcs "github.com/3s-rg-codes/HyperFaaS/pkg/metrics"
 )
 
 func TestResourceMetricsHistoryOrder(t *testing.T) {
 	store := NewResourceMetricsStore(1)
-	store.Update(0, ServerMetrics{CPUUtilizationPercent: 1})
-	store.Update(0, ServerMetrics{CPUUtilizationPercent: 2})
-	store.Update(0, ServerMetrics{CPUUtilizationPercent: 3})
+	store.Update(0, mtrcs.ResourceMetrics{CPUUtilizationPercent: 1})
+	store.Update(0, mtrcs.ResourceMetrics{CPUUtilizationPercent: 2})
+	store.Update(0, mtrcs.ResourceMetrics{CPUUtilizationPercent: 3})
 
-	buf := make([]ServerMetrics, 3)
+	buf := make([]mtrcs.ResourceMetrics, 3)
 	n := store.History(0, buf)
 	if n != 3 {
 		t.Fatalf("unexpected history count: %d", n)
@@ -40,8 +42,8 @@ func TestResourceMetricsCollectorUpdatesStore(t *testing.T) {
 	defer cancel()
 	go collector.Run(ctx)
 
-	collector.Add(0, ServerMetrics{CPUUtilizationPercent: 50})
-	collector.Add(1, ServerMetrics{CPUUtilizationPercent: 10})
+	collector.Add(0, mtrcs.ResourceMetrics{CPUUtilizationPercent: 50})
+	collector.Add(1, mtrcs.ResourceMetrics{CPUUtilizationPercent: 10})
 
 	time.Sleep(20 * time.Millisecond)
 

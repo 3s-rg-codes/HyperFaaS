@@ -69,6 +69,7 @@ func TestCallRequest(t *testing.T) {
 
 	for _, d := range data {
 		t.Run("Concurrent Calls", func(t *testing.T) {
+			//t.Skip("Skipping concurrent calls test")
 			functionId := createFunctionMetadata(d.ImageTag)
 			t.Log("Sending Concurrent Calls")
 

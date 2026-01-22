@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
+	sharedmetrics "github.com/3s-rg-codes/HyperFaaS/pkg/metrics"
 	cr "github.com/3s-rg-codes/HyperFaaS/pkg/worker/containerRuntime"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/worker/stats"
 	workerPB "github.com/3s-rg-codes/HyperFaaS/proto/worker"
@@ -25,14 +26,16 @@ import (
 
 type Controller struct {
 	workerPB.UnimplementedWorkerServer
-	runtime         cr.ContainerRuntime
-	StatsManager    *stats.StatsManager
-	metricsSampler  *stats.MetricsSampler
-	metricsInterval time.Duration
-	logger          *slog.Logger
-	address         string
-	metadataClient  metadataProvider
-	readySignals    *ReadySignals
+	runtime           cr.ContainerRuntime
+	StatsManager      *stats.StatsManager
+	metricsSampler    *stats.MetricsSampler
+	metricsInterval   time.Duration
+	resourceManager   *ResourceManager
+	workerContainerID string
+	logger            *slog.Logger
+	address           string
+	metadataClient    metadataProvider
+	readySignals      *ReadySignals
 }
 type metadataProvider interface {
 	GetFunction(ctx context.Context, id string) (*metadata.FunctionMetadata, error)
@@ -67,13 +70,15 @@ func (s *Controller) Start(ctx context.Context, req *workerPB.StartRequest) (*wo
 	if len(container.Id) > 12 {
 		shortID = container.Id[:12]
 	}
-	// Add the instance to the map to wait for the ready signal
-	s.readySignals.AddInstance(shortID)
-
 	if err != nil {
 		s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId).Container(shortID).Start().Failed())
 		s.logger.Error("Failed to start container", "error", err)
 		return nil, err
+	}
+
+	s.readySignals.AddInstance(shortID)
+	if s.resourceManager != nil {
+		s.resourceManager.AddContainer(container.Id)
 	}
 	// Container has been requested; we actually dont know if its running or not
 	s.StatsManager.Enqueue(stats.Event().Function(req.FunctionId).Container(shortID).Start().Success())
@@ -99,6 +104,9 @@ func (s *Controller) SignalReady(ctx context.Context, req *workerPB.SignalReadyR
 }
 
 func (s *Controller) Stop(ctx context.Context, req *workerPB.StopRequest) (*workerPB.StopResponse, error) {
+	if s.resourceManager != nil {
+		s.resourceManager.RemoveContainer(req.InstanceId)
+	}
 	err := s.runtime.Stop(ctx, req.InstanceId)
 	if err != nil {
 		s.logger.Error("Failed to stop container", "instance ID", req.InstanceId, "error", err)
@@ -162,22 +170,13 @@ func (s *Controller) Status(req *workerPB.StatusRequest, stream workerPB.Worker_
 }
 
 func (s *Controller) Metrics(ctx context.Context, req *workerPB.MetricsRequest) (*workerPB.MetricsUpdate, error) {
-	metrics, ok := s.metricsSampler.Latest()
-	if !ok {
-		var err error
-		metrics, err = s.metricsSampler.Sample()
-		if err != nil {
-			s.logger.Error("failed to sample metrics", "error", err)
-			return nil, status.Errorf(codes.Unavailable, "failed to sample metrics: %v", err)
-		}
+	metrics, err := s.getMetricsSnapshot()
+	if err != nil {
+		s.logger.Error("failed to sample metrics", "error", err)
+		return nil, status.Errorf(codes.Unavailable, "failed to sample metrics: %v", err)
 	}
 
-	return &workerPB.MetricsUpdate{
-		CpuUtilizationRaw:        metrics.CPUUtilizationRaw,
-		CpuUtilizationPercent:    metrics.CPUUtilizationPercent,
-		MemoryUtilizationRaw:     metrics.MemoryUtilizationRaw,
-		MemoryUtilizationPercent: metrics.MemoryUtilizationPercent,
-	}, nil
+	return metricsToProto(metrics), nil
 }
 
 func (s *Controller) MetricsStream(req *workerPB.MetricsRequest, stream grpc.ServerStreamingServer[workerPB.MetricsUpdate]) error {
@@ -186,27 +185,16 @@ func (s *Controller) MetricsStream(req *workerPB.MetricsRequest, stream grpc.Ser
 	if interval <= 0 {
 		interval = time.Second
 	}
-	if _, ok := s.metricsSampler.Latest(); !ok {
-		if _, err := s.metricsSampler.Sample(); err != nil {
-			s.logger.Error("failed to sample metrics", "error", err)
-			return status.Errorf(codes.Unavailable, "failed to sample metrics: %v", err)
-		}
-	}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	sendLatest := func() error {
-		metrics, ok := s.metricsSampler.Latest()
-		if !ok {
+		metrics, err := s.getMetricsSnapshot()
+		if err != nil {
 			return status.Error(codes.Unavailable, "metrics unavailable")
 		}
-		return stream.Send(&workerPB.MetricsUpdate{
-			CpuUtilizationRaw:        metrics.CPUUtilizationRaw,
-			CpuUtilizationPercent:    metrics.CPUUtilizationPercent,
-			MemoryUtilizationRaw:     metrics.MemoryUtilizationRaw,
-			MemoryUtilizationPercent: metrics.MemoryUtilizationPercent,
-		})
+		return stream.Send(metricsToProto(metrics))
 	}
 
 	if err := sendLatest(); err != nil {
@@ -235,17 +223,31 @@ func NewController(runtime cr.ContainerRuntime,
 	readySignals *ReadySignals,
 	containerized bool,
 	metricsInterval time.Duration,
+	workerBudgetCPU float64,
+	workerBudgetMemory uint64,
 ) *Controller {
 	metricsSampler := stats.NewMetricsSampler(containerized, logger.With("component", "metrics_sampler"))
+	var resourceManager *ResourceManager
+	var workerContainerID string
+	if containerized {
+		resourceManager = NewResourceManager(runtime, logger, metricsInterval, workerBudgetCPU, workerBudgetMemory)
+		if hostname, err := os.Hostname(); err == nil {
+			workerContainerID = hostname
+		} else {
+			logger.Warn("failed to read hostname for worker container", "error", err)
+		}
+	}
 	return &Controller{
-		runtime:         runtime,
-		StatsManager:    statsManager,
-		metricsSampler:  metricsSampler,
-		metricsInterval: metricsInterval,
-		logger:          logger,
-		address:         address,
-		metadataClient:  metadataClient,
-		readySignals:    readySignals,
+		runtime:           runtime,
+		StatsManager:      statsManager,
+		metricsSampler:    metricsSampler,
+		metricsInterval:   metricsInterval,
+		resourceManager:   resourceManager,
+		workerContainerID: workerContainerID,
+		logger:            logger,
+		address:           address,
+		metadataClient:    metadataClient,
+		readySignals:      readySignals,
 	}
 }
 
@@ -259,7 +261,15 @@ func (s *Controller) StartServer(ctx context.Context) {
 	// defer cancel()
 
 	// Start the stats manager
-	go s.metricsSampler.Run(ctx, s.metricsInterval)
+	if s.resourceManager != nil {
+		s.resourceManager.SetContext(ctx)
+		if s.workerContainerID != "" {
+			s.resourceManager.AddContainer(s.workerContainerID)
+		}
+		go s.resourceManager.Run(ctx)
+	} else {
+		go s.metricsSampler.Run(ctx, s.metricsInterval)
+	}
 	go func() {
 		s.StatsManager.StartStreamingToListeners(ctx)
 	}()
@@ -320,5 +330,36 @@ func (s *Controller) monitorContainerLifecycle(functionID string, c cr.Container
 		s.StatsManager.Enqueue(stats.Event().Function(functionID).Container(c.Id).Down().Failed())
 	default:
 		s.logger.Debug("Unexpected container event", "instanceID", c.Id, "event", event)
+	}
+	if s.resourceManager != nil {
+		s.resourceManager.RemoveContainer(c.Id)
+	}
+}
+
+func (s *Controller) getMetricsSnapshot() (sharedmetrics.ResourceMetrics, error) {
+	if s.resourceManager != nil {
+		metrics, ok := s.resourceManager.Latest()
+		if !ok {
+			return sharedmetrics.ResourceMetrics{}, errors.New("metrics unavailable")
+		}
+		return metrics, nil
+	}
+	metrics, ok := s.metricsSampler.Latest()
+	if ok {
+		return metrics, nil
+	}
+	metrics, err := s.metricsSampler.Sample()
+	if err != nil {
+		return sharedmetrics.ResourceMetrics{}, err
+	}
+	return metrics, nil
+}
+
+func metricsToProto(metrics sharedmetrics.ResourceMetrics) *workerPB.MetricsUpdate {
+	return &workerPB.MetricsUpdate{
+		CpuUtilizationRaw:        metrics.CPUUtilizationRaw,
+		CpuUtilizationPercent:    metrics.CPUUtilizationPercent,
+		MemoryUtilizationRaw:     metrics.MemoryUtilizationRaw,
+		MemoryUtilizationPercent: metrics.MemoryUtilizationPercent,
 	}
 }
