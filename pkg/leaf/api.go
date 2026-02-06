@@ -54,6 +54,9 @@ type Server struct {
 	// single centralised channel to read zero scale events from all functions.
 	// used for the State stream.
 	functionScaleEvents chan metrics.ZeroScaleEvent
+
+	//queue containing asynchronised call requests
+	callq *CallQueue
 }
 
 // NewServer initialises a leaf server with the provided configuration and logger.
@@ -100,6 +103,8 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient metadata.C
 	cp := controlplane.NewControlPlane(serverCtx, cfg, logger, instanceChangesChan, workers, functionScaleEvents, cr)
 	go cp.Run(serverCtx)
 
+	callQ := NewCallQueue()
+
 	s := &Server{
 		cfg:                 cfg,
 		logger:              logger,
@@ -111,6 +116,7 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient metadata.C
 		controlPlane:        cp,
 		concurrencyReporter: cr,
 		functionScaleEvents: functionScaleEvents,
+		callq:               callQ,
 	}
 
 	s.workers = workers
@@ -215,6 +221,16 @@ func (s *Server) removeFunction(functionID string) {
 }
 
 func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
+
+	if req.Async {
+		s.callq.Enqueue(req)
+	} else {
+		emptyResp := &common.CallResponse{
+			Data: make([]byte, 0),
+		}
+		return emptyResp, nil
+	}
+
 	if req.FunctionId == "" {
 		return nil, status.Error(codes.InvalidArgument, "function_id is required")
 	}

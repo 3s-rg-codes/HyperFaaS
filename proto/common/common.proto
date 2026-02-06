@@ -15,6 +15,7 @@ message CallRequest {
   string function_id = 1;
   // The data to pass to the function.
   bytes data = 2;
+  bool async = 3;
 }
   
 message CallResponse {
