@@ -329,6 +329,30 @@ func main() {
 							return nil
 						},
 					},
+					{
+						Name:      "callAs",
+						Usage:     "call a function asynchronously",
+						ArgsUsage: "function ID",
+						Flags: []cli.Flag{
+							dataFlag,
+						},
+						Action: func(ctx context.Context, cmd *cli.Command) error {
+							funcID := cmd.Args().Get(0)
+							data := []byte(cmd.String("data"))
+							timeout := cmd.Duration("timeout")
+
+							client, _, err := createLeafClient(cmd.String("address"))
+							if err != nil {
+								return err
+							}
+							response, err := ScheduleCallAsync(client, funcID, data, timeout)
+							if err != nil {
+								return err
+							}
+							fmt.Printf("%v\n", string(response))
+							return nil
+						},
+					},
 				},
 			},
 			{
@@ -400,6 +424,32 @@ func ScheduleCall(client HyperFaaSClient,
 	scheduleCallReq := &commonpb.CallRequest{
 		FunctionId: funcID,
 		Data:       data,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	scheduleCallResponse, err := client.ScheduleCall(ctx, scheduleCallReq)
+	if err != nil {
+		fmt.Printf("Error scheduling call: %v", err)
+		return nil, err
+	}
+	if scheduleCallResponse.Error != nil {
+		fmt.Printf("Internal error scheduling call: %v\n", scheduleCallResponse.Error)
+		return nil, errors.New(scheduleCallResponse.Error.Message)
+	}
+	return scheduleCallResponse.Data, nil
+}
+
+func ScheduleCallAsync(client HyperFaaSClient,
+	funcID string,
+	data []byte,
+	timeout time.Duration,
+) ([]byte, error) {
+	scheduleCallReq := &commonpb.CallRequest{
+		FunctionId: funcID,
+		Data:       data,
+		Async:      true,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

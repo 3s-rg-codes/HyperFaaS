@@ -35,7 +35,7 @@ func main() {
 	address := flag.String("address", "0.0.0.0:50050", "Leaf listen address")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	logFormat := flag.String("log-format", "text", "Log format (text, json, dev)")
-	logFile := flag.String("log-file", "", "Optional log file path")
+	logFile := flag.String("log-file", "leaf.log", "Optional log file path")
 	nodeID := flag.String("node-id", rNodeID, "Node ID to be used for logging and metrics for this node.")
 	containerized := flag.Bool("containerized", true, "Whether the leaf is running in a containerized environment")
 

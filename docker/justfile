@@ -9,6 +9,15 @@ default:
   @just --list --unsorted
 
 ############################
+# Build Commands
+############################
+
+build runtime_type="docker" log_level="info" *FLAGS:
+    @echo "Building HyperFaaS images"
+    RUNTIME_TYPE={{runtime_type}} LOG_LEVEL={{log_level}} docker compose -f small.yaml -f medium.yaml -f large.yaml build
+
+
+############################
 # Docker Compose Commands
 ############################
 

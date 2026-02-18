@@ -300,3 +300,54 @@ func dumpGoroutines(t *testing.T) {
 	}
 	t.Logf("goroutine dump before failure:\n%s", buf.String())
 }
+
+func TestScheduleCallAsync(t *testing.T) {
+	server, err := setup(t)
+	if err != nil {
+		t.Fatalf("failed to setup test server: %v", err)
+	}
+	// register a function in the metadata client
+	id, err := server.metadataClient.PutFunction(context.Background(), &common.CreateFunctionRequest{
+		Image: &common.Image{
+			Tag: "test-image",
+		},
+		Config: &common.Config{
+			Memory:         100 * 1024 * 1024,
+			MaxConcurrency: 100000,
+			Timeout:        10,
+		},
+	})
+
+	time.Sleep(2 * time.Second)
+
+	if err != nil {
+		t.Fatalf("failed to register function: %v", err)
+	}
+
+	// run the mocked function server
+	addr := "127.0.0.1:56789" // this is the one returned in the mocked controller.Start method.
+	reqCtx, reqCancel := context.WithTimeout(t.Context(), TEST_TIMEOUT)
+	t.Cleanup(reqCancel)
+	funcCtx, cancel := context.WithCancel(reqCtx)
+	t.Cleanup(cancel)
+
+	go func() {
+		if err := (mockedRunningInstance{}).Run(funcCtx, addr); err != nil && !errors.Is(err, context.Canceled) {
+			t.Logf("mock function server exited: %v", err)
+		}
+	}()
+
+	resp, err := server.ScheduleCall(reqCtx, &common.CallRequest{
+		FunctionId: id,
+		Data:       []byte("test-data"),
+		Async:      true,
+	})
+
+	if err != nil {
+		t.Fatalf("failed to schedule async call: %v", err)
+	}
+
+	if resp == nil {
+		t.Fatalf("response is nil")
+	}
+}

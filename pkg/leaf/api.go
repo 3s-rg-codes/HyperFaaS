@@ -16,6 +16,7 @@ import (
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/dataplane"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/leaf/metrics"
 	"github.com/3s-rg-codes/HyperFaaS/pkg/metadata"
+	"github.com/3s-rg-codes/HyperFaaS/pkg/utils"
 	"github.com/3s-rg-codes/HyperFaaS/proto/common"
 	leafpb "github.com/3s-rg-codes/HyperFaaS/proto/leaf"
 )
@@ -55,8 +56,8 @@ type Server struct {
 	// used for the State stream.
 	functionScaleEvents chan metrics.ZeroScaleEvent
 
-	//queue containing asynchronised call requests
-	callq *CallQueue
+	//manager for asynchronised call requests
+	qm *utils.QueueManager
 }
 
 // NewServer initialises a leaf server with the provided configuration and logger.
@@ -103,7 +104,8 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient metadata.C
 	cp := controlplane.NewControlPlane(serverCtx, cfg, logger, instanceChangesChan, workers, functionScaleEvents, cr)
 	go cp.Run(serverCtx)
 
-	callQ := NewCallQueue()
+	callChan := make(chan *common.CallRequest)
+	qm := utils.NewQueueManager(serverCtx, cr, callChan, logger)
 
 	s := &Server{
 		cfg:                 cfg,
@@ -116,8 +118,22 @@ func NewServer(ctx context.Context, cfg config.Config, metadataClient metadata.C
 		controlPlane:        cp,
 		concurrencyReporter: cr,
 		functionScaleEvents: functionScaleEvents,
-		callq:               callQ,
+		qm:                  qm,
 	}
+
+	//listen for dequeued async calls
+	go func() {
+		for {
+			time.Sleep(1 * time.Second)
+			select {
+			case req := <-callChan:
+				s.ScheduleCall(serverCtx, req)
+				logger.Info("Received async call from queue!")
+			case <-serverCtx.Done():
+				return
+			}
+		}
+	}()
 
 	s.workers = workers
 
@@ -221,10 +237,9 @@ func (s *Server) removeFunction(functionID string) {
 }
 
 func (s *Server) ScheduleCall(ctx context.Context, req *common.CallRequest) (*common.CallResponse, error) {
-
 	if req.Async {
-		s.callq.Enqueue(req)
-	} else {
+		s.logger.Info("Leaf received asynchronous call!")
+		s.qm.Enqueue(req)
 		emptyResp := &common.CallResponse{
 			Data: make([]byte, 0),
 		}
