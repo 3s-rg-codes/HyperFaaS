@@ -27,22 +27,23 @@ Leaf grpc proxies are reachable on port 6005X .
 
 ## Important Commands
 
-###  just
-Remember you can also use the justfile from the root directory via `just docker/<command>` instead of using the docker justfile directly.
+### just
+Remember you can also use the justfile from the root directory via `just docker/<command>`.
+Use `LOG_LEVEL` and `RUNTIME_TYPE` in your shell to override defaults (info/docker).
 The following commands are listed as executed from this directory (docker/):
 
 ```bash
 # Start small setup
 just ss
 
-# Start medium setup  
+# Start medium setup
 just sm
 
 # Start large setup
 just sl
 
-# Start and rebuild small setup
-just ss docker info --build # 'docker' and 'info' are needed here to be able to pass --build correctly
+# Start and rebuild a setup (pick components to rebuild)
+just sl worker leaf
 
 # View logs for specific component
 just logs worker

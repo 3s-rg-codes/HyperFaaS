@@ -51,13 +51,18 @@ We have three different setups available: small, medium, and large.
 To read more about the setups, see [docker/README.md](docker/README.md).
 ```
 # deploy a small setup
-just docker/start-small
-```
+just docker/ss
 
+# deploy a medium setup
+just docker/sm
+
+# deploy a large setup
+just docker/sl
+```
 
 ```
 # stop it
-just docker/down-small
+just docker/ds
 ```
 
 #### Native Mode

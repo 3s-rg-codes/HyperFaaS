@@ -1,9 +1,4 @@
 x-worker-template: &worker-template
-  build:
-    context: ..
-    dockerfile: docker/Dockerfile
-    args:
-      COMPONENT: worker
   image: hyperfaas-worker
   volumes:
     - /var/run/docker.sock:/var/run/docker.sock
@@ -16,6 +11,30 @@ x-worker-template: &worker-template
   depends_on:
     etcd:
       condition: service_healthy
+
+x-leaf-template: &leaf-template
+  image: hyperfaas-leaf
+  volumes:
+    - ./logs:/app/logs
+  networks:
+    hyperfaas-network:
+
+x-routingcontroller-template: &routingcontroller-template
+  image: hyperfaas-routingcontroller
+  command:
+    [
+      "./app",
+      "-root=false",
+      "-log-level=${LOG_LEVEL}",
+      "-log-format=text",
+      "-log-file=/app/logs/routingcontroller.log",
+      "-socket-path=/var/run/hyperfaas/spoe.sock",
+      "-child-types=leaf"
+    ]
+  volumes:
+    - ./logs:/app/logs
+  networks:
+    hyperfaas-network:
 
 services:
   etcd:
@@ -45,12 +64,24 @@ services:
 
   worker-1:
     <<: *worker-template
-    image: hyperfaas-worker-1
     ports:
       - "50001:50001"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50001", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-1", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50001",
+        "-runtime=${RUNTIME_TYPE}",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "--auto-remove=true",
+        "-containerized=true",
+        "-update-buffer-size=100000",
+        "-service-name=worker-1",
+        "-network-name=hyperfaas_hyperfaas-network",
+        "-etcd-endpoint=etcd:2379"
+      ]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50001"]
       interval: 3s
@@ -60,12 +91,24 @@ services:
 
   worker-2:
     <<: *worker-template
-    image: hyperfaas-worker-2
     ports:
       - "50002:50002"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50002", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-2", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50002",
+        "-runtime=${RUNTIME_TYPE}",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "--auto-remove=true",
+        "-containerized=true",
+        "-update-buffer-size=100000",
+        "-service-name=worker-2",
+        "-network-name=hyperfaas_hyperfaas-network",
+        "-etcd-endpoint=etcd:2379"
+      ]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50002"]
       interval: 3s
@@ -75,12 +118,24 @@ services:
 
   worker-3:
     <<: *worker-template
-    image: hyperfaas-worker-3
     ports:
       - "50003:50003"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50003", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-3", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50003",
+        "-runtime=${RUNTIME_TYPE}",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "--auto-remove=true",
+        "-containerized=true",
+        "-update-buffer-size=100000",
+        "-service-name=worker-3",
+        "-network-name=hyperfaas_hyperfaas-network",
+        "-etcd-endpoint=etcd:2379"
+      ]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50003"]
       interval: 3s
@@ -90,12 +145,24 @@ services:
 
   worker-4:
     <<: *worker-template
-    image: hyperfaas-worker-4
     ports:
       - "50004:50004"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50004", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-4", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50004",
+        "-runtime=${RUNTIME_TYPE}",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "--auto-remove=true",
+        "-containerized=true",
+        "-update-buffer-size=100000",
+        "-service-name=worker-4",
+        "-network-name=hyperfaas_hyperfaas-network",
+        "-etcd-endpoint=etcd:2379"
+      ]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50004"]
       interval: 3s
@@ -105,12 +172,24 @@ services:
 
   worker-5:
     <<: *worker-template
-    image: hyperfaas-worker-5
     ports:
       - "50005:50005"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50005", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-5", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50005",
+        "-runtime=${RUNTIME_TYPE}",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "--auto-remove=true",
+        "-containerized=true",
+        "-update-buffer-size=100000",
+        "-service-name=worker-5",
+        "-network-name=hyperfaas_hyperfaas-network",
+        "-etcd-endpoint=etcd:2379"
+      ]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50005"]
       interval: 3s
@@ -120,12 +199,24 @@ services:
 
   worker-6:
     <<: *worker-template
-    image: hyperfaas-worker-6
     ports:
       - "50006:50006"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50006", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-6", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50006",
+        "-runtime=${RUNTIME_TYPE}",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "--auto-remove=true",
+        "-containerized=true",
+        "-update-buffer-size=100000",
+        "-service-name=worker-6",
+        "-network-name=hyperfaas_hyperfaas-network",
+        "-etcd-endpoint=etcd:2379"
+      ]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50006"]
       interval: 3s
@@ -135,12 +226,24 @@ services:
 
   worker-7:
     <<: *worker-template
-    image: hyperfaas-worker-7
     ports:
       - "50007:50007"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50007", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-7", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50007",
+        "-runtime=${RUNTIME_TYPE}",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "--auto-remove=true",
+        "-containerized=true",
+        "-update-buffer-size=100000",
+        "-service-name=worker-7",
+        "-network-name=hyperfaas_hyperfaas-network",
+        "-etcd-endpoint=etcd:2379"
+      ]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50007"]
       interval: 3s
@@ -150,12 +253,24 @@ services:
 
   worker-8:
     <<: *worker-template
-    image: hyperfaas-worker-8
     ports:
       - "50008:50008"
     environment:
       <<: *worker-environment
-    command: ["./app", "-address=0.0.0.0:50008", "-runtime=${RUNTIME_TYPE}", "-log-level=${LOG_LEVEL}", "-log-format=text", "--auto-remove=true", "-containerized=true", "-update-buffer-size=100000", "-service-name=worker-8", "-network-name=hyperfaas_hyperfaas-network", "-etcd-endpoint=etcd:2379"]
+    command:
+      [
+        "./app",
+        "-address=0.0.0.0:50008",
+        "-runtime=${RUNTIME_TYPE}",
+        "-log-level=${LOG_LEVEL}",
+        "-log-format=text",
+        "--auto-remove=true",
+        "-containerized=true",
+        "-update-buffer-size=100000",
+        "-service-name=worker-8",
+        "-network-name=hyperfaas_hyperfaas-network",
+        "-etcd-endpoint=etcd:2379"
+      ]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50008"]
       interval: 3s
@@ -164,12 +279,7 @@ services:
       start_period: 5s
 
   leaf-1:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        COMPONENT: leaf
-    image: hyperfaas-leaf-1
+    <<: *leaf-template
     ports:
       - "50050:50050"
       - "60060:60060"
@@ -208,12 +318,7 @@ services:
         condition: service_healthy
 
   leaf-2:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        COMPONENT: leaf
-    image: hyperfaas-leaf-2
+    <<: *leaf-template
     ports:
       - "50051:50051"
       - "60061:60061"
@@ -252,12 +357,7 @@ services:
         condition: service_healthy
 
   leaf-3:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        COMPONENT: leaf
-    image: hyperfaas-leaf-3
+    <<: *leaf-template
     ports:
       - "50052:50052"
       - "60062:60062"
@@ -296,12 +396,7 @@ services:
         condition: service_healthy
 
   leaf-4:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        COMPONENT: leaf
-    image: hyperfaas-leaf-4
+    <<: *leaf-template
     ports:
       - "50053:50053"
       - "60063:60063"
@@ -368,17 +463,11 @@ services:
       start_period: 30s
 
   routingcontroller-l1-a:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        COMPONENT: routingcontroller
-    image: hyperfaas-routingcontroller-l1-a
+    <<: *routingcontroller-template
     command:
       [
         "./app",
         "-grpc-address=0.0.0.0:40000",
-        "-root=false",
         "-log-level=${LOG_LEVEL}",
         "-log-format=text",
         "-log-file=/app/logs/routingcontroller-l1-a.log",
@@ -435,17 +524,11 @@ services:
       start_period: 30s
 
   routingcontroller-l1-b:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        COMPONENT: routingcontroller
-    image: hyperfaas-routingcontroller-l1-b
+    <<: *routingcontroller-template
     command:
       [
         "./app",
         "-grpc-address=0.0.0.0:40000",
-        "-root=false",
         "-log-level=${LOG_LEVEL}",
         "-log-format=text",
         "-log-file=/app/logs/routingcontroller-l1-b.log",
@@ -503,12 +586,7 @@ services:
       start_period: 30s
 
   routingcontroller-l2:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        COMPONENT: routingcontroller
-    image: hyperfaas-routingcontroller-l2
+    image: hyperfaas-routingcontroller
     command:
       [
         "./app",
