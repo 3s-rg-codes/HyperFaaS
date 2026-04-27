@@ -25,11 +25,7 @@ services:
       ETCDCTL_ENDPOINTS: http://127.0.0.1:2379
 
   worker:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        COMPONENT: worker
+    image: hyperfaas-worker
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - function-logs:/root/functions/logs
@@ -51,11 +47,6 @@ services:
       "-update-buffer-size=100000",
       "-etcd-endpoint=etcd:2379"
     ]
-    develop:
-      watch:
-        - action: rebuild
-          path: .
-          target: .
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50001"]
       interval: 3s
@@ -66,11 +57,7 @@ services:
       etcd:
         condition: service_healthy
   leaf:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        COMPONENT: leaf
+    image: hyperfaas-leaf
     volumes:
       - ./logs:/app/logs
     ports:
@@ -91,11 +78,6 @@ services:
       "-max-instances-per-worker=4",
       "-etcd-endpoint=etcd:2379"
     ]
-    develop:
-      watch:
-        - action: rebuild
-          path: .
-          target: .
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "50050"]
       interval: 3s
@@ -134,11 +116,7 @@ services:
       start_period: 5s
 
   routingcontroller:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        COMPONENT: routingcontroller
+    image: hyperfaas-routingcontroller
     command:
       [
         "./app",

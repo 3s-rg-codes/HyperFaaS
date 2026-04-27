@@ -7,3 +7,10 @@ justfile
 .cache
 .git
 .idea
+logs
+tmp
+bin
+dist
+coverage
+**/*.log
+trace-*.out
