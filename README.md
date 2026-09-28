@@ -1,165 +1,250 @@
 # HyperFaaS
 
-HyperFaaS is a highly-scalable, research serverless platform designed for bare VM deployments. 
-It leverages a decentralized, tiered routing and autoscaling architecture to optimize resource usage, minimize latency, and prevent resource bottlenecks.
+HyperFaaS is a Function-as-a-Service platform for VMs and bare-metal hosts, written in Go.
+It partitions the cluster into leaves, each managing its own pool of workers, so that routing, admission, and sandbox placement run without global coordination.
+Routing and placement algorithms are pluggable policies that can be switched at runtime.
 
-HyperFaaS is composed of four decoupled layers:
+Functions are OCI images (or Firecracker boot images) that serve plain HTTP or gRPC and link a small runtime library to signal readiness.
 
-- **Ingress**: Where requests enter the system. Evaluates routing policies, and forwards traffic to a leaf server. Ingress relies on a local, eventually consistent routing cache.
-- **Control Plane**: Manages users and function metadata registration, publishing specifications via `etcd`.
-- **Leaf**: Sits between the ingress and the worker nodes. It is responsible for request admission (throttling, rate limiting, etc.) and local autoscaling.
-- **Worker**: Provides a sandbox lifecycle API with support for multiple runtimes. We aim to support containerd and firecracker.
-
----
-
-## Architecture Overview
-
-Sync invocations traverse a two-hop path:
+## Architecture
 
 ```text
-Client → Ingress → Leaf → Function Instance (on a Worker)
+                       ┌───────────────┐      etcd
+                       │ Control plane │◄───► (users, functions,
+                       └───────┬───────┘       PlatformConfig)
+            WatchFunctions,    │
+            WatchPlatformConfig│
+          ┌────────────────────┼─────────────────────┐
+          ▼                    ▼                     ▼
+Client ─► Ingress ──────► Leaf 1 ──────────► Sandbox on Worker 1a
+ HTTP/     (routing       (admission,        Sandbox on Worker 1b
+ gRPC       policy)        queueing,
+             ▲             autoscaling,   ─► Leaf 2 ─► Workers 2a, 2b, ...
+             │             placement)
+             └── WatchRoutingState (aggregated leaf state)
 ```
 
-This way, the cluster can be partitioned into smaller units, and each unit can be managed independently.
-Each leaf manages its own worker pool, and there is no cross-leaf communication.
+| Component | Binary | Responsibility |
+|---|---|---|
+| Control plane | `cmd/controlplane` | Stores users, functions, and the `PlatformConfig` policy document in etcd. Streams changes to leaves and ingresses. Not on the invocation path. |
+| Ingress | `cmd/ingress` | Receives invocations, selects a leaf with the active routing policy, and proxies the request. Keeps an in-memory, eventually consistent cache of leaf state. |
+| Leaf | `cmd/leaf` | Owns a disjoint pool of workers. Admits and queues requests per function, autoscales, places new sandboxes on its workers, and proxies requests to sandboxes. |
+| Worker | `cmd/worker` | Creates and stops sandboxes through a pluggable runtime and reports health, load, cached images, and sandbox state to its leaf. |
 
----
+Workers are never shared between leaves.
+Each leaf therefore schedules on a complete local view of its pool, and leaves never talk to each other.
+Detailed worker and sandbox state stays in the leaf; the ingress only receives aggregated per-leaf signals.
+Nothing is written to etcd on the invocation path.
 
-## Cold Starts
+### Invocation path
 
-Cold starts are resolved entirely at the leaf level. Ingress only selects the best leaf using cached routing hints (e.g., active capacity or cold instance flags) but does not buffer requests or orchestrate sandbox creation.
+1. The ingress reads the function id from the request, picks a leaf with the routing policy, and proxies the request to it. It never retries on another leaf.
+2. The leaf's per-function throttler leases a concurrency slot on a ready sandbox and proxies the request directly to the sandbox address. The worker server is not on this path.
+3. If no ready sandbox has a free slot, the request waits in a bounded FIFO queue. When the function has no ready sandbox, the leaf picks a worker with the placement policy and calls `CreateSandbox`.
+4. `CreateSandbox` blocks until the function calls `SignalReady` on the worker. Nothing polls the sandbox. The worker returns the sandbox address, and the leaf dispatches queued requests to it.
+5. When the queue is full, the leaf rejects the request with HTTP 429. When the request or cold-start timeout expires, it returns 504.
 
-When a synchronous request arrives at a leaf and no warm instance is available:
+A warm invocation touches only the ingress, the leaf, and the sandbox.
 
-1. The leaf dataplane enqueues the request in a local in-memory queue (a Knative-style breaker/throttler, bounded by `max_queue_depth` and `queue_timeout`).
-2. The leaf control plane invokes the worker runtime to provision a new container.
-3. Once the sandbox signals readiness, the queued requests compete for capacity via the same throttler/lease path as warm requests.
-4. If the cold start timeout is exceeded before a sandbox is ready, the request is rejected with a gateway error.
+### State propagation
 
-Neither the worker server nor the leaf poll sandboxes for readiness. All applications need to use the (very small) hyperfaas runtime SDK in their code to signal readiness.
-The runtime SDK simply sends a gRPC request to the worker server to signal readiness.
----
+| Stream | From → To | Content |
+|---|---|---|
+| `WatchFunctions` | control plane → leaves | Function create, update, and delete events. Every leaf caches all function specs. |
+| `WatchPlatformConfig` | control plane → ingresses, leaves | The active routing policy, placement policy, and state refresh interval. |
+| `WatchState` | worker → leaf | Health, schedulability, normalized load average, cached images, sandbox readiness, and in-flight counts. |
+| `WatchRoutingState` | leaf → ingress | Only the fields that the active routing policy needs: health always; aggregate in-flight, `leaf_load`, and per-function available concurrency on request. A full snapshot is sent first, then updates. |
 
-## Placement Schedulers
+Each ingress subscribes to every leaf.
+The routing request path reads the current picker through an atomic pointer and takes no lock.
 
-Leaves evaluate a pluggable placement policy per function when scaling up sandboxes:
+### Autoscaling and admission
 
-- **Balanced Round-Robin**: Spreads container starts sequentially across the workers assigned to the leaf, tracking instance count limits.
-- **Resource-Aware**: Scores workers using real-time host-level telemetry (CPU, memory, disk utilization) combined with the declared resource requests of the function. It schedules new placements onto the worker with the lowest projected resource pressure, balancing system load and preventing CPU starvation or OOM thrashing during intense cold start bursts.
+Every leaf runs one autoscaler per function, using only local signals.
+There is no global instance count: `min_instances` and `max_instances` apply per leaf.
 
----
+- `max_concurrency` is the hard per-sandbox request limit enforced by the throttler.
+- `target_concurrency` × `target_utilization` is the autoscaler's soft target. The desired sandbox count is `ceil(in-flight / target)`.
+- The autoscaler uses a Knative-style stable window and panic window. Scale-down only uses the stable window.
+- `start_tokens_per_worker` caps concurrent sandbox starts per worker. A worker at the cap is skipped by every placement policy until a start completes.
+- Idle functions scale to zero after `scale_to_zero_idle_timeout` (leaf default: `dataplane.scale_to_zero_after`).
 
-## Sandbox Runtimes
+## Policies
 
-HyperFaaS supports pluggable worker-level sandbox backends via the `Runtime` interface:
+Routing and placement policies are selected in the `PlatformConfig` document on the control plane and apply to the whole deployment.
+Changing the document reconfigures running ingresses and leaves without a restart.
+A fresh deployment starts with `availableCapacity` routing, `balancedRoundRobin` placement, and a 500 ms state refresh interval.
 
-- **Docker**: Launches container instances by invoking the local Docker daemon API. Each container is configured with resource limits (CPU and Memory) based on the function spec, uses the host bridge network, and publishes container port `50052` to a dynamic host port.
-- **RunC**: Launches containers using direct OCI/runc configurations. RunC containers enforce hard Memory limits and hard CPU limits via cgroup CFS bandwidth control (quota and period).
-- **Firecracker (Direct VM)**: Boots a dedicated microVM for each function instance. It builds a static binary of the function, packages it along with `firecracker-init` as PID 1 into an `initrd` (or rootfs ext4 image), and boots the VM with direct TAP networking. The function inside the VM binds to `50052` and signals readiness to the worker over the VM network interface.
-  - *Resource limits note:* Firecracker allocates CPU limits solely by assigning integer vCPU counts. Consequently, fine-grained fractional CPU allocations (e.g., 250 or 500 millicores) are rounded up to the nearest whole integer of vCPUs (minimum 1). Within the VM guest, the process has full access to the allocated vCPU threads without CFS bandwidth limits on the host unless jailer/cgroups are externally configured. currently we dont support that configuration.
+### Ingress routing
 
-### Function Filesystem Isolation
+| Policy | Config key | Inputs |
+|---|---|---|
+| Round-robin | `roundRobin` | Leaf health |
+| Random | `random` | Leaf health |
+| Least-loaded | `leastLoaded` | Aggregate in-flight per leaf |
+| Consistent hashing | `consistentHashing` | Function id, leaf health |
+| CH with bounded loads | `boundedLoads` | Function id, `leaf_load` |
+| Random-jump CH | `rjCh` | Function id, `leaf_load` |
+| CH with random load updates | `chRlu` | Function id, `leaf_load`, sampled inter-arrival times |
+| Available capacity | `availableCapacity` | Available concurrency per function per leaf |
 
-Function filesystem access is isolated by the selected sandbox backend, but the isolation strength differs by runtime:
+`leaf_load` is the highest normalized 1-minute load average among a leaf's workers.
 
-- **Docker** uses Docker's standard container filesystem isolation. The function sees the container image filesystem, not the host root filesystem.
-- **RunC** creates a per-instance root filesystem under the worker runtime directory and starts the function with that directory as `/`. A function launched from a single executable artifact receives a rootfs containing `/function`; a directory artifact is copied as the full instance rootfs and must contain an executable `/function` wrapper. The function can write inside its own copied rootfs because the root is currently mounted read-write.
-- **Firecracker** provides stronger filesystem isolation by running the function inside a dedicated microVM using the configured initrd or rootfs image.
+### Leaf placement
 
-RunC filesystem isolation uses Linux namespaces and cgroups, not VM-level isolation. Functions run as UID 0 inside the container with a limited capability set, `noNewPrivileges`, masked `/proc` paths, and read-only kernel/system paths. They cannot directly see the host filesystem unless it is included in the artifact/rootfs or explicitly mounted, but sensitive files included in an artifact are visible to the function.
+| Policy | Config key | Chooses the worker with |
+|---|---|---|
+| Balanced round-robin | `balancedRoundRobin` | The next schedulable worker in rotation |
+| Resource-aware | `resourceAware` | The lowest normalized CPU load average |
+| Cold-start-aware | `coldStartAware` | The fewest in-flight sandbox starts |
+| Reservation-aware | `reservationAware` | Fewer active plus pending sandboxes among two random workers |
+| Image-aware | `imageAware` | The function image already in its local cache |
+| Bounded loads | `boundedLoads` | Consistent hash of the function, skipping workers above the load bound |
 
-### Sandbox Pool Ideas (Agnostic vs Image-Dependent)
+### Switching policies
 
-Pooling here means reusing **infrastructure artifacts** to shorten cold-start creation — not keeping pre-warmed function instances alive. Instance pools (sandboxes already serving traffic) are a separate scale-to-zero / capacity policy.
+```bash
+curl -X PUT http://127.0.0.1:8081/v1/platform/config \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "config": {
+          "routing":   {"boundedLoads": {"bound": 1.0}},
+          "placement": {"coldStartAware": {}},
+          "stateRefreshInterval": "0.5s"
+        },
+        "expectedVersion": 0
+      }'
+```
 
-**Image-agnostic pools** apply to every cold start regardless of function image. Size is fixed per worker; cost does not grow with the number of registered functions.
+With `expectedVersion: 0` the write is unconditional; a non-zero value rejects the write unless the stored document has that version (read it with `GET /v1/platform/config`).
+To add a new policy, see [docs/ADDING_ROUTING_AND_PLACEMENT_POLICIES.md](docs/ADDING_ROUTING_AND_PLACEMENT_POLICIES.md).
 
-| Pool | What it caches | Notes |
-|------|----------------|-------|
-| CNI network namespace | Pre-created netns + veth/IP | Skips CNI setup on the hot path; needs background refill under burst |
-| Host port | Pre-allocated DNAT ports | Avoids port-allocation races when netns pooling is enabled |
-| Async teardown | Non-blocking stop/delete | Returns pooled resources faster; pairs with the pools above |
+## Sandbox runtimes
 
-These are the primary levers for platforms with thousands of distinct images.
+Each worker selects one runtime with `runtime.type` in its config.
 
-**Image-dependent caching** reuses work specific to one function image. It does not scale if every image is pre-provisioned on every worker.
+| Runtime | `runtime.type` | Function image | Notes |
+|---|---|---|---|
+| containerd | `containerd` | OCI image reference | CNI networking. Optional network namespace pool (`use_pool`), async teardown, single-flight image pulls, and image prefetch. |
+| Firecracker | `firecracker` | Path to an ext4 rootfs or initrd on the worker | Pool of pre-created networks with non-blocking refill, and optional snapshot restore (`use_snapshots`). Downloads missing boot images from `artifacts_bucket` if set. vCPUs are whole numbers, so fractional CPU requests round up. |
+| Docker | `docker` | Docker image name | Used by the local development cluster. |
+| runc | `runc` | Executable or rootfs directory | Direct OCI runtime with cgroup CPU and memory limits. |
+| fake | `fake` | Any string | In-process sandboxes for large local topologies and tests. |
 
-| Mechanism | What it caches | Scalability |
-|-----------|----------------|-------------|
-| Image pull dedup (`single_flight_pull`) | One in-flight pull per image ref | Essential for cold storms on a single image |
-| Image prefetch | Layers in the local content store at worker boot | Useful for known-hot images only |
-| Snapshot pool | Pre-created containerd writable snapshot | Viable for a **small hot set** per worker; not for all functions |
+Build Firecracker boot images from a function package with `scripts/build-firecracker-rootfs.sh` or `scripts/build-firecracker-initrd.sh`; the initrd uses `cmd/firecracker-init` as PID 1.
 
-Containerd already deduplicates **read-only image layers** in the content store. The expensive part under burst is usually creating the writable snapshot, container, task, and network plumbing — not storing another full copy of the image.
+## Writing a function
 
-**Tiered strategy for many functions:**
+A function is a normal HTTP or gRPC server that follows this contract:
+
+- read `FUNCTION_PORT` (default `50052`), `CONTROLLER_ADDRESS`, `INSTANCE_ID`, and `FUNCTION_ID` from the environment,
+- listen on `0.0.0.0:$FUNCTION_PORT`,
+- call `hyperfaas.SandboxService/SignalReady` on the worker once it is ready to serve.
+
+The runtime libraries do the last two steps. In Go:
+
+```go
+func main() {
+	fn := functionruntime.NewHTTP()
+	fn.Ready(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Write(body)
+	}))
+}
+```
+
+Runtime libraries exist for Go (`pkg/functionruntime`), Node.js, Python, and Rust (`functions/<lang>/runtime`).
+Example functions are in `functions/`, and `docker/<lang>-function.Dockerfile` builds their images.
+See [functions/README.md](functions/README.md) for language versions.
+
+## Running locally
+
+Requirements: Go, Docker, [`just`](https://github.com/casey/just), and `curl`.
+
+```bash
+just start      # etcd (Docker), control plane, 1 worker (Docker runtime), 1 leaf, 1 ingress
+just stop
+```
+
+`just start` builds the binaries into `bin/`, builds the `echo-http`, `echo-grpc`, and `sleep-http` images, and writes logs to `.run/logs/`.
+
+| Endpoint | Address |
+|---|---|
+| Control plane HTTP API | `127.0.0.1:8081` |
+| Control plane gRPC | `127.0.0.1:50054` |
+| Ingress HTTP | `127.0.0.1:8080` |
+| Ingress gRPC proxy | `127.0.0.1:50055` |
+
+Register a user and a function, then invoke it:
+
+```bash
+curl -X POST http://127.0.0.1:8081/v1/users -d '{"name": "alice"}'
+# -> {"userId": "1", "name": "alice"}
+
+curl -X POST http://127.0.0.1:8081/v1/users/1/functions -d '{
+  "runtime": {"image": "echo-http", "protocol": "http", "isolation": "ISOLATION_KIND_DOCKER"},
+  "scale":   {"maxInstances": "5", "maxConcurrency": "1",
+              "scaleToZeroIdleTimeout": "30s", "coldStartTimeout": "45s", "requestTimeout": "30s"}
+}'
+# -> {"userId": "1", "functionId": "1", ...}
+
+curl -X POST http://127.0.0.1:8080/invoke \
+  -H 'X-HyperFaaS-User-ID: 1' -H 'X-HyperFaaS-Function-ID: 1' \
+  -d 'hello'
+```
+
+HTTP invocations are `POST /invoke` with the user and function ids in headers.
+gRPC clients call their own service through the ingress gRPC proxy and select the function with the `x-hyperfaas-function-id` metadata key, or with the function id as the host part of `:authority`.
+
+The API also provides `GET`, `PUT`, and `DELETE` on `/v1/users/{user_id}` and `/v1/users/{user_id}/functions/{function_id}`.
+
+### Larger topologies without sandboxes
+
+```bash
+just start-big-fake   # 4 leaves × 10 workers with the fake runtime
+HYPERFAAS_FAKE_LEAVES=8 HYPERFAAS_FAKE_WORKERS_PER_LEAF=16 just start-big-fake
+```
+
+Set `HYPERFAAS_FAKE_SIMULATE_START_LATENCY=1` for heavy-tailed sandbox start delays, and `HYPERFAAS_FAKE_LEAF_ROUTING_POLICY` to publish a routing policy at startup.
+
+## Configuration
+
+Each binary takes `-config <file>`; the defaults for the local cluster are in `configs/`.
+
+- `ingress.yaml`: listen addresses and the static list of leaves, including the ingress-to-leaf transport (`h2c` by default).
+- `leaf.yaml`: the leaf's worker list and the dataplane and autoscaling settings (queue, start tokens, timeouts, reconcile interval, target utilization).
+- `worker.yaml`: the sandbox runtime and its settings.
+- `controlplane.yaml`: etcd endpoints and API addresses.
+
+Leaf membership and worker pools are static; adding or removing leaves and workers requires a restart.
+Policies are not configured in YAML; they come from the `PlatformConfig` document.
+
+## Testing
+
+| Command | What it runs |
+|---|---|
+| `go test ./...` | Unit tests |
+| `just test-leaf-integration-docker`, `just test-worker-integration` | Docker-backed integration tests |
+| `just test-worker-integration-firecracker` | Firecracker runtime integration tests (needs KVM) |
+| `just test-dst` | Seeded end-to-end workload against a running cluster (`just start` or `just start-big-fake`), ending with a scale-to-zero check |
+| `just test-dst-sticky`, `just test-dst-chbl` | End-to-end checks for consistent-hashing, image-aware, and bounded-loads policies on a fake cluster |
+| `just load-local [sustained\|bursty\|skewed\|increasing]` | Load generator against a running cluster, compared with the checked-in baseline |
+| `just policy-cost` | State size, decision cost, and update cost of every routing and placement policy |
+
+`just test-dst` is configured through `HYPERFAAS_DST_*` environment variables (users, functions, invokes, RPS, images, seed); see `test/shared/config.go`.
+
+## Repository layout
 
 ```text
-Tier 0 (global, fixed):     netns pool, port pool, async teardown
-Tier 1 (per worker, LRU):   recently used images in local content store
-Tier 2 (per image, tiny):   0–2 snapshot slots only while image is in Tier 1
-Tier 3 (cold):              on-demand create; pull + snapshot + start
+cmd/            binaries: controlplane, ingress, leaf, worker, firecracker-init, pool-loadtest
+pkg/controlplane  HTTP and gRPC API, etcd and in-memory stores, PlatformConfig
+pkg/ingress       HTTP and gRPC proxies, routing controller and policies (routing/)
+pkg/leaf          dataplane (throttler, queue), autoscaling, placement schedulers, worker client
+pkg/worker        worker server, health reporting, runtimes (runtime/)
+pkg/functionruntime  Go function runtime library
+pkg/core          shared protobuf types and validation
+proto/          protobuf definitions (regenerate with `just gen-proto`)
+functions/      example functions and runtime libraries for Go, Node.js, Python, Rust
+test/           end-to-end (dst/) and performance (perf/) tests
+docs/           design notes and measurement results
 ```
-
-For multi-image workloads, combine Tier 0 with **scheduling for image locality** (prefer workers that already pulled image *X*) rather than pre-snapshotting every function. Snapshot pooling is a micro-optimization for hot images on a given node, not a platform-wide pre-warm of all registered functions.
-
----
-
-## Routing State & Delta Dissemination
-
-Leaves stream real-time capacity and state updates to Ingress nodes. To minimize network overhead, updates are dispatched as **deltas**: only function entries with changed metrics (such as active/in-flight counts) are transmitted. Ingress merges these delta updates into its local, in-memory routing cache. Complete snapshots are fetched only during bootstrap or recovery.
-
----
-
-## Scaling Limits & Decentralized Autoscaling
-
-Autoscaling is completely decentralized. Leaf nodes scale up and down independently based on local demand and queue signals, operating under per-leaf instance limits. HyperFaaS deliberately avoids a centralized, global view of instance counts to prevent routing bottlenecks.
-
-The leaf scales from admitted execution plus queued demand. Lifecycle decisions
-include pending starts and pending stops, so worker removal updates cannot apply
-the same downscale twice. Optional sustained CPU and memory rejection is disabled
-by default and can be enabled only for functions configured to reject overload.
-See [admission and scaling experiment profiles](docs/admission-scaling-experiments.md).
-
----
-
-## Deterministic Simulation Testing (DST)
-
-HyperFaaS includes black-box DST tests under `test/dst` that drive a locally running cluster (control plane, ingress, leaf, worker) to validate correctness, scheduling edge cases, and scale-to-zero.
-
-### Clusters
-
-**Docker (1 leaf × 1 worker)** — default local path; uses the real Docker runtime and `echo-http` / `echo-grpc` images:
-
-```bash
-just stop && just start && just test-dst
-```
-
-**Fake multi-node** — in-process worker runtime (`runtime.type: fake`) with echo/sleep images (same image strings; no Docker sandboxes). Default topology is **4 leaves × 10 workers**:
-
-```bash
-just stop && just start-big-fake && just test-dst
-# optional topology / slow CreateSandbox:
-# HYPERFAAS_FAKE_LEAVES=1 HYPERFAAS_FAKE_WORKERS_PER_LEAF=8 \
-#   HYPERFAAS_FAKE_SIMULATE_START_LATENCY=1 just start-big-fake
-```
-
-`just test-dst` auto-sources `.run/fake-cluster/env.sh` when present (worker address list for scale-to-zero checks). `just stop` tears down both topologies.
-
-### Tests
-
-- **Full Workload** (`TestDSTFullWorkload`): seeded concurrent user/function create, update, and invoke plan over a time window, then quiesce and assert scale-to-zero across all configured workers.
-- **Lifecycle** (`TestDSTLifecycle`): create → HTTP/gRPC invoke → update → delete smoke path.
-
-Defaults: 5 users × 3 functions × 1500 invokes over 60s (`MaxConcurrency=0`, `MaxInstances=5`). One client goroutine per planned op.
-
-### Useful knobs
-
-| Variable | Role |
-|----------|------|
-| `HYPERFAAS_DST_RPS` | Size invoke count for ~RPS over `HYPERFAAS_DST_WORKLOAD_DURATION` |
-| `HYPERFAAS_DST_HTTP_IMAGE` / `_GRPC_IMAGE` | e.g. `sleep-http` for slow HTTP invokes |
-| `HYPERFAAS_DST_MAX_CONCURRENCY` / `_MAX_INSTANCES` | Per-function scale policy (default CC=0 / instances=5) |
-| `HYPERFAAS_DST_USERS`, `_FUNCTIONS_PER_USER`, `_INVOKES_PER_FUNCTION`, `_SEED`, … | Workload shape |
-| `HYPERFAAS_FAKE_SIMULATE_START_LATENCY` | Heavy-tailed CreateSandbox delay (p50≈100ms, p90≈3s, p99≈20s) on fake workers |
-| `HYPERFAAS_WORKER_GRPC` | Comma-separated worker list (set automatically by `start-big-fake`) |
