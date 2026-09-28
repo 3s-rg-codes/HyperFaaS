@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package hyperfaas;
+
+service SandboxService {
+  rpc SignalReady(SignalReadyRequest) returns (SignalReadyResponse);
+}
+
+message SignalReadyRequest {
+  uint64 instance_id = 1;
+}
+
+message SignalReadyResponse {}

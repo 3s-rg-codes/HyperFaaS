@@ -1,0 +1,31 @@
+node_id: ingress-1
+
+logging:
+  level: info
+  format: text
+
+server:
+  http_address: "0.0.0.0:8080"
+  grpc_proxy_address: "0.0.0.0:50055"
+  pprof_address: "0.0.0.0:6061"
+
+controlplane:
+  address: "localhost:50054"
+  dial_timeout: 5s
+
+leaves:
+  - id: 1
+    invocation_address: "localhost:50050"
+    http_invocation_address: "localhost:50051"
+    grpc_proxy_address: "localhost:50053"
+
+routing:
+  # Ingress-to-leaf invocation transport.
+  # h2c (default) | http1 | http1-nokeepalive. The HTTP/1.1 arms are
+  # experiment-only and compare the multiplexed-stream hop against the
+  # per-connection model used by a conventional L7 proxy.
+  leaf_transport: h2c
+  # Reconnect backoff after a leaf routing-state watch fails.
+  state_sync_interval: 5s
+  # The routing policy itself is not configured here: it comes from the
+  # control-plane PlatformConfig document and can be changed at runtime.

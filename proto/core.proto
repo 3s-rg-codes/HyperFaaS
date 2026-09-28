@@ -1,0 +1,361 @@
+syntax = "proto3";
+
+package hyperfaas;
+
+option go_package = "hyperfaas-ideal-arch/pkg/core";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+enum IsolationKind {
+  ISOLATION_KIND_UNSPECIFIED = 0;
+  ISOLATION_KIND_DOCKER = 1;
+  ISOLATION_KIND_CONTAINERD = 2;
+  ISOLATION_KIND_FIRECRACKER = 3;
+  ISOLATION_KIND_FAKE = 4;
+}
+
+enum CapacityStatus {
+  CAPACITY_STATUS_UNSPECIFIED = 0;
+  CAPACITY_STATUS_AVAILABLE = 1;
+  CAPACITY_STATUS_COLD = 2;
+  CAPACITY_STATUS_SATURATED = 3;
+  CAPACITY_STATUS_UNKNOWN = 4;
+}
+
+enum FunctionEventType {
+  FUNCTION_EVENT_TYPE_UNSPECIFIED = 0;
+  FUNCTION_EVENT_TYPE_CREATED = 1;
+  FUNCTION_EVENT_TYPE_UPDATED = 2;
+  FUNCTION_EVENT_TYPE_DELETED = 3;
+}
+
+message UserSpec {
+  uint64 user_id = 1;
+  string name = 2;
+}
+
+message ResourceSpec {
+  uint64 cpu_units = 1;
+  uint64 memory_bytes = 2;
+  uint64 disk_bytes = 3;
+}
+
+message ResourceUsage {
+  uint64 cpu_units = 1;
+  uint64 memory_bytes = 2;
+  uint64 disk_bytes = 3;
+}
+
+message RuntimeSpec {
+  string image = 1;
+  repeated string command = 2;
+  repeated string args = 3;
+  map<string, string> env = 4;
+  IsolationKind isolation = 5;
+  ResourceSpec resources = 6;
+  // Maximum time the function instance may run once invoked.
+  google.protobuf.Duration execution_timeout = 7;
+  string protocol = 8;
+}
+
+message ScalePolicySpec {
+  // Per-leaf limits; there is no global instance count across leaves.
+  uint64 min_instances = 1;
+  uint64 max_instances = 2;
+  // Soft autoscaler setpoint (Knative autoscaling.knative.dev/target).
+  // 0 means unset: use max_concurrency if > 0, else the leaf unlimited_concurrency_target.
+  // Does not cap the dataplane breaker.
+  uint64 target_concurrency = 3;
+  // Hard per-instance request cap. 0 selects the finite platform default.
+  uint64 max_concurrency = 4;
+  google.protobuf.Duration scale_to_zero_idle_timeout = 5;
+  // Maximum time the leaf waits for a sandbox to become ready during a cold start.
+  google.protobuf.Duration cold_start_timeout = 6;
+  // Maximum end-to-end client wait inside HyperFaaS (routing, queueing, cold start, execution).
+  google.protobuf.Duration request_timeout = 15;
+  uint64 max_concurrent_cold_starts = 7;
+  uint64 max_queue_depth = 8;
+  google.protobuf.Duration queue_timeout = 9;
+  // 10-14 were the transitional per-function policy name fields
+  // (autoscaling_policy_name, placement_policy_name, leaf_routing_policy_name).
+  // Policies are global and live in PlatformConfig; there is no back-compat
+  // requirement, so the numbers are not reserved.
+}
+
+message FunctionSpec {
+  uint64 user_id = 1;
+  uint64 function_id = 2;
+  RuntimeSpec runtime = 3;
+  ScalePolicySpec scale = 4;
+}
+
+message FunctionEvent {
+  FunctionEventType type = 1;
+  FunctionSpec function = 2;
+  // Maybe clock skew could introduce a bug here? Revise later.
+  google.protobuf.Timestamp observed_at = 3;
+}
+
+message InstanceState {
+  uint64 instance_id = 1;
+  uint64 function_id = 2;
+  uint64 worker_id = 3;
+  string address = 4;
+  string protocol = 5;
+  bool ready = 6;
+  bool stopping = 7;
+  uint64 in_flight = 8;
+  uint64 available_concurrency = 9;
+  uint64 max_concurrency = 10;
+  google.protobuf.Timestamp started_at = 11;
+  google.protobuf.Timestamp last_used_at = 12;
+  ResourceUsage usage = 13;
+  // Worker-local sandbox state revision at which this instance was registered.
+  uint64 worker_state_revision = 14;
+}
+
+message WorkerState {
+  uint64 worker_id = 1;
+  bool schedulable = 2;
+  bool healthy = 3;
+  ResourceSpec capacity = 4;
+  ResourceUsage allocated = 5;
+  uint64 instances = 6;
+  uint32 cold_starts_in_flight = 7;
+  repeated InstanceState sandbox_states = 8;
+  // Local image cache visible to placement. Prefer digest for matching when set.
+  repeated CachedImage cached_images = 9;
+  // 1-minute Linux load average divided by CPU count (Fuerst CH-BL).
+  double load_average_norm = 10;
+  // Monotonic worker-local revision for the sandbox_states identity snapshot.
+  uint64 sandbox_revision = 11;
+}
+
+// SandboxRemoved is a low-latency eviction hint streamed from a worker to its
+// owning leaf when a sandbox leaves the worker outside the leaf's normal
+// StopSandbox path (crash, OOM kill, external container removal).
+//
+// The event path is best-effort and O(1) per removal. The periodic, revisioned
+// WorkerState snapshot remains the authoritative anti-entropy source: if an
+// event is dropped, the next snapshot still converges the leaf's view.
+message SandboxRemoved {
+  uint64 instance_id = 1;
+  uint64 function_id = 2;
+  // Worker-local sandbox revision after the instance left the sandbox map. The
+  // leaf only evicts a tracked instance whose create revision is not newer.
+  uint64 worker_revision = 3;
+}
+
+// CachedImage is one prepared/pulled image on a worker.
+message CachedImage {
+  // Image reference as requested (tag, name, or digest form).
+  string image = 1;
+  // Content digest when known (e.g. "sha256:..."). Preferred match key for placement.
+  string digest = 2;
+  uint64 size_bytes = 3;
+  google.protobuf.Timestamp cached_at = 4;
+}
+
+message FunctionCapacity {
+  uint64 function_id = 1;
+  uint32 ready_instances = 2;
+  uint64 available_concurrency = 3;
+  uint64 in_flight = 4;
+  // Maybe useful in the future for smarter leaf routing. Unused initially.
+  uint64 queue_depth = 5;
+  uint32 cold_starts_in_flight = 6;
+  // Maybe useful in the future for smarter leaf routing. Unused initially.
+  google.protobuf.Duration ewm_latency = 7;
+  // Maybe useful in the future for smarter leaf routing. Unused initially.
+  double error_rate = 8;
+  CapacityStatus status = 9;
+  google.protobuf.Timestamp observed_at = 10;
+  // True when the function was deleted on this leaf; subscribers should treat it as a tombstone.
+  bool deleted = 11;
+}
+
+// Full per-leaf routing view. Diagnostic only: used by tooling and tests for
+// snapshots and bootstrap, not for steady-state fan-out. Steady-state routing
+// uses leaf.proto RoutingStateFrame.
+message LeafState {
+  uint64 leaf_id = 1;
+  bool healthy = 2;
+  repeated FunctionCapacity functions = 3;
+  google.protobuf.Timestamp observed_at = 4;
+  // Maybe clock skew could introduce a bug here? Revise later.
+  google.protobuf.Timestamp update_time = 5;
+  // max(worker.load_average_norm) on this leaf. Ingress CH-BL uses this scalar;
+  // ingress must not store a per-worker vector.
+  double leaf_load = 6;
+}
+
+// Routing state is published through leaf.proto RoutingStateFrame, which
+// carries an explicit projection and a configuration version.
+// See docs/DYNAMIC_POLICY_STATE_GATING_DESIGN.md.
+
+message PlacementDecision {
+  uint64 worker_id = 1;
+  string reason = 2;
+  double score = 3;
+}
+
+message ScaleDemand {
+  uint64 function_id = 1;
+  uint64 desired_instances = 2;
+  int64 delta = 3;
+  string reason = 4;
+  uint64 max_concurrent_starts = 5;
+}
+
+message ScaleState {
+  uint64 function_id = 1;
+  uint32 ready_instances = 2;
+  uint64 desired_instances = 3;
+  uint64 in_flight = 4;
+  // Maybe useful in the future for autoscaling experiments. Unused initially.
+  uint64 queue_depth = 5;
+  uint32 cold_starts_in_flight = 6;
+  uint64 available_concurrency = 7;
+  double requests_per_second = 8;
+  // Maybe useful in the future for autoscaling experiments. Unused initially.
+  google.protobuf.Duration ewm_latency = 9;
+  // Maybe useful in the future for autoscaling experiments. Unused initially.
+  double error_rate = 10;
+  google.protobuf.Timestamp observed_at = 11;
+}
+
+message ScaleDecision {
+  uint64 function_id = 1;
+  uint64 desired_instances = 2;
+  string reason = 3;
+  bool stable = 4;
+}
+
+message PreparedArtifact {
+  uint64 function_id = 1;
+  string image = 2;
+  string snapshot_id = 3;
+}
+
+message StartSandboxRequest {
+  FunctionSpec function = 1;
+  PreparedArtifact artifact = 2;
+  uint64 worker_id = 3;
+  uint64 instance_id = 4;
+}
+
+// PlatformConfig is the dynamic policy configuration for one HyperFaaS
+// deployment. Static topology (addresses, ports, file paths) stays in each
+// component's YAML file; only policy selection and policy knobs live here, so
+// they can change while the cluster is running.
+//
+// The control plane stores a single document per deployment and streams every
+// version to all components through WatchPlatformConfig. Components must treat
+// a received document as immutable and swap their active policy atomically.
+message PlatformConfig {
+  // Monotonic version assigned by the store on every write. Components ignore
+  // versions they have already applied, which makes reconnects and duplicate
+  // watch events idempotent.
+  uint64 version = 1;
+  RoutingPolicyConfig routing = 2;
+  PlacementPolicyConfig placement = 3;
+  // field 4 was an unused AutoscalingPolicyConfig; removed. Autoscaling knobs
+  // are static per leaf (LeafConfig.Autoscaling), not part of this document.
+  reserved 4;
+  // How often a component emits a state frame even when no gated field changed.
+  // It bounds how stale scalar signals (leaf load, aggregate in-flight) can
+  // become between capacity changes. Zero selects the built-in default.
+  google.protobuf.Duration state_refresh_interval = 5;
+}
+
+// RoutingPolicyConfig selects exactly one routing policy. Each policy message
+// carries only the settings that policy uses, so there are no unrelated
+// optional fields that a policy might accidentally read.
+message RoutingPolicyConfig {
+  oneof policy {
+    RandomRoutingPolicy random = 1;
+    RoundRobinRoutingPolicy round_robin = 2;
+    ConsistentHashingRoutingPolicy consistent_hashing = 3;
+    BoundedLoadsRoutingPolicy bounded_loads = 4;
+    LeastLoadedRoutingPolicy least_loaded = 5;
+    AvailableCapacityRoutingPolicy available_capacity = 6;
+    RandomJumpRoutingPolicy rj_ch = 7;
+    CHRLURoutingPolicy ch_rlu = 8;
+  }
+}
+
+// The empty messages below select a policy that has no settings of its own.
+message RandomRoutingPolicy {}
+message RoundRobinRoutingPolicy {}
+message ConsistentHashingRoutingPolicy {}
+message LeastLoadedRoutingPolicy {}
+message AvailableCapacityRoutingPolicy {}
+
+message BoundedLoadsRoutingPolicy {
+  // Absolute normalized 1-minute load-average bound. Zero selects the default.
+  double bound = 1;
+  // Maximum ring forwarding chain length. Zero selects the default.
+  int32 max_chain_len = 2;
+}
+
+message RandomJumpRoutingPolicy {
+  // Absolute normalized 1-minute load-average bound. Zero selects the default.
+  double bound = 1;
+  // Maximum number of random jumps after the home leaf. Zero selects the default.
+  int32 max_jumps = 2;
+}
+
+message CHRLURoutingPolicy {
+  // Base load bound b and maximum forwarding chain length.
+  double bound = 1;
+  int32 max_chain_len = 2;
+  // Cap on b*c/w. Zero selects the default of 6.
+  double max_bound = 3;
+  // Optional cold and warm execution-time estimates in milliseconds. When
+  // either is missing, c=w and the effective bound is b.
+  double cold_time_ms = 4;
+  double warm_time_ms = 5;
+  // Spatial sample percentage and popular IAT threshold in milliseconds.
+  // Zero selects 20% and 1000 ms respectively.
+  uint32 sample_percent = 6;
+  double popular_iat_ms = 7;
+  // Gaussian standard deviation. Zero selects 0.1.
+  double noise_stddev = 8;
+  // Optional per-function latency estimates override the policy-wide times.
+  repeated FunctionLatencyEstimate latency_estimates = 9;
+  // Expected routing-state refresh interval; zero selects 500 ms.
+  double heartbeat_seconds = 10;
+}
+
+message FunctionLatencyEstimate {
+  uint64 function_id = 1;
+  double cold_time_ms = 2;
+  double warm_time_ms = 3;
+}
+
+// PlacementPolicyConfig selects exactly one worker-placement policy. Placement
+// is global for the deployment on purpose: per-function placement would force
+// every leaf to keep the union of all placement signals, which defeats state
+// gating.
+message PlacementPolicyConfig {
+  oneof policy {
+    BalancedRoundRobinPlacement balanced_round_robin = 1;
+    ResourceAwarePlacement resource_aware = 2;
+    ColdStartAwarePlacement cold_start_aware = 3;
+    ReservationAwarePlacement reservation_aware = 4;
+    ImageAwarePlacement image_aware = 5;
+    BoundedLoadsPlacement bounded_loads = 6;
+  }
+}
+
+message BalancedRoundRobinPlacement {}
+message ResourceAwarePlacement {}
+message ColdStartAwarePlacement {}
+message ReservationAwarePlacement {}
+message ImageAwarePlacement {}
+
+message BoundedLoadsPlacement {
+  double bound = 1;
+  int32 max_chain_len = 2;
+}

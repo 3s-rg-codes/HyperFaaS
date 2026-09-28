@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package sim.echo.v1;
+
+option go_package = "hyperfaas-ideal-arch/functions/echo-grpc/pb";
+
+message EchoRequest {
+  bytes data = 1;
+}
+
+message EchoResponse {
+  bytes data = 1;
+  bool cold = 2;
+}
+
+service Echo {
+  rpc Echo(EchoRequest) returns (EchoResponse);
+}

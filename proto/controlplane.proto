@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package hyperfaas;
+
+option go_package = "hyperfaas-ideal-arch/pkg/controlplane";
+
+import "core.proto";
+
+service FunctionService {
+  rpc CreateFunction(CreateFunctionRequest) returns (CreateFunctionResponse);
+  rpc UpdateFunction(UpdateFunctionRequest) returns (UpdateFunctionResponse);
+  rpc DeleteFunction(DeleteFunctionRequest) returns (DeleteFunctionResponse);
+  rpc GetFunction(GetFunctionRequest) returns (GetFunctionResponse);
+  rpc ListFunctions(ListFunctionsRequest) returns (ListFunctionsResponse);
+  rpc WatchFunctions(WatchFunctionsRequest) returns (stream FunctionEvent);
+}
+
+service UserService {
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+}
+
+// ConfigService distributes the dynamic platform configuration. It is separate
+// from the function and user APIs because it controls how the platform behaves
+// (routing, placement), not what is deployed on it.
+service ConfigService {
+  // GetPlatformConfig returns the current document. Components call it once at
+  // bootstrap so they do not depend on a watch event for the initial value.
+  rpc GetPlatformConfig(GetPlatformConfigRequest) returns (GetPlatformConfigResponse);
+  // PutPlatformConfig stores a new document, assigns it a monotonic version,
+  // and fans it out to every WatchPlatformConfig stream.
+  rpc PutPlatformConfig(PutPlatformConfigRequest) returns (PutPlatformConfigResponse);
+  // WatchPlatformConfig streams the current document (if any) followed by
+  // every later version.
+  rpc WatchPlatformConfig(WatchPlatformConfigRequest) returns (stream PlatformConfig);
+}
+
+message CreateFunctionRequest { FunctionSpec function = 1; }
+message CreateFunctionResponse {}
+
+message UpdateFunctionRequest { FunctionSpec function = 1; }
+message UpdateFunctionResponse {}
+
+message DeleteFunctionRequest {
+  uint64 user_id = 1;
+  uint64 function_id = 2;
+}
+message DeleteFunctionResponse {}
+
+message GetFunctionRequest {
+  uint64 user_id = 1;
+  uint64 function_id = 2;
+}
+message GetFunctionResponse { FunctionSpec function = 1; }
+
+message ListFunctionsRequest { uint64 user_id = 1; }
+message ListFunctionsResponse { repeated FunctionSpec functions = 1; }
+
+message WatchFunctionsRequest {}
+
+message GetPlatformConfigRequest {}
+message GetPlatformConfigResponse { PlatformConfig config = 1; }
+
+message PutPlatformConfigRequest {
+  PlatformConfig config = 1;
+  // Optimistic concurrency. When non-zero the write is rejected unless the
+  // stored document has exactly this version. Zero writes unconditionally.
+  uint64 expected_version = 2;
+}
+message PutPlatformConfigResponse { PlatformConfig config = 1; }
+
+message WatchPlatformConfigRequest {}
+
+message CreateUserRequest { UserSpec user = 1; }
+message CreateUserResponse {}
+
+message UpdateUserRequest { UserSpec user = 1; }
+message UpdateUserResponse {}
+
+message DeleteUserRequest { uint64 user_id = 1; }
+message DeleteUserResponse {}
+
+message GetUserRequest { uint64 user_id = 1; }
+message GetUserResponse { UserSpec user = 1; }
+
+message ListUsersRequest {}
+message ListUsersResponse { repeated UserSpec users = 1; }
