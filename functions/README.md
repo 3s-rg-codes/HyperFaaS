@@ -1,18 +1,16 @@
-# HyperFaaS Functions
+# Function Runtimes
 
-This directory contains different images of simple functions.
-Currently, if you want to create a new function, just copy-paste one of the existing functions and modify it.
+Function examples are grouped by implementation language:
 
-As there is no trivial way to build the containers, run/look at the justfile for instructions on how to build them.
+- `go`: Go 1.26.3, using `pkg/functionruntime`.
+- `node`: Node.js 22.x, using `functions/node/runtime` with `@grpc/grpc-js` 1.14.x and `@grpc/proto-loader` 0.8.x.
+- `python`: Python 3.13.x, using `functions/python/runtime` with `grpcio` 1.76.0 and `protobuf` 6.33.1.
+- `rust`: Rust 1.87, edition 2024, using `functions/rust/runtime` with `hyper` 1.8 and `tonic` 0.13.
 
-# Go Functions
+All runtimes follow the same contract:
 
-Every subfolder of the `go` directory is a separate function. 
-You can generate the image by running `just build-function-go <function-name>`, just make sure to generate the .pb.go files first by running `just gen-function-protos`.
+- Read `CONTROLLER_ADDRESS`, `INSTANCE_ID`, `FUNCTION_ID`, and `FUNCTION_PORT`.
+- Listen on `0.0.0.0:$FUNCTION_PORT`, defaulting to `50052`.
+- Signal readiness through `hyperfaas.SandboxService/SignalReady`.
 
-## How it works internally
-
-The Go functions are part of the main HyperFaaS module (for our convenience when developing). This means that building the images is not trivial, however.
-Every function needs to have a `main.go` file with the default main instanceStateMap. Everything else in the corresponding instanceStateMap directory will be copied as well during the build process.
-
-If you want to understand how 
+For runc, `runtime.image` may be either a single executable file or a prepared rootfs directory. Directory artifacts must contain an executable `/function` wrapper. The Python and Node examples use this minimal wrapper approach and expect the artifact rootfs to contain the matching interpreter and dependencies.

@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+import sys
+
+sys.path.insert(0, "/runtime")
+sys.path.insert(0, "/")
+
+import main
+
+main.ready(main.EchoHandler)

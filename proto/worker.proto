@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package hyperfaas;
+
+option go_package = "hyperfaas-ideal-arch/pkg/workerpb";
+
+import "core.proto";
+
+service SandboxService {
+  rpc PrepareImage(PrepareImageRequest) returns (PreparedArtifact);
+  rpc CreateSandbox(CreateSandboxRequest) returns (InstanceState);
+  rpc StopSandbox(StopSandboxRequest) returns (StopSandboxResponse);
+  rpc ListSandboxes(ListSandboxesRequest) returns (ListSandboxesResponse);
+  rpc SignalReady(SignalReadyRequest) returns (SignalReadyResponse);
+  // Diagnostic full snapshot of one worker. It is ungated and not used by the
+  // placement path; placement uses WatchState with an explicit projection.
+  rpc CurrentState(CurrentWorkerStateRequest) returns (WorkerState);
+  rpc WatchState(WatchWorkerStateRequest) returns (stream WorkerState);
+  // Streams sandbox removal deltas. WatchState is the periodic revisioned
+  // relist; WatchSandboxEvents carries the low-latency eviction fast path.
+  rpc WatchSandboxEvents(WatchSandboxEventsRequest) returns (stream SandboxRemoved);
+  // Test/debug override for CH-BL DST. Production invokers do not call this.
+  rpc SetLoadOverride(SetLoadOverrideRequest) returns (SetLoadOverrideResponse);
+}
+
+message PrepareImageRequest { FunctionSpec function = 1; }
+message CreateSandboxRequest { StartSandboxRequest request = 1; }
+message StopSandboxRequest { uint64 instance_id = 1; }
+message StopSandboxResponse {}
+message ListSandboxesRequest {}
+message ListSandboxesResponse { repeated InstanceState instances = 1; }
+message SignalReadyRequest { uint64 instance_id = 1; }
+message SignalReadyResponse {}
+// Diagnostic-only request for a full worker snapshot.
+message CurrentWorkerStateRequest {}
+
+// WorkerStateProjection selects which optional worker-state fields the leaf
+// asks the worker to compute and send. Lifecycle-authoritative state (sandbox
+// states, instance count, capacity, allocated resources) is always sent and is
+// not part of this projection. See docs/DYNAMIC_POLICY_STATE_GATING_DESIGN.md.
+message WorkerStateProjection {
+  // load_average_norm: the normalized 1-minute load average. Used by
+  // resource-aware and bounded-loads placement, and by the leaf's leaf_load
+  // routing signal.
+  bool load_average_norm = 1;
+  // cached_images: the local image cache. Used by image-aware placement.
+  bool cached_images = 2;
+}
+
+message WatchWorkerStateRequest {
+  // config_version is the PlatformConfig version whose projection this stream
+  // was opened for. The worker does not subscribe to PlatformConfig, so it
+  // treats this as advisory and gates purely on projection. See server.go.
+  uint64 config_version = 1;
+  WorkerStateProjection projection = 2;
+}
+message WatchSandboxEventsRequest {}
+message SetLoadOverrideRequest {
+  double load_average_norm = 1;
+  bool clear = 2;
+}
+message SetLoadOverrideResponse {}

@@ -1,0 +1,17 @@
+node_id: controlplane-1
+
+logging:
+  level: info
+  format: text
+
+server:
+  http_address: "0.0.0.0:8081"
+  grpc_address: "0.0.0.0:50054"
+  pprof_address: "0.0.0.0:6063"
+
+store:
+  type: etcd
+  endpoints:
+    - "localhost:2379"
+  prefix: hyperfaas
+  dial_timeout: 5s

@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "generated_at": "2026-09-16T15:58:22+00:00",
+  "commit": "7748839",
+  "dirty": false,
+  "scenario": "sustained",
+  "topology": "2Lx4W/4fn",
+  "load_key": "rps=300,warm=50x5s,dur=20s",
+  "window_s": 25.002,
+  "metrics": {
+    "scheduled": 6250,
+    "issued": 6250,
+    "dropped": 0,
+    "missed": 0,
+    "completed": 6250,
+    "peak_in_flight": 2,
+    "offered_rps": 249.98447293441896,
+    "effective_rps": 249.98447293441896,
+    "missed_pct": 0.0,
+    "success_pct": 100.0,
+    "cold": 0,
+    "requests": 6250,
+    "p50_ms": 0.54935,
+    "p95_ms": 0.7723079999999999,
+    "p99_ms": 1.0184288200000002,
+    "max_ms": 3.289907
+  },
+  "cpu": {
+    "nproc": 16,
+    "platform_s": 5.42,
+    "platform_pct": 1.3549158433045507,
+    "generator_s": 1.36,
+    "generator_pct_one_core": 5.439662131052957,
+    "roles_s": {
+      "controlplane": 0.0,
+      "ingress": 2.09,
+      "leaf": 2.52,
+      "worker": 0.81
+    }
+  }
+}

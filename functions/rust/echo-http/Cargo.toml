@@ -1,0 +1,11 @@
+[package]
+name = "hyperfaas-rust-echo-http"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+
+[dependencies]
+http-body-util = "0.1"
+hyper = { version = "1.8", features = ["http1", "server"] }
+hyperfaas-function-runtime = { path = "../runtime" }
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread"] }

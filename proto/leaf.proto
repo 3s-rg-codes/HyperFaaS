@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package hyperfaas;
+
+option go_package = "hyperfaas-ideal-arch/pkg/leaf";
+
+import "core.proto";
+
+service LeafControlService {
+  rpc ApplyFunction(ApplyFunctionRequest) returns (ApplyFunctionResponse);
+  rpc DeleteFunction(DeleteLeafFunctionRequest) returns (DeleteLeafFunctionResponse);
+  // Used by the leaf autoscaler actuator, not by the invoke hot path.
+  rpc EnsureCapacity(EnsureCapacityRequest) returns (EnsureCapacityResponse);
+  // Diagnostic full snapshot of one leaf. It is not used on the routing request
+  // path; routing uses WatchRoutingState with an explicit projection.
+  rpc CurrentState(CurrentLeafStateRequest) returns (LeafState);
+  // Streams routing state to one subscriber. The requested projection selects
+  // which fields the leaf computes and sends, so a subscriber only pays for the
+  // state it reads. The first frame is always a full snapshot for that
+  // projection.
+  rpc WatchRoutingState(WatchRoutingStateRequest) returns (stream RoutingStateFrame);
+}
+
+message ApplyFunctionRequest { FunctionSpec function = 1; }
+message ApplyFunctionResponse {}
+
+message DeleteLeafFunctionRequest { uint64 function_id = 1; }
+message DeleteLeafFunctionResponse {}
+
+message EnsureCapacityRequest { ScaleDemand demand = 1; }
+message EnsureCapacityResponse {}
+
+// Diagnostic-only request for a full leaf snapshot.
+message CurrentLeafStateRequest {}
+
+// RoutingStateProjection selects the routing state a subscriber needs. A field
+// left false is never computed, serialized, or retained by the producer.
+message RoutingStateProjection {
+  bool leaf_load = 1;
+  bool aggregate_in_flight = 2;
+  bool function_capacity = 3;
+}
+
+message WatchRoutingStateRequest {
+  uint64 config_version = 1;
+  RoutingStateProjection projection = 2;
+}
+
+// RoutingStateFrame is one leaf's routing state for one configuration version.
+//
+// Scalar fields are optional and present only when the projection requested
+// them. The first frame of a stream has full_snapshot set and carries the
+// complete capacity set for the projection; later frames carry only changes.
+// Every frame carries the configuration version and a monotonic per-leaf
+// revision so a consumer can reject foreign-version, duplicate, and
+// out-of-order frames.
+message RoutingStateFrame {
+  uint64 config_version = 1;
+  uint64 leaf_id = 2;
+  uint64 revision = 3;
+  bool full_snapshot = 4;
+  // Number of workers that can currently accept new sandboxes. A connected leaf
+  // with zero healthy workers must not receive routing decisions.
+  uint32 healthy_workers = 5;
+  optional double leaf_load = 6;
+  optional uint64 aggregate_in_flight = 7;
+  repeated FunctionCapacity capacities = 8;
+}
