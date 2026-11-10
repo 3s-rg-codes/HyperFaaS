@@ -198,6 +198,20 @@ gRPC clients call their own service through the ingress gRPC proxy and select th
 
 The API also provides `GET`, `PUT`, and `DELETE` on `/v1/users/{user_id}` and `/v1/users/{user_id}/functions/{function_id}`.
 
+### macOS
+
+The local cluster runs on macOS with Docker Desktop and the Docker runtime.
+You need to enable host networking in Docker Desktop before the first `just start`:
+
+1. Open Docker Desktop -> Settings -> Resources -> Network.
+2. Tick **Enable host networking** and click Apply & Restart.
+
+Differences from Linux:
+
+- Only the `docker` and `fake` runtimes work. `runc` and `firecracker` are Linux-only.
+- Function containers reach the worker through `host.docker.internal` instead of the Docker bridge gateway.
+- Worker health comes from `sysctl` instead of `/proc`: the load average is exact, but allocated CPU is reported as 0 and available memory is approximate.
+
 ### Larger topologies without sandboxes
 
 ```bash

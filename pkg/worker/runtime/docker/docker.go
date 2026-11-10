@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"regexp"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +37,7 @@ const (
 	instanceIDLabel              = "hyperfaas.instance_id"
 	functionIDLabel              = "hyperfaas.function_id"
 	dockerBridgeGatewayIP        = "172.17.0.1"
+	dockerDesktopHostName        = "host.docker.internal"
 	defaultCPUPeriod      uint64 = 100000
 	// Docker's default graceful-stop timeout is 10 seconds. The leaf also uses a
 	// 10-second StopSandbox RPC timeout, so relying on Docker's default can make
@@ -350,7 +352,11 @@ func (d *Runtime) controllerAddress(ctx context.Context) string {
 	if networkName == "" {
 		networkName = "bridge"
 	}
-	if inspected, err := d.cli.NetworkInspect(ctx, networkName, dockernetwork.InspectOptions{}); err == nil {
+	if goruntime.GOOS == "darwin" {
+		// Docker Desktop runs containers in a VM: the bridge gateway is the VM,
+		// not the macOS host the worker listens on.
+		gatewayIP = dockerDesktopHostName
+	} else if inspected, err := d.cli.NetworkInspect(ctx, networkName, dockernetwork.InspectOptions{}); err == nil {
 		for _, cfg := range inspected.IPAM.Config {
 			if cfg.Gateway != "" {
 				gatewayIP = cfg.Gateway

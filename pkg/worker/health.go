@@ -1,14 +1,8 @@
 package worker
 
 import (
-	"bufio"
 	"context"
-	"errors"
-	"fmt"
-	"os"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,7 +13,8 @@ import (
 const cpuUnitsPerCore = 1000
 const defaultHealthInterval = time.Second
 
-// ProcHealthService reports host-level worker resources from /proc.
+// ProcHealthService reports host-level worker resources from /proc (sysctl on
+// macOS, see health_darwin.go).
 //
 // The scheduler consumes WorkerState as a capacity hint, not as an accounting
 // ledger. This service therefore samples inexpensive host counters and keeps
@@ -137,18 +132,6 @@ func readLoadAverageNorm() (float64, error) {
 	return load1 / float64(n), nil
 }
 
-func readLoadavg1() (float64, error) {
-	b, err := os.ReadFile("/proc/loadavg")
-	if err != nil {
-		return 0, err
-	}
-	fields := strings.Fields(string(b))
-	if len(fields) < 1 {
-		return 0, errors.New("/proc/loadavg is empty")
-	}
-	return strconv.ParseFloat(fields[0], 64)
-}
-
 func (s *ProcHealthService) WatchState(ctx context.Context, projection StateProjection) (<-chan *core.WorkerState, <-chan error) {
 	// Buffer exactly one state update. If the gRPC sender is slower than the
 	// sampler, sendState replaces the queued value with the newest one. The leaf
@@ -261,68 +244,6 @@ func (s *ProcHealthService) cpuAllocated(capacity uint64) uint64 {
 	}
 	// Scale host-wide busy time into the same cpu_units domain as capacity.
 	return capacity * (totalDelta - idleDelta) / totalDelta
-}
-
-func readCPUStat() (uint64, uint64, error) {
-	f, err := os.Open("/proc/stat")
-	if err != nil {
-		return 0, 0, err
-	}
-	defer f.Close()
-	s := bufio.NewScanner(f)
-	if !s.Scan() {
-		return 0, 0, errors.New("/proc/stat is empty")
-	}
-	fields := strings.Fields(s.Text())
-	if len(fields) < 5 || fields[0] != "cpu" {
-		return 0, 0, fmt.Errorf("unexpected /proc/stat cpu line")
-	}
-	var total uint64
-	var idle uint64
-	for i := 1; i < len(fields); i++ {
-		v, err := strconv.ParseUint(fields[i], 10, 64)
-		if err != nil {
-			return 0, 0, err
-		}
-		total += v
-		if i == 4 || i == 5 {
-			idle += v
-		}
-	}
-	return total, idle, nil
-}
-
-func readMeminfo() (uint64, uint64, error) {
-	f, err := os.Open("/proc/meminfo")
-	if err != nil {
-		return 0, 0, err
-	}
-	defer f.Close()
-	var total, available uint64
-	s := bufio.NewScanner(f)
-	for s.Scan() {
-		fields := strings.Fields(s.Text())
-		if len(fields) < 2 {
-			continue
-		}
-		v, err := strconv.ParseUint(fields[1], 10, 64)
-		if err != nil {
-			return 0, 0, err
-		}
-		switch fields[0] {
-		case "MemTotal:":
-			total = v * 1024
-		case "MemAvailable:":
-			available = v * 1024
-		}
-		if total > 0 && available > 0 {
-			return total, available, nil
-		}
-	}
-	if err := s.Err(); err != nil {
-		return 0, 0, err
-	}
-	return 0, 0, errors.New("missing memory totals in /proc/meminfo")
 }
 
 func diskUsage(path string) (uint64, uint64, error) {
